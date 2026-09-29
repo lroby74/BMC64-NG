@@ -1,0 +1,24 @@
+name: Fuzz
+on:
+  schedule:
+    - cron: '0 21 * * *' # run at 9 PM UTC
+  # Allow manual runs
+  workflow_dispatch:
+env:
+  CC: clang
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [fuzz, fuzz_tls]
+    name: ${{ matrix.target }}
+    steps:
+    - uses: actions/checkout@v4
+      with: { fetch-depth: 2 }
+    - run: make -C test ${{ matrix.target }} ARGS="-max_total_time=7200"
+
+# as we're not getting access to test units causing a problem, convert from the log:
+# base64 -d > dataofdeath
+# then paste the base64 data, enter, Ctrl-D; maybe check with hexdump -C dataofdeath

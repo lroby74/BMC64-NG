@@ -1,0 +1,8 @@
+/* BMC64 / bare metal: con -nostdinc++ le intestazioni C++ non
+ * esistono. reSID 1.0 usa <cassert> solo per quello che sta in
+ * <assert.h>, e non chiama niente con il prefisso std::.
+ */
+#ifndef BMC64_CXX_CASSERT_H
+#define BMC64_CXX_CASSERT_H
+#include <assert.h>
+#endif

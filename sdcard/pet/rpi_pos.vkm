@@ -1,0 +1,10 @@
+# VICE keyboard mapping file
+#
+# Ripiego senza tipo di tastiera. Il PET ha cinque tipi (buuk buus bude bujp
+# grus) e VICE il tipo lo mette nel nome del file; quando quello in corso non
+# c'e', ripiega su questo - keymap.c, switch_keymap_file(), "which MUST
+# exist". Senza, all'avvio escono sei righe rosse "Default keymap not found".
+# A monte e' la stessa cosa: data/PET/gtk3_sym.vkm e' un !INCLUDE del buuk.
+# Qui la business che abbiamo e' la US.
+
+!INCLUDE rpi_buus_pos.vkm

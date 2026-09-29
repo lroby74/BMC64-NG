@@ -1,0 +1,4 @@
+uniform float u_composite_artifacts_enable;
+uniform float u_composite_chroma_blur;
+uniform float u_composite_luma_sharpen;
+uniform float u_composite_color_bleed;

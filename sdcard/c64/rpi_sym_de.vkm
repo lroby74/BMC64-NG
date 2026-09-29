@@ -1,0 +1,108 @@
+# rpi_sym_de.vkm - BMC64, tastiera tedesca (QWERTZ), mappatura simbolica
+#
+# Generato da gen_vkm2.py partendo da rpi_sym.vkm (americana).
+# BMC64 legge la tastiera per POSIZIONE FISICA, non per simbolo:
+# ogni tasto porta qui il nome che ha sulla tastiera americana, e
+# viene mandato dove serve per far uscire il simbolo STAMPATO SUL
+# COPRITASTO di una tastiera tedesca (QWERTZ).
+#
+# Le righe segnate (scelta) non sono lo standard della disposizione:
+# sono simboli che la macchina ha e che questa tastiera non produce
+# senza AltGr - e AltGr a BMC64 non arriva. Stanno sul tasto che se
+# li porta stampati sopra.
+#
+# >>> NON COLLAUDATO: serve qualcuno con la tastiera tedesca (QWERTZ) davanti. <<<
+#
+!CLEAR
+!LSHIFT 1 7
+!RSHIFT 6 4
+!VSHIFT RSHIFT
+!SHIFTL LSHIFT
+!LCBM 7 5
+!VCBM LCBM
+!LCTRL 7 2
+!VCTRL LCTRL
+Escape 7 7 8             /*          ESC -> Run/Stop     */
+1             7 0 8   /* 1           */
+2             7 3 8   /* 2           */
+3             1 0 8   /* 3           */
+4             1 3 8   /* 4           */
+5             2 0 8   /* 5           */
+6             2 3 8   /* 6           */
+7             3 0 32  /* 7           */
+7             6 7 16  /* /           */
+8             3 3 8   /* 8           */
+9             4 0 8   /* 9           */
+0             4 3 32  /* 0           */
+0             6 5 16  /* =           */
+Dash          6 7 1   /* ?           */
+Equals        3 0 1   /* '           */
+Pound 6 5 32         /*            = -> =            */
+Pound 5 0 16         /*            + -> +            */
+BackSpace 0 0 8      /*    Backspace -> DEL          */
+Control_L     7 5 8192   /*        Cntrl -> CBM          */
+q 7 6 8              /*            Q -> Q            */
+w 1 1 8              /*            W -> W            */
+e 1 6 8              /*            E -> E            */
+r 2 1 8              /*            R -> R            */
+t 2 6 8              /*            T -> T            */
+z 3 1 8              /*            Y -> Y            */   /* QWERTZ: z e y scambiate */
+u 3 6 8              /*            U -> U            */
+i 4 1 8              /*            I -> I            */
+o 4 6 8              /*            O -> O            */
+p 5 1 8              /*            P -> P            */
+LeftBracket   5 5 33  /* [           (scelta) */
+LeftBracket   6 2 1   /* ]           (scelta) */
+RightBracket  5 0 32  /* +           */
+RightBracket  6 1 16  /* *           */
+Return 0 1 8         /*       Return -> Return       */
+Tab           7 2 16384  /*          Tab -> Ctrl         */
+a 1 2 8              /*            A -> A            */
+s 1 5 8              /*            S -> S            */
+d 2 2 8              /*            D -> D            */
+f 2 5 8              /*            F -> F            */
+g 3 2 8              /*            G -> G            */
+h 3 5 8              /*            H -> H            */
+j 4 2 8              /*            J -> J            */
+k 4 5 8              /*            K -> K            */
+l 5 2 8              /*            L -> L            */
+SemiColon     5 6 32  /* @           (scelta) */
+SemiColon     5 5 16  /* :           (scelta) */
+SingleQuote   6 0 32  /* Lira        (era un doppione delle " di SHIFT+2) */
+SingleQuote   7 3 1   /* "           */
+BackQuote     6 6 8   /* ^           (scelta) */
+BackSlash     7 1 8   /* Freccia sx  (scelta) */
+Shift_L 1 7 2        /*   Left Shift -> Left Shift   */
+CapsLock 1 7 64      /*    Caps Lock -> Shift Lock   */
+y 1 4 8              /*            Z -> Z            */   /* QWERTZ: z e y scambiate */
+x 2 7 8              /*            X -> X            */
+c 2 4 8              /*            C -> C            */
+v 3 7 8              /*            V -> V            */
+b 3 4 8              /*            B -> B            */
+n 4 7 8              /*            N -> N            */
+m 4 4 8              /*            M -> M            */
+Comma         5 7 32  /* ,           */
+Comma         6 2 16  /* ;           */
+Period        5 4 32  /* .           */
+Period        5 5 16  /* :           */
+Slash         5 3 8   /* -           */
+Shift_R 6 4 4        /*  Right Shift -> Right Shift  */
+Space 7 4 8          /*        Space -> Space        */
+F1 0 4 8             /*           F1 -> F1           */
+F2 0 4 1             /*           F2 -> F2           */
+F3 0 5 8             /*           F3 -> F3           */
+F4 0 5 1             /*           F4 -> F4           */
+F5 0 6 8             /*           F5 -> F5           */
+F6 0 6 1             /*           F6 -> F6           */
+F7 0 3 8             /*           F7 -> F7           */
+F8 0 3 1             /*           F8 -> F8           */
+Home 6 3 8           /*         Home -> CLR/HOME     */
+Up 0 7 1             /*           Up -> CRSR UP      */
+Down 0 7 8           /*         Down -> CRSR DOWN    */
+Insert 0 0 1         /*       Insert -> INS          */
+Del 0 0 8            /*       Delete -> DEL          */
+Left 0 2 1           /*         Left -> Left         */
+Right 0 2 8          /*         Right -> Right       */
+PrintScreen -3 0
+NonUSBackSlash 5 7 33 /* <           (tasto ISO) */
+NonUSBackSlash 5 4 1  /* >           (tasto ISO) */

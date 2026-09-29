@@ -1,0 +1,16 @@
+*.o
+*.a
+*.d
+*.elf
+*.elf.*
+*.img
+*.img.*
+*.lst
+*.map
+*.bak*
+*-bak-*
+.deps/
+.libs/
+autom4te.cache/
+/build/
+/third_party/circle-stdlib/build/

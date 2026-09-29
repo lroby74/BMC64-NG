@@ -1,0 +1,39 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_source_noise_pi4",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_source_noise_pi4.frag",
+  "gles_version": 2,
+  "targets": ["bcm2711-v3d42"],
+  "$include": "includes/probe_rgb565_nearest_4x4.inc",
+  "$include": "includes/fullscreen_state_compact.inc",
+  "$include": "includes/source_texture_compact.inc",
+  "probe_uniform_values": {
+    "u_output_size": [16.0, 16.0],
+    "u_scanline_weight": 0.0,
+    "u_gap_brightness": 1.0,
+    "u_source_texel_x": 0.25,
+    "u_source_texel_y": 0.25,
+    "u_noise_enable": 1.0,
+    "u_luminance_noise": 0.04,
+    "u_chroma_noise": 0.03,
+    "u_noise_speed": 0.5,
+    "u_temporal_frame": 17.0
+  },
+  "uniform_storage": {
+    "fragment": {
+      "0": {"semantic": "source_texel_x", "type": "float32"},
+      "4": {"semantic": "source_texel_y", "type": "float32"},
+      "8": {"semantic": "noise_enable", "type": "float32"},
+      "12": {"semantic": "luminance_noise", "type": "float32"},
+      "16": {"semantic": "chroma_noise", "type": "float32"},
+      "20": {"semantic": "noise_speed", "type": "float32"},
+      "24": {"semantic": "temporal_frame", "type": "float32"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42":
+        "src/v3dcrt/shaders/generated/v3d42/crt_source_noise_pi4.h"
+  },
+  "symbol_prefix": "kV3dCrtSourceNoisePi4"
+}

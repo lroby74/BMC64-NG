@@ -1,0 +1,3 @@
+uniform float u_horizontal_jitter_enable;
+uniform float u_horizontal_jitter_strength;
+uniform float u_horizontal_jitter_frequency;

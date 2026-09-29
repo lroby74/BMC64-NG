@@ -1,0 +1,27 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_bloom_blur_horizontal",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_bloom_blur_horizontal.frag",
+  "gles_version": 2,
+  "targets": ["bcm2711-v3d42", "bcm2712-v3d71"],
+  "$include": "includes/probe_rgba8_linear_16x16.inc",
+  "$include": "includes/fullscreen_state_bloom.inc",
+  "$include": "includes/source_texture_compact.inc",
+  "probe_uniform_values": {
+    "u_output_size": [16.0, 16.0],
+    "u_scanline_weight": 0.0,
+    "u_gap_brightness": 1.0,
+    "u_source_texel_x": 0.0625
+  },
+  "uniform_storage": {
+    "fragment": {
+      "0": {"semantic": "source_texel_x", "type": "float32"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42": "src/v3dcrt/shaders/generated/v3d42/crt_bloom_blur_horizontal.h",
+    "bcm2712-v3d71": "src/v3dcrt/shaders/generated/v3d71/crt_bloom_blur_horizontal.h"
+  },
+  "symbol_prefix": "kV3dCrtBloomBlurHorizontal"
+}

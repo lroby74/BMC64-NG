@@ -1,0 +1,46 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_bloom_composite",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_bloom_composite.frag",
+  "gles_version": 2,
+  "targets": ["bcm2711-v3d42", "bcm2712-v3d71"],
+  "probe": {
+    "output_size": [16, 16],
+    "texture_size": [16, 16],
+    "texture_format": "rgba8-linear",
+    "compile_render_target_format": "rgba8",
+    "bmx_render_target_format": "rgb565-linear",
+    "min_filter": "nearest",
+    "mag_filter": "nearest"
+  },
+  "$include": "includes/fullscreen_state_bloom.inc",
+  "textures": [
+    {"name": "source_texture", "uniform": "u_texture", "unit": 0,
+     "dimension": "2d", "format": "rgba8-linear"},
+    {"name": "bloom_texture", "uniform": "u_bloom_texture", "unit": 1,
+     "dimension": "2d", "format": "rgba8-linear"}
+  ],
+  "probe_uniform_values": {
+    "u_output_size": [16.0, 16.0],
+    "u_scanline_weight": 0.0,
+    "u_gap_brightness": 1.0,
+    "u_bloom_factor": 1.5,
+    "u_rounded_screen_mask_enable": 1.0,
+    "u_rounded_corner_radius": 0.12,
+    "u_rounded_border_softness": 0.03
+  },
+  "uniform_storage": {
+    "fragment": {
+      "0": {"semantic": "bloom_factor", "type": "float32"},
+      "4": {"semantic": "rounded_screen_mask_enable", "type": "float32"},
+      "8": {"semantic": "rounded_corner_radius", "type": "float32"},
+      "12": {"semantic": "rounded_border_softness", "type": "float32"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42": "src/v3dcrt/shaders/generated/v3d42/crt_bloom_composite.h",
+    "bcm2712-v3d71": "src/v3dcrt/shaders/generated/v3d71/crt_bloom_composite.h"
+  },
+  "symbol_prefix": "kV3dCrtBloomComposite"
+}

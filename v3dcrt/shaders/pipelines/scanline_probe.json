@@ -1,0 +1,46 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "scanline_probe",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/scanline_probe.frag",
+  "gles_version": 2,
+  "targets": [
+    "bcm2711-v3d42",
+    "bcm2712-v3d71"
+  ],
+  "$include": "includes/probe_rgb565_nearest_4x4.inc",
+  "$include": "includes/fullscreen_state.inc",
+  "$include": "includes/source_texture.inc",
+  "probe_uniform_values": {
+    "u_output_size": [16.0, 16.0],
+    "u_scanline_weight": 0.75,
+    "u_gap_brightness": 0.35
+  },
+  "uniform_storage": {
+    "fragment": {
+      "0": {
+        "semantic": "scanline_weight",
+        "type": "float32"
+      },
+      "4": {
+        "semantic": "scanline_gap_brightness",
+        "type": "float32"
+      },
+      "8": {
+        "semantic": "fragcoord_y_scale",
+        "type": "float32",
+        "rule": "negative_one"
+      },
+      "9": {
+        "semantic": "fragcoord_y_bias",
+        "type": "float32",
+        "rule": "output_height"
+      }
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42": "src/v3dcrt/shaders/generated/v3d42/scanline_probe.h",
+    "bcm2712-v3d71": "src/v3dcrt/shaders/generated/v3d71/scanline_probe.h"
+  },
+  "symbol_prefix": "kV3dScanlineProbe"
+}

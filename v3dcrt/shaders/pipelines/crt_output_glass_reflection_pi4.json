@@ -1,0 +1,48 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_output_glass_reflection_pi4",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_output_glass_reflection_pi4.frag",
+  "gles_version": 2,
+  "targets": ["bcm2711-v3d42"],
+  "$include": "includes/probe_rgb565_nearest_4x4.inc",
+  "$include": "includes/fullscreen_state_compact.inc",
+  "$include": "includes/source_texture_compact.inc",
+  "probe_uniform_values": {
+    "$include": "includes/probe_values_u_output_size_through_u_source_texel_y.inc",
+    "u_glass_reflection_cosine": 0.93969262,
+    "u_glass_reflection_sine": -0.34202014,
+    "u_glass_reflection_width": 0.165,
+    "u_precomputed_glass_position": -0.3,
+    "u_precomputed_glass_outer_width": 0.4125
+  },
+  "uniform_storage": {
+    "fragment": {
+      "$include": "includes/uniforms_0_through_28.inc",
+      "32": {"semantic": "rotation_cosine", "type": "float32"},
+      "36": {"semantic": "rotation_sine", "type": "float32"},
+      "40": {"semantic": "overscan_scale", "type": "float32"},
+      "44": {"semantic": "edge_blur_enable", "type": "float32"},
+      "48": {"semantic": "edge_blur_strength", "type": "float32"},
+      "52": {"semantic": "edge_blur_radius", "type": "float32"},
+      "56": {"semantic": "scanline_weight", "type": "float32"},
+      "60": {"semantic": "scanline_gap_brightness", "type": "float32"},
+      "64": {"semantic": "scanline_multisample", "type": "float32"},
+      "68": {"semantic": "phosphor_mask_enable", "type": "float32"},
+      "72": {"semantic": "phosphor_mask_pattern", "type": "float32"},
+      "76": {"semantic": "phosphor_mask_brightness", "type": "float32"},
+      "80": {"semantic": "glass_reflection_cosine", "type": "float32"},
+      "84": {"semantic": "glass_reflection_sine", "type": "float32"},
+      "88": {"semantic": "glass_reflection_width", "type": "float32"},
+      "92": {"semantic": "precomputed_glass_position", "type": "float32"},
+      "96": {"semantic": "precomputed_glass_outer_width", "type": "float32"},
+      "100": {"semantic": "fragcoord_y_scale", "type": "float32", "rule": "negative_one"},
+      "101": {"semantic": "fragcoord_y_bias", "type": "float32", "rule": "output_height"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42":
+        "src/v3dcrt/shaders/generated/v3d42/crt_output_glass_reflection_pi4.h"
+  },
+  "symbol_prefix": "kV3dCrtOutputGlassReflectionPi4"
+}

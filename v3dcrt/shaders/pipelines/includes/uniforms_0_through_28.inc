@@ -1,0 +1,8 @@
+      "0": {"semantic": "source_texel_x", "type": "float32"},
+      "4": {"semantic": "source_texel_y", "type": "float32"},
+      "8": {"semantic": "geometry_enable", "type": "float32"},
+      "12": {"semantic": "curvature_x", "type": "float32"},
+      "16": {"semantic": "curvature_y", "type": "float32"},
+      "20": {"semantic": "skew_x", "type": "float32"},
+      "24": {"semantic": "skew_y", "type": "float32"},
+      "28": {"semantic": "trapezoid", "type": "float32"},

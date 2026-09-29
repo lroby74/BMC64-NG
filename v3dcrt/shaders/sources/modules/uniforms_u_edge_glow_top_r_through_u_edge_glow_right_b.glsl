@@ -1,0 +1,12 @@
+uniform float u_edge_glow_top_r;
+uniform float u_edge_glow_top_g;
+uniform float u_edge_glow_top_b;
+uniform float u_edge_glow_bottom_r;
+uniform float u_edge_glow_bottom_g;
+uniform float u_edge_glow_bottom_b;
+uniform float u_edge_glow_left_r;
+uniform float u_edge_glow_left_g;
+uniform float u_edge_glow_left_b;
+uniform float u_edge_glow_right_r;
+uniform float u_edge_glow_right_g;
+uniform float u_edge_glow_right_b;

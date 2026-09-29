@@ -1,0 +1,106 @@
+/*
+ * This file is part of libsidplayfp, a SID player engine.
+ *
+ * Copyright 2011-2024 Leandro Nini <drfiemost@users.sourceforge.net>
+ * Copyright 2007-2010 Antti Lankila
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
+#ifndef RESAMPLER_H
+#define RESAMPLER_H
+
+#include "Limiter.h"
+
+#include <cstdint>
+
+namespace reSIDfp
+{
+
+/**
+ * Abstraction of a resampling process. Given enough input, produces output.
+ * Constructors take additional arguments that configure these objects.
+ */
+class Resampler
+{
+protected:
+    virtual int32_t output() const = 0;
+
+    Resampler() = default;
+
+    mutable uint32_t m_wnoise = 34653463u;
+    mutable int32_t m_bnoise = 0;
+
+#ifdef RESIDFP_RUMORE_REGOLABILE
+
+
+    int32_t m_rumore = 100;
+#endif
+
+    int32_t bnoise() const
+    {
+        // white noise
+        m_wnoise = m_wnoise * 1664525u + 1013904223u;
+
+        // Reduce to 8bit signed
+        int32_t n = (int32_t)((m_wnoise >> 20) & 0xff) - 0x80;
+
+        // high-passed noise
+        m_bnoise = m_bnoise + ((n - m_bnoise) / 8);
+
+        return n - m_bnoise;
+    }
+
+public:
+    virtual ~Resampler() = default;
+
+    /**
+     * Input a sample into resampler. Output "true" when resampler is ready with new sample.
+     *
+     * @param sample input sample
+     * @return true when a sample is ready
+     */
+    virtual bool input(int32_t sample) = 0;
+
+    /**
+     * Output a sample from resampler.
+     *
+     * @return resampled sample
+     */
+    inline int16_t getOutput(int32_t scaleFactor) const
+    {
+        const int32_t out = (scaleFactor * output()) / 2;
+#ifdef RESIDFP_RUMORE_REGOLABILE
+        return Limiter::softClip(out + (bnoise() * m_rumore) / 100);
+#else
+        return Limiter::softClip(out + bnoise());
+#endif
+    }
+
+    virtual void reset() = 0;
+
+#ifdef RESIDFP_RUMORE_REGOLABILE
+    void setNoise(int32_t percento) { m_rumore = percento; }
+
+
+
+
+    void setNoiseSeed(uint32_t seme) { m_wnoise = seme; m_bnoise = 0; }
+#endif
+};
+
+} // namespace reSIDfp
+
+#endif

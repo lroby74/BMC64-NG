@@ -1,0 +1,12 @@
+*.o
+*.a
+*.lo
+*.la
+.deps/
+.libs/
+autom4te.cache/
+Makefile
+Makefile.in
+config.log
+config.status
+*.bak-v310p0*

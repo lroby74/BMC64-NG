@@ -1,0 +1,39 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_output_scanlines",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_output_scanlines.frag",
+  "gles_version": 2,
+  "targets": [
+    "bcm2711-v3d42",
+    "bcm2712-v3d71"
+  ],
+  "$include": "includes/probe_rgb565_nearest_4x4.inc",
+  "$include": "includes/fullscreen_state.inc",
+  "$include": "includes/source_texture.inc",
+  "probe_uniform_values": {
+    "$include": "includes/probe_values_u_output_size_through_u_trapezoid.inc",
+    "u_rotation_radians": 0.0,
+    "u_overscan_scale": 1.0,
+    "u_scanline_weight": 0.4,
+    "u_gap_brightness": 0.12,
+    "u_scanline_multisample": 1.0
+  },
+  "uniform_storage": {
+    "fragment": {
+      "$include": "includes/uniforms_0_through_28.inc",
+      "32": {"semantic": "rotation_radians", "type": "float32"},
+      "36": {"semantic": "overscan_scale", "type": "float32"},
+      "40": {"semantic": "scanline_weight", "type": "float32"},
+      "44": {"semantic": "scanline_gap_brightness", "type": "float32"},
+      "48": {"semantic": "scanline_multisample", "type": "float32"},
+      "52": {"semantic": "fragcoord_y_scale", "type": "float32", "rule": "negative_one"},
+      "53": {"semantic": "fragcoord_y_bias", "type": "float32", "rule": "output_height"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42": "src/v3dcrt/shaders/generated/v3d42/crt_output_scanlines.h",
+    "bcm2712-v3d71": "src/v3dcrt/shaders/generated/v3d71/crt_output_scanlines.h"
+  },
+  "symbol_prefix": "kV3dCrtOutputScanlines"
+}

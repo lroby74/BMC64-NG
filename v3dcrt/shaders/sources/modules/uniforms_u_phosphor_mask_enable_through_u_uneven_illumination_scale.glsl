@@ -1,0 +1,10 @@
+uniform float u_phosphor_mask_enable;
+uniform float u_phosphor_mask_pattern;
+uniform float u_phosphor_mask_brightness;
+uniform float u_vignette_enable;
+uniform float u_vignette_strength;
+uniform float u_vignette_scale;
+uniform float u_vignette_softness;
+uniform float u_uneven_illumination_enable;
+uniform float u_uneven_illumination_strength;
+uniform float u_uneven_illumination_scale;

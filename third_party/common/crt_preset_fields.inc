@@ -1,0 +1,80 @@
+CRT_PRESET_BIND("geometry.enabled", s_curvature_item)
+CRT_PRESET_BIND("geometry.curvature_x", s_curvature_x_item)
+CRT_PRESET_BIND("geometry.curvature_y", s_curvature_y_item)
+CRT_PRESET_BIND("geometry.skew_x", s_skew_x_item)
+CRT_PRESET_BIND("geometry.skew_y", s_skew_y_item)
+CRT_PRESET_BIND("geometry.trapezoid", s_trapezoid_item)
+CRT_PRESET_BIND("geometry.rotation", s_rotation_item)
+CRT_PRESET_BIND("geometry.overscan", s_overscan_item)
+
+CRT_PRESET_BIND("convergence.enabled", s_convergence_item)
+CRT_PRESET_BIND("convergence.red_offset_x", s_red_offset_x_item)
+CRT_PRESET_BIND("convergence.red_offset_y", s_red_offset_y_item)
+CRT_PRESET_BIND("convergence.blue_offset_x", s_blue_offset_x_item)
+CRT_PRESET_BIND("convergence.blue_offset_y", s_blue_offset_y_item)
+CRT_PRESET_BIND("convergence.radial_strength", s_convergence_radial_strength_item)
+
+CRT_PRESET_BIND("scanlines.enabled", s_scanlines_item)
+CRT_PRESET_BIND("scanlines.multisample", s_multisample_item)
+CRT_PRESET_BIND("scanlines.weight", s_scanline_weight_item)
+CRT_PRESET_BIND("scanlines.gap_brightness", s_scanline_gap_brightness_item)
+
+CRT_PRESET_BIND("horizontal_filtering.enabled", s_horizontal_filtering_item)
+CRT_PRESET_BIND("horizontal_filtering.sigma_x", s_sigma_x_item)
+
+CRT_PRESET_BIND("edge_blur.enabled", s_edge_blur_item)
+CRT_PRESET_BIND("edge_blur.strength", s_edge_blur_strength_item)
+CRT_PRESET_BIND("edge_blur.radius", s_edge_blur_radius_item)
+
+CRT_PRESET_BIND("phosphor_mask.enabled", s_mask_enable_item)
+CRT_PRESET_BIND("phosphor_mask.type", s_mask_item)
+CRT_PRESET_BIND("phosphor_mask.brightness", s_mask_brightness_item)
+
+CRT_PRESET_BIND("bloom.enabled", s_bloom_item)
+CRT_PRESET_BIND("bloom.factor", s_bloom_factor_item)
+
+CRT_PRESET_BIND("vignette.enabled", s_vignette_item)
+CRT_PRESET_BIND("vignette.strength", s_vignette_strength_item)
+CRT_PRESET_BIND("vignette.scale", s_vignette_scale_item)
+CRT_PRESET_BIND("vignette.softness", s_vignette_softness_item)
+
+CRT_PRESET_BIND("uneven_illumination.enabled", s_uneven_illumination_item)
+CRT_PRESET_BIND("uneven_illumination.strength", s_uneven_illumination_strength_item)
+CRT_PRESET_BIND("uneven_illumination.scale", s_uneven_illumination_scale_item)
+
+CRT_PRESET_BIND("horizontal_jitter.enabled", s_horizontal_jitter_item)
+CRT_PRESET_BIND("horizontal_jitter.strength", s_horizontal_jitter_strength_item)
+CRT_PRESET_BIND("horizontal_jitter.frequency", s_horizontal_jitter_frequency_item)
+CRT_PRESET_BIND("horizontal_jitter.speed", s_horizontal_jitter_speed_item)
+
+CRT_PRESET_BIND("composite_artifacts.enabled", s_composite_artifacts_item)
+CRT_PRESET_BIND("composite_artifacts.chroma_blur", s_composite_chroma_blur_item)
+CRT_PRESET_BIND("composite_artifacts.luma_sharpen", s_composite_luma_sharpen_item)
+CRT_PRESET_BIND("composite_artifacts.color_bleed", s_composite_color_bleed_item)
+
+CRT_PRESET_BIND("glass_reflection.enabled", s_glass_reflection_item)
+CRT_PRESET_BIND("glass_reflection.angle", s_glass_reflection_angle_item)
+CRT_PRESET_BIND("glass_reflection.width", s_glass_reflection_width_item)
+CRT_PRESET_BIND("glass_reflection.position", s_glass_reflection_position_item)
+
+CRT_PRESET_BIND("rounded_screen_mask.enabled", s_rounded_screen_mask_item)
+CRT_PRESET_BIND("rounded_screen_mask.corner_radius", s_rounded_corner_radius_item)
+CRT_PRESET_BIND("rounded_screen_mask.border_softness", s_rounded_border_softness_item)
+
+CRT_PRESET_BIND("edge_glow.enabled", s_edge_glow_item)
+CRT_PRESET_BIND("edge_glow.strength", s_edge_glow_strength_item)
+CRT_PRESET_BIND("edge_glow.width", s_edge_glow_width_item)
+
+CRT_PRESET_BIND("noise.enabled", s_noise_item)
+CRT_PRESET_BIND("noise.luminance", s_luminance_noise_item)
+CRT_PRESET_BIND("noise.chroma", s_chroma_noise_item)
+CRT_PRESET_BIND("noise.speed", s_noise_speed_item)
+
+CRT_PRESET_BIND("output_response.enabled", s_output_response_item)
+CRT_PRESET_BIND("output_response.mode", s_response_mode_item)
+CRT_PRESET_BIND("output_response.level_mapping", s_level_mapping_item)
+CRT_PRESET_BIND("output_response.input_gamma", s_input_gamma_item)
+CRT_PRESET_BIND("output_response.output_gamma", s_output_gamma_item)
+CRT_PRESET_BIND("output_response.saturation", s_response_saturation_item)
+CRT_PRESET_BIND("output_response.black_level", s_black_level_item)
+CRT_PRESET_BIND("output_response.white_clip", s_white_clip_item)
