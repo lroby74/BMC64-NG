@@ -50,9 +50,9 @@ There's no Linux underneath: the Pi boots straight into the Commodore.
 ## Getting started
 
 1. Take a microSD card from a well-known, reliable brand.
-2. Format it as **FAT32**.
-   - Up to 32 GB the standard format works, 512-byte clusters included.
-   - For bigger cards use a tool such as FAT32Format.
+2. Format it as **FAT32** with a normal cluster (allocation unit) size: **32 KB**, as the SD Association's SD Card Formatter does, or the Windows default.
+   - **Do not use 512-byte clusters.** The Raspberry Pi then reads its own start-up files and the kernel in tiny pieces: a Pi 4 or 400 waits 9-10 seconds before BMC64-NG even begins, and with a 32 GB card it took 45 seconds. With normal clusters, power-on to the BASIC prompt takes about 11 seconds. Changing machine restarts the Pi, so it gets the same benefit.
+   - For cards bigger than 32 GB use a tool such as FAT32Format.
 3. Download the `.7z` archive of the latest release from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
 4. Put the card in the Pi and switch it on. It starts as a PAL Commodore 64 (cycle exact) on HDMI, 720p at 50 Hz; Machine > Switch changes machine and video mode.
 
