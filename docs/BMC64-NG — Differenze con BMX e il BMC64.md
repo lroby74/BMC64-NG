@@ -56,7 +56,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 
 **Clock**
 
-- **Clock della CPU e della GPU dal menu** (CPU Clock e GPU Clock): -20%, -10%, di serie, +10%, +20%, per ogni modello. Nel BMC64 il clock si cambia a mano in `config.txt` (le righe `arm_freq` e `over_voltage`, in commento nel file di esempio).
+- **Clock della CPU e della GPU dal menu** (CPU Clock e GPU Clock): la CPU -20%, -10%, di serie, +10%, +20%, la GPU di serie, +10%, +20%, per ogni modello; i MHz della GPU in cima al menu e nella barra di stato, accanto a quelli della CPU. Nel BMC64 il clock si cambia a mano in `config.txt` (le righe `arm_freq` e `over_voltage`, in commento nel file di esempio).
 
 **Dischi, nastri, file**
 
@@ -108,7 +108,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 **Clock**
 
 - **Clock della CPU**: BMC64-NG dal menu CPU Clock, da -20% a +20% sul clock di serie di ogni modello, quindi anche più basso. BMX solo verso l'alto (Pi 4 da 1500 a 2400 MHz, Pi 5 da 2400 a 3200 MHz, a passi di 25 MHz).
-- **Clock della GPU**: BMC64-NG dal menu GPU Clock, Core e V3D insieme, da -20% a +20% sui valori di serie. BMX ha Core Clock e V3D Clock nella cartella Expert, solo verso l'alto (Pi 4 fino a 800 MHz, Pi 5 fino a 1200).
+- **Clock della GPU**: BMC64-NG dal menu principale (GPU Clock), Core e V3D insieme, di serie, +10% o +20%, coi MHz della GPU in cima al menu e nella barra di stato. BMX ha Core Clock e V3D Clock separati nella cartella Expert, anche lui solo verso l'alto (Pi 4 fino a 800 MHz, Pi 5 fino a 1200).
 
 **Video**
 
@@ -165,7 +165,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 
 **BMX**
 
-- **Overclock spinto**: CPU fino a 2400 MHz sul Pi 4 e 3200 MHz sul Pi 5, **Voltage Offset**, **Temperature Limit** e, nella cartella Expert, **Core Clock** e **V3D Clock** (clock della GPU). Il CPU Clock di BMC64-NG si ferma a +20%. Core e V3D li regola anche BMC64-NG, col suo GPU Clock (da -20% a +20%).
+- **Overclock spinto**: CPU fino a 2400 MHz sul Pi 4 e 3200 MHz sul Pi 5, **Voltage Offset**, **Temperature Limit** e, nella cartella Expert, **Core Clock** e **V3D Clock** (clock della GPU). Il CPU Clock di BMC64-NG si ferma a +20%. Core e V3D li regola anche BMC64-NG, col suo GPU Clock (di serie, +10%, +20%).
 - **480p e 576p** come modi video per tutte le macchine.
 - **Scheda con due partizioni** (SYS: e USER:), un disco scelto da montare a ogni accensione e un disco di utilità (con ccgms) nel drive 9.
 - **Menu**: i cinque posti di accesso rapido (Quick Access), il menu col mouse, il menu ingrandibile, le modifiche di sistema in attesa mostrate prima del riavvio (Pending system changes).
