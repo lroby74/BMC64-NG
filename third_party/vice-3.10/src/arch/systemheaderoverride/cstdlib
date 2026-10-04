@@ -1,0 +1,8 @@
+/* BMC64 / bare metal: con -nostdinc++ le intestazioni C++ non
+ * esistono. reSID 1.0 usa <cstdlib> solo per quello che sta in
+ * <stdlib.h>, e non chiama niente con il prefisso std::.
+ */
+#ifndef BMC64_CXX_CSTDLIB_H
+#define BMC64_CXX_CSTDLIB_H
+#include <stdlib.h>
+#endif

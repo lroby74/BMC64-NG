@@ -1,0 +1,7 @@
+    "u_phosphor_mask_brightness": 0.7,
+    "u_vignette_enable": 1.0,
+    "u_vignette_strength": 0.25,
+    "u_vignette_scale": 0.8,
+    "u_vignette_softness": 0.46,
+    "u_uneven_illumination_enable": 1.0,
+    "u_uneven_illumination_strength": 0.0525,

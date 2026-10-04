@@ -1,0 +1,12 @@
+.project
+.vscode
+*.img
+*.lst
+*.map
+*.elf
+*.d
+*.o
+*.a
+.settings
+.cproject
+Config.mk

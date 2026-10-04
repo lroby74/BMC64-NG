@@ -1,0 +1,3524 @@
+//
+// kernel.cpp
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "kernel.h"
+
+#include <errno.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <circle/gpiopin.h>
+#include <circle/usb/usbdevice.h>
+#include <circle/usb/usbfloppydevice.h>
+#include <circle/bcm2835.h>
+#include <circle/bcmpropertytags.h>
+#include <circle/machineinfo.h>
+#include <circle/memio.h>
+#include <circle/synchronize.h>
+#include "third_party/circle-stdlib/include/wrap_fatfs.h"
+#include <circle/startup.h>
+
+extern "C" {
+#include "third_party/common/usb_gamepad_defaults.h"
+#include "uscitaaudio.h"
+#include "usblog.h"
+}
+
+CKernel *static_kernel = NULL;
+
+
+
+
+extern "C" {
+unsigned raspi_snd_dev = 0;
+int raspi_snd_play = -1;
+unsigned long raspi_snd_written = 0;
+
+unsigned long raspi_snd_dal_vice = 0;
+int raspi_snd_space = -1;
+int raspi_snd_restart = -1;
+unsigned raspi_snd_restarts = 0;
+
+
+
+unsigned raspi_snd_picco = 0;
+unsigned long raspi_snd_vuoti = 0;
+unsigned long raspi_snd_scartati = 0;
+unsigned raspi_snd_cambi = 0;
+unsigned raspi_snd_assenze = 0;
+unsigned long raspi_snd_tagliati = 0;
+unsigned raspi_snd_hz = 0;
+int raspi_snd_vol_cb = 0;
+unsigned raspi_snd_vol_pct = 0;
+unsigned raspi_snd_canali = 1;
+unsigned raspi_snd_porta = 0;
+
+
+
+
+unsigned raspi_snd_picco_sx = 0;
+unsigned raspi_snd_picco_dx = 0;
+
+
+
+
+unsigned long raspi_vchiq_byte = 0;
+unsigned raspi_vchiq_coda = 0;
+unsigned raspi_vchiq_inizio = 0;
+unsigned long raspi_vchiq_attese = 0;
+}
+
+
+static bool snd_era_a_secco = false;
+
+
+
+
+void circle_snd_azzera_conti(void) {
+  raspi_snd_picco = 0;
+  raspi_snd_picco_sx = 0;
+  raspi_snd_picco_dx = 0;
+  raspi_snd_vuoti = 0;
+  raspi_snd_scartati = 0;
+  raspi_snd_tagliati = 0;
+  snd_era_a_secco = false;
+}
+
+#define MAX_KEY_CODES 128
+#define TICKS_PER_SECOND 1000000L
+
+// A global to control whether our special VICE CIA port changes
+// should take effect. Only set when gpio_outputs_enabled is allowed.
+int raspi_userport_enabled;
+
+
+
+
+
+
+static bool key_states[MAX_USB_DEVICES][MAX_KEY_CODES];
+static unsigned char mod_states[MAX_USB_DEVICES];
+static unsigned mouse_button_states[MAX_USB_DEVICES];
+static unsigned usb_input_indices[MAX_USB_DEVICES];
+static bool merged_key_states[MAX_KEY_CODES];
+static unsigned char merged_mod_states;
+static bool uiLeftShift = false;
+static bool uiRightShift = false;
+
+
+
+extern "C" int emux_set_sound_sample_rate(int sample_rate);
+
+static int vol_percent_to_vchiq(int percent) {
+
+
+
+
+
+
+
+
+  raspi_snd_vol_pct = (unsigned)(percent < 0 ? 0 : percent);
+  if (percent <= 0) {
+    raspi_snd_vol_cb = VCHIQ_SOUND_VOLUME_MIN;
+    return VCHIQ_SOUND_VOLUME_MIN;
+  }
+
+
+
+
+
+
+
+  int range = 0-(-2720);
+  raspi_snd_vol_cb = (int)(range * ((float)percent)/100.0 + (-2720));
+  return raspi_snd_vol_cb;
+}
+
+
+
+
+
+static void aspetta_che_si_fermi(ViceSoundOut *snd) {
+  unsigned inizio = CTimer::GetClockTicks();
+  while (snd->PlaybackActive() && CTimer::GetClockTicks() - inizio < 1000000) {
+    CScheduler::Get()->Yield();
+    CTimer::SimpleusDelay(1000);
+  }
+}
+
+
+
+ViceSoundOut *CKernel::CreateSound(void) {
+  mCanaliAperti = mNumSoundChannels;
+  ViceSoundOut *snd;
+
+
+
+  TVCHIQSoundDestination uscita = uscita_audio_vera(
+      mViceOptions.GetAudioOut(), CMachineInfo::Get()->GetMachineModel());
+  if (uscita != mViceOptions.GetAudioOut()) {
+    CLogger::Get()->Write("vice", LogNotice,
+                          "audio_out=analog, ma questo Pi non ha il jack: "
+                          "si suona dall'HDMI");
+  }
+
+
+
+
+#ifdef BMC64_HAVE_USB_SOUND
+  if (mViceOptions.GetAudioOut() == VCHIQSoundDestinationUSB) {
+
+
+
+    const unsigned frequenza = ViceSoundUSB::ScegliFrequenza();
+    ViceSoundUSB *usb = new ViceSoundUSB(frequenza);
+    if (usb != 0) {
+
+
+
+
+
+      const int prestata = circle_usb_presta();
+      const boolean partito =
+          prestata &&
+          usb->Playback(vol_percent_to_vchiq(mVolume), mNumSoundChannels);
+      circle_usb_restituisci();
+      if (partito) {
+        if (frequenza != mSoundSampleRate) {
+
+
+
+          const unsigned prima = mSoundSampleRate;
+          mSoundSampleRate = frequenza;
+          if (emux_set_sound_sample_rate((int)frequenza) == 0) {
+            printf("[AUDIO] DAC USB a %u Hz: il VICE passa da %u a %u\n",
+                   frequenza, prima, frequenza);
+          } else {
+            mSoundSampleRate = prima;
+            printf("[AUDIO] il DAC USB vuole %u Hz e questo emulatore non la "
+                   "cambia: si torna all'HDMI\n", frequenza);
+            usb->CancelPlayback();
+            aspetta_che_si_fermi(usb);
+            delete usb;
+            usb = 0;
+          }
+        }
+        if (usb != 0) {
+          raspi_snd_dev = 3;
+          raspi_snd_play = 1;
+          raspi_snd_hz = frequenza;
+          printf("[AUDIO] uscita: DAC USB a %u Hz\n", frequenza);
+          return usb;
+        }
+      } else {
+        printf("[AUDIO] il DAC USB non parte (%s): si torna all'uscita di "
+               "sempre\n", ViceSoundUSB::UscitaPresente() ? "c'e' ma rifiuta"
+                                                          : "non c'e'");
+        delete usb;
+      }
+    }
+  }
+#endif
+
+#ifdef BMC64_HAVE_USB_SOUND
+
+
+
+  if (mSoundSampleRate != SAMPLE_RATE) {
+    const unsigned prima = mSoundSampleRate;
+    mSoundSampleRate = SAMPLE_RATE;
+    if (emux_set_sound_sample_rate((int)SAMPLE_RATE) == 0) {
+      printf("[AUDIO] di nuovo l'uscita di sempre: il VICE torna da %u a %u "
+             "Hz\n", prima, (unsigned)SAMPLE_RATE);
+    } else {
+      mSoundSampleRate = prima;
+    }
+  }
+#endif
+
+#if defined(BMC64_USE_HDMI_SOUND) || defined(BMC64_HAVE_HDMI_SOUND)
+
+
+
+
+  if (uscita != VCHIQSoundDestinationHeadphones &&
+      !mViceOptions.AudioForceVCHIQ()) {
+
+
+
+
+    raspi_snd_porta = raspi_fb_display == 1 ? 1 : 0;
+    ViceSoundHDMI *hdmi = new ViceSoundHDMI(&mInterrupt, raspi_snd_porta);
+    if (hdmi != 0) {
+      raspi_snd_dev = 2;
+      raspi_snd_hz = mSoundSampleRate;
+      if (hdmi->Playback(vol_percent_to_vchiq(mVolume), mNumSoundChannels)) {
+        raspi_snd_play = 1;
+        printf("[AUDIO] uscita: HDMI diretto, porta %u\n", raspi_snd_porta);
+        return hdmi;
+      }
+
+
+
+      raspi_snd_play = 0;
+      delete hdmi;
+      raspi_snd_dev = 0;
+    }
+  }
+#endif
+
+#ifndef BMC64_USE_HDMI_SOUND
+
+
+
+
+  TVCHIQSoundDestination dest = uscita;
+  if (dest == VCHIQSoundDestinationUSB) {
+    dest = VCHIQSoundDestinationAuto;
+  }
+  snd = new ViceSound(&mVCHIQ, dest);
+  raspi_snd_dev = 1;
+  raspi_snd_hz = mSoundSampleRate;
+#else
+  snd = 0;
+#endif
+  if (snd == 0) {
+    return 0;
+  }
+
+
+
+
+
+
+  raspi_snd_play = snd->Playback(vol_percent_to_vchiq(mVolume),
+                                 mNumSoundChannels) ? 1 : 0;
+  printf("[AUDIO] uscita: VCHIQ (%s), avvio %d\n",
+         uscita == VCHIQSoundDestinationHeadphones ? "jack" : "auto/HDMI",
+         raspi_snd_play);
+  return snd;
+}
+
+// Real keyboard matrix states
+static bool kbdMatrixStates[8][8];
+// These for translating row/col scans into equivalent keycodes.
+#if defined(RASPI_PLUS4) | defined(RASPI_PLUS4EMU)
+static long kbdMatrixKeyCodes[8][8] = {
+ {KEYCODE_Backspace,  KEYCODE_3,         KEYCODE_5, KEYCODE_7, KEYCODE_9, KEYCODE_Left,         KEYCODE_Up,           KEYCODE_1},
+ {KEYCODE_Return,     KEYCODE_w,         KEYCODE_r, KEYCODE_y, KEYCODE_i, KEYCODE_p,            KEYCODE_Dash,         KEYCODE_BackQuote},
+ {KEYCODE_BackSlash,  KEYCODE_a,         KEYCODE_d, KEYCODE_g, KEYCODE_j, KEYCODE_l,            KEYCODE_SingleQuote,  KEYCODE_Tab},
+ {KEYCODE_F7,         KEYCODE_4,         KEYCODE_6, KEYCODE_8, KEYCODE_0, KEYCODE_Right,        KEYCODE_Down,         KEYCODE_2},
+ {KEYCODE_F1,         KEYCODE_z,         KEYCODE_c, KEYCODE_b, KEYCODE_m, KEYCODE_Period,       KEYCODE_RightShift,   KEYCODE_Space},
+ {KEYCODE_F3,         KEYCODE_s,         KEYCODE_f, KEYCODE_h, KEYCODE_k, KEYCODE_SemiColon,    KEYCODE_RightBracket, KEYCODE_LeftControl},
+ {KEYCODE_F5,         KEYCODE_e,         KEYCODE_t, KEYCODE_u, KEYCODE_o, KEYCODE_LeftBracket,  KEYCODE_Equals,       KEYCODE_q},
+ {KEYCODE_Insert,     KEYCODE_LeftShift, KEYCODE_x, KEYCODE_v, KEYCODE_n, KEYCODE_Comma,        KEYCODE_Slash,        KEYCODE_Escape},
+};
+#else
+static long kbdMatrixKeyCodes[8][8] = {
+ {KEYCODE_Backspace, KEYCODE_3,         KEYCODE_5, KEYCODE_7, KEYCODE_9, KEYCODE_Dash,        KEYCODE_Insert,       KEYCODE_1},
+ {KEYCODE_Return,    KEYCODE_w,         KEYCODE_r, KEYCODE_y, KEYCODE_i, KEYCODE_p,           KEYCODE_RightBracket, KEYCODE_BackQuote},
+ {KEYCODE_Right,     KEYCODE_a,         KEYCODE_d, KEYCODE_g, KEYCODE_j, KEYCODE_l,           KEYCODE_SingleQuote,  KEYCODE_Tab},
+ {KEYCODE_F7,        KEYCODE_4,         KEYCODE_6, KEYCODE_8, KEYCODE_0, KEYCODE_Equals,      KEYCODE_Home,         KEYCODE_2},
+ {KEYCODE_F1,        KEYCODE_z,         KEYCODE_c, KEYCODE_b, KEYCODE_m, KEYCODE_Period,      KEYCODE_RightShift,   KEYCODE_Space},
+ {KEYCODE_F3,        KEYCODE_s,         KEYCODE_f, KEYCODE_h, KEYCODE_k, KEYCODE_SemiColon,   KEYCODE_BackSlash,    KEYCODE_LeftControl},
+ {KEYCODE_F5,        KEYCODE_e,         KEYCODE_t, KEYCODE_u, KEYCODE_o, KEYCODE_LeftBracket, KEYCODE_Delete,       KEYCODE_q},
+ {KEYCODE_Down,      KEYCODE_LeftShift, KEYCODE_x, KEYCODE_v, KEYCODE_n, KEYCODE_Comma,       KEYCODE_Slash,        KEYCODE_Escape},
+};
+#endif
+static int kbdRestoreState;
+
+
+
+
+
+
+
+static volatile unsigned char kbd_fuori_scala = 0;
+static int kbd_fuori_scala_detto = 0;
+
+
+
+
+
+
+static volatile unsigned char kbd_led_voluto = 0;
+static volatile bool kbd_led_da_mandare = false;
+
+extern "C" {
+
+
+
+extern void menu_poweroff_key(void);
+
+int circle_get_machine_timing() {
+  return static_kernel->circle_get_machine_timing();
+}
+
+void circle_sleep(long delay) {
+  // Timer guaranteed to be ready before vice can call this.
+  return static_kernel->circle_sleep(delay);
+}
+
+unsigned long circle_get_ticks() {
+  // Timer guaranteed to be ready before vice can call this.
+  return static_kernel->circle_get_ticks();
+}
+
+int circle_sound_bufferspace() {
+  // Sound init will happen before this so this is okay
+  return static_kernel->circle_sound_bufferspace();
+}
+
+int circle_sound_init(const char *param, int *speed, int *fragsize, int *fragnr,
+                      int *channels) {
+  // VCHIQ is guaranteed to have been constructed but not necessarily
+  // initialized so we defer its initialization until this method is
+  // called by vice.
+  return static_kernel->circle_sound_init(param, speed, fragsize, fragnr,
+                                          channels);
+}
+
+int circle_sound_write(int16_t *pbuf, size_t nr) {
+  // Sound init will happen before this so this is okay
+  return static_kernel->circle_sound_write(pbuf, nr);
+}
+
+void circle_sound_close(void) {
+  // Sound init will happen before this so this is okay
+  static_kernel->circle_sound_close();
+}
+
+int circle_sound_suspend(void) {
+  // Sound init will happen before this so this is okay
+  return static_kernel->circle_sound_suspend();
+}
+
+int circle_sound_resume(void) {
+  // Sound init will happen before this so this is okay
+  return static_kernel->circle_sound_resume();
+}
+
+void circle_yield(void) {
+  // Scheduler guaranteed to be ready before vice calls this.
+  static_kernel->circle_yield();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+extern volatile unsigned bmc_mouse_presi;
+extern volatile unsigned bmc_mouse_scartati;
+extern volatile unsigned bmc_mouse_lunghezza;
+extern volatile unsigned char bmc_mouse_ultimo[8];
+extern volatile int bmc_mouse_rotella;
+
+void circle_usb_nota_menu(void) {
+  static unsigned presi = ~0u, scartati = ~0u;
+  usblog_circle("all'apertura del menu");
+  const unsigned p = bmc_mouse_presi, s = bmc_mouse_scartati;
+  if (p == presi && s == scartati) {
+    return;
+  }
+  presi = p;
+  scartati = s;
+  usblog_riga("mouse USB: rapporti presi %u, scartati %u; l'ultimo %u byte: "
+              "%02x %02x %02x %02x %02x %02x %02x %02x; rotella in tutto %d",
+              p, s, bmc_mouse_lunghezza, bmc_mouse_ultimo[0],
+              bmc_mouse_ultimo[1], bmc_mouse_ultimo[2], bmc_mouse_ultimo[3],
+              bmc_mouse_ultimo[4], bmc_mouse_ultimo[5], bmc_mouse_ultimo[6],
+              bmc_mouse_ultimo[7], bmc_mouse_rotella);
+}
+
+void circle_check_gpio() {
+  // GPIO pins guaranteed to be setup before vice calls this.
+  static_kernel->circle_check_gpio();
+#if RASPPI >= 5
+
+
+  static int pwrbtn_was = 0;
+  int pwrbtn_now = is_power_button_pressed() ? 1 : 0;
+  if (pwrbtn_now && !pwrbtn_was) {
+    menu_poweroff_key();
+  }
+  pwrbtn_was = pwrbtn_now;
+#endif
+}
+
+void circle_reset_gpio(int gpio_config) {
+  // Ensure GPIO pins are in correct configuration for current mode.
+  static_kernel->circle_reset_gpio(gpio_config);
+}
+
+void circle_lock_acquire() {
+  // Always ok
+  static_kernel->circle_lock_acquire();
+}
+
+void circle_lock_release() {
+  // Always ok
+  static_kernel->circle_lock_release();
+}
+
+void circle_boot_complete() {
+  // Always ok
+  static_kernel->circle_boot_complete();
+}
+
+int circle_cycles_per_sec() {
+  // Always ok
+  return static_kernel->circle_cycles_per_second();
+}
+
+int circle_alloc_fbl(int layer, int pixelmode, uint8_t **pixels,
+                     int width, int height, int *pitch) {
+  return static_kernel->circle_alloc_fbl(layer, pixelmode, pixels, width, height, pitch);
+}
+
+int circle_realloc_fbl(int layer, int shader) {
+  return static_kernel->circle_realloc_fbl(layer, shader);
+}
+
+int circle_shader_backend_available() {
+  return static_kernel->circle_shader_backend_available();
+}
+
+int circle_shader_backend_available_for_layer(int layer) {
+  return static_kernel->circle_shader_backend_available_for_layer(layer);
+}
+
+int circle_status_layer_can_coexist_with_ui() {
+  return static_kernel->circle_status_layer_can_coexist_with_ui();
+}
+
+void circle_free_fbl(int layer) {
+  static_kernel->circle_free_fbl(layer);
+}
+
+void circle_clear_fbl(int layer) {
+  static_kernel->circle_clear_fbl(layer);
+}
+
+void circle_show_fbl(int layer) {
+  static_kernel->circle_show_fbl(layer);
+}
+
+void circle_hide_fbl(int layer) {
+  static_kernel->circle_hide_fbl(layer);
+}
+
+void circle_present_fbl(uint32_t ready_mask, int sync) {
+
+  int dove_prima = bmc_dove;
+  bmc_dove = DOVE_SCHERMO;
+  static_kernel->circle_present_fbl(ready_mask, sync);
+  bmc_dove = dove_prima;
+}
+
+void circle_set_palette_fbl(int layer, uint8_t index, uint16_t rgb565) {
+  static_kernel->circle_set_palette_fbl(layer, index, rgb565);
+}
+
+void circle_set_palette32_fbl(int layer, uint8_t index, uint32_t argb) {
+  static_kernel->circle_set_palette32_fbl(layer, index, argb);
+}
+
+void circle_update_palette_fbl(int layer) {
+  static_kernel->circle_update_palette_fbl(layer);
+}
+
+void circle_set_stretch_fbl(int layer, double hstretch, double vstretch, int hintstr, int vintstr, int use_hintstr, int use_vintstr) {
+  static_kernel->circle_set_stretch_fbl(layer, hstretch, vstretch, hintstr, vintstr, use_hintstr, use_vintstr);
+}
+
+void circle_set_center_offset(int layer, int cx, int cy) {
+  static_kernel->circle_set_center_offset(layer, cx, cy);
+}
+
+void circle_set_src_rect_fbl(int layer, int x, int y, int w, int h) {
+  static_kernel->circle_set_src_rect_fbl(layer, x,y,w,h);
+}
+
+void circle_set_valign_fbl(int layer, int align, int padding) {
+  static_kernel->circle_set_valign_fbl(layer, align, padding);
+}
+
+void circle_set_halign_fbl(int layer, int align, int padding) {
+  static_kernel->circle_set_halign_fbl(layer, align, padding);
+}
+
+void circle_set_padding_fbl(int layer, double lpad, double rpad, double tpad, double bpad) {
+  static_kernel->circle_set_padding_fbl(layer, lpad, rpad, tpad, bpad);
+}
+
+void circle_set_zlayer_fbl(int layer, int zlayer) {
+  static_kernel->circle_set_zlayer_fbl(layer, zlayer);
+}
+
+int circle_get_zlayer_fbl(int layer) {
+  return static_kernel->circle_get_zlayer_fbl(layer);
+}
+
+void circle_find_usb(int (*usb)[3]) {
+  return static_kernel->circle_find_usb(usb);
+}
+
+int circle_mount_usb(int usb) {
+  return static_kernel->circle_mount_usb(usb);
+}
+
+int circle_unmount_usb(int usb) {
+  return static_kernel->circle_unmount_usb(usb);
+}
+
+void circle_find_floppy(int (*flp)[2]) {
+  return static_kernel->circle_find_floppy(flp);
+}
+
+
+
+
+
+
+int circle_floppy_stato(int n) {
+  CDevice *pDev =
+      CDeviceNameService::Get()->GetDevice(n == 0 ? "ufd1" : "ufd2", TRUE);
+  if (pDev == nullptr) {
+    return -3;
+  }
+  int stato = FLOPPY_MEDIA_ERROR;
+  if (!circle_usb_presta()) {
+    return FLOPPY_MEDIA_ERROR;
+  }
+  if (pDev->IOCtl(DEVICE_IOCTL_MEDIA_STATE, &stato) < 0) {
+    stato = FLOPPY_MEDIA_ERROR;
+  }
+  circle_usb_restituisci();
+  return stato;
+}
+
+void circle_set_volume(int value) {
+  static_kernel->circle_set_volume(value);
+}
+
+int circle_get_model() {
+  return static_kernel->circle_get_model();
+}
+
+unsigned circle_get_arm_clock() {
+  return static_kernel->circle_get_arm_clock();
+}
+
+unsigned circle_get_temperature() {
+  return static_kernel->circle_get_temperature();
+}
+
+void circle_cpu_slow(int slow) {
+  static_kernel->circle_cpu_slow(slow);
+}
+
+
+//
+
+
+
+
+
+
+
+//
+
+
+#if RASPPI <= 4
+
+
+
+
+
+#define EXP_GLOBAL_SHUTDOWN     5
+#define PROPTAG_GET_GPIO_CONFIG 0x00030043
+#define PROPTAG_SET_GPIO_CONFIG 0x00038043
+
+struct TPropertyTagGPIOConfig {
+  TPropertyTag Tag;
+  u32 nGPIO;
+  u32 nDirection;
+  u32 nPolarity;
+  u32 nTermEn;
+  u32 nTermPullUp;
+  u32 nState;
+} PACKED;
+
+static void expgpio_out(unsigned nPin, unsigned nState) {
+  CBcmPropertyTags Tags;
+  TPropertyTagGPIOConfig C;
+  memset(&C, 0, sizeof C);
+  C.nGPIO = EXP_GPIO_BASE + nPin;
+
+  Tags.GetTag(PROPTAG_GET_GPIO_CONFIG, &C, sizeof C, 4);
+  C.nGPIO = EXP_GPIO_BASE + nPin;
+  C.nDirection = 1;
+  C.nTermEn = 0;
+  C.nTermPullUp = 0;
+  C.nState = nState;
+  Tags.GetTag(PROPTAG_SET_GPIO_CONFIG, &C, sizeof C, 24);
+}
+
+static void expgpio_set(unsigned nPin, unsigned nState) {
+  CBcmPropertyTags Tags;
+  TPropertyTagGPIOState S;
+  S.nGPIO = EXP_GPIO_BASE + nPin;
+  S.nState = nState;
+  Tags.GetTag(PROPTAG_SET_SET_GPIO_STATE, &S, sizeof S, 8);
+}
+
+#endif
+
+
+
+
+
+
+
+
+
+int circle_ha_il_tasto_power(void) {
+#if RASPPI >= 5
+  return 1;
+#else
+
+
+
+
+
+
+
+
+
+
+  return CMachineInfo::Get()->GetMachineModel() == MachineModel400 ? 1 : 0;
+#endif
+}
+
+
+
+
+
+
+void circle_poweroff(void) {
+#if RASPPI >= 5
+  poweroff();
+#else
+  if (CMachineInfo::Get()->GetMachineModel() == MachineModel400) {
+
+
+
+
+
+    expgpio_out(EXP_GLOBAL_SHUTDOWN, 1);
+    CTimer::SimpleMsDelay(100);
+    expgpio_set(EXP_GLOBAL_SHUTDOWN, 0);
+    CTimer::SimpleMsDelay(100);
+    expgpio_set(EXP_GLOBAL_SHUTDOWN, 1);
+    CTimer::SimpleMsDelay(3000);
+
+
+
+
+
+    return;
+  }
+
+
+
+
+
+
+  PeripheralEntry();
+
+  u32 rsts = read32(ARM_PM_RSTS);
+  rsts &= ARM_PM_RSTS_PART_CLEAR;
+  rsts |= 0x555;
+  write32(ARM_PM_RSTS, ARM_PM_PASSWD | rsts);
+
+  write32(ARM_PM_WDOG, ARM_PM_PASSWD | 10);
+
+  u32 rstc = read32(ARM_PM_RSTC);
+  rstc &= ARM_PM_RSTC_CLEAR;
+  write32(ARM_PM_RSTC, ARM_PM_PASSWD | rstc | ARM_PM_RSTC_REBOOT);
+
+  for (;;);
+#endif
+}
+
+
+
+int circle_power_button_pressed(void) {
+#if RASPPI >= 5
+  return is_power_button_pressed() ? 1 : 0;
+#else
+  return 0;
+#endif
+}
+
+
+
+
+
+
+
+
+unsigned circle_arm_max_mhz(void) {
+  return CCPUThrottle::Get()->GetMaxClockRate() / 1000000;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+static volatile unsigned s_bmc_core_mhz = 0;
+static volatile unsigned s_bmc_v3d_mhz = 0;
+
+unsigned circle_gpu_mhz(int quale, int massimo) {
+  const u32 id = quale ? 5 : CLOCK_ID_CORE;
+  if (!massimo) {
+    const unsigned letta = quale ? s_bmc_v3d_mhz : s_bmc_core_mhz;
+    if (letta != 0) {
+      return letta;
+    }
+    return CMachineInfo::Get()->GetClockRate(id) / 1000000;
+  }
+  CBcmPropertyTags Tags;
+  TPropertyTagClockRate Tag;
+  Tag.nClockId = id;
+  if (Tags.GetTag(PROPTAG_GET_MAX_CLOCK_RATE, &Tag, sizeof Tag, 4)) {
+    return Tag.nRate / 1000000;
+  }
+  return 0;
+}
+
+
+
+unsigned circle_get_gpu_mhz(void) {
+  return s_bmc_core_mhz;
+}
+
+
+
+
+
+int circle_get_local_time(unsigned *secs) {
+  CTimer *timer = CTimer::Get();
+  if (timer->GetUniversalTime() < 1000000000u) {
+    return 0;
+  }
+  *secs = timer->GetLocalTime();
+  return 1;
+}
+
+
+
+
+int circle_board_type(void) {
+  u32 r = CMachineInfo::Get()->GetRevisionRaw();
+  if (!(r & (1U << 23))) {
+    return -1;
+  }
+  return (int)((r >> 4) & 0xFF);
+}
+
+int circle_gpio_enabled() {
+  return static_kernel->circle_gpio_enabled();
+}
+
+int circle_gpio_outputs_enabled() {
+  return static_kernel->circle_gpio_outputs_enabled();
+}
+
+void circle_kernel_core_init_complete(int core) {
+  static_kernel->circle_kernel_core_init_complete(core);
+}
+
+void circle_get_fbl_dimensions(int layer, int *display_w, int *display_h,
+                               int *fb_w, int *fb_h,
+                               int *src_w, int *src_h,
+                               int *dst_w, int *dst_h) {
+  static_kernel->circle_get_fbl_dimensions(layer, display_w, display_h,
+                                           fb_w, fb_h,
+                                           src_w, src_h, dst_w, dst_h);
+}
+
+void circle_get_scaling_params(int display,
+                               int *fbw, int *fbh,
+                               int *sx, int *sy) {
+  static_kernel->circle_get_scaling_params(display, fbw, fbh, sx, sy);
+}
+
+void circle_set_interpolation(int enable) {
+  static_kernel->circle_set_interpolation(enable);
+}
+
+void circle_set_use_shader(int enable) {
+  static_kernel->circle_set_use_shader(enable);
+}
+
+void circle_set_shader_params(const struct bmx_crt_effect_params *params) {
+  if (params != nullptr) {
+    static_kernel->circle_set_shader_params(*params);
+  }
+}
+};
+
+namespace {
+
+long func_to_keycode(int btn_func) {
+   switch (btn_func) {
+      case BTN_ASSIGN_UP:
+         return KEYCODE_Up;
+      case BTN_ASSIGN_DOWN:
+         return KEYCODE_Down;
+      case BTN_ASSIGN_LEFT:
+         return KEYCODE_Left;
+      case BTN_ASSIGN_RIGHT:
+         return KEYCODE_Right;
+      case BTN_ASSIGN_FIRE:
+         return KEYCODE_Return;
+      default:
+         return 0;
+   }
+}
+
+}
+
+#ifndef ARM_ALLOW_MULTI_CORE
+class CKernel::USBPlugAndPlayTask : public CTask {
+public:
+  explicit USBPlugAndPlayTask(CKernel *kernel) : mKernel(kernel) {
+    SetName("usbpnp");
+  }
+
+  void Run(void) override {
+    for (;;) {
+      mKernel->UpdateUSBPlugAndPlay();
+      mKernel->UpdateKeyboardLEDs();
+      CScheduler::Get()->MsSleep(100);
+    }
+  }
+
+private:
+  CKernel *mKernel;
+};
+#endif
+
+CKernel::CKernel(void)
+    : ViceStdioApp("vice"), mViceSound(nullptr),
+#ifndef ARM_ALLOW_MULTI_CORE
+      mUSBPlugAndPlayTask(nullptr),
+#endif
+      mNumJoy(emu_get_num_joysticks()),
+      mVolume(100), mNumCoresComplete(0),
+      mNeedSoundInit(false), mNumSoundChannels(1),
+      mSoundSampleRate(SAMPLE_RATE), mAttesaUsbDa(0), mCambioUsbAudio(0),
+      mDacViaDa(0), mDacRiprova(0), mCanaliAperti(0) {
+  static_kernel = this;
+  memset(key_states, 0, sizeof(key_states));
+  memset(mod_states, 0, sizeof(mod_states));
+  memset(mouse_button_states, 0, sizeof(mouse_button_states));
+  memset(merged_key_states, 0, sizeof(merged_key_states));
+  merged_mod_states = 0;
+
+  // Only used for pins that are used as buttons. See viceapp.h.
+  for (int i = 0; i < NUM_GPIO_PINS; i++) {
+    gpio_debounce_state[i] = BTN_UP;
+    gpio_prev_state[i] = HIGH;
+  }
+  for (int i = 0; i < MAX_USB_DEVICES; i++) {
+    m_pKeyboard[i] = 0;
+    m_pMouse[i] = 0;
+    m_pGamePad[i] = 0;
+
+
+    usb_input_indices[i] = i;
+  }
+  kbdRestoreState = HIGH;
+
+  for (int i = 0; i < 8; i++) {
+    for (int j = 0; j < 8; j++) {
+      kbdMatrixStates[i][j] = HIGH;
+    }
+  }
+
+  fbl[FB_LAYER_VIC].SetLayer(0);
+  fbl[FB_LAYER_VIC].SetTransparency(false);
+
+  fbl[FB_LAYER_VDC].SetLayer(1);
+  fbl[FB_LAYER_VDC].SetTransparency(false);
+
+  fbl[FB_LAYER_STATUS].SetLayer(2);
+  fbl[FB_LAYER_STATUS].SetTransparency(true);
+
+  fbl[FB_LAYER_UI].SetLayer(3);
+  fbl[FB_LAYER_UI].SetTransparency(true);
+
+  if (circle_gpio_outputs_enabled()) {
+     raspi_userport_enabled = 1;
+  }
+}
+
+static void bmc_panico(void);
+
+bool CKernel::Initialize(void) {
+  if (!ViceStdioApp::Initialize()) {
+    return false;
+  }
+
+  CLogger::Get()->RegisterPanicHandler(bmc_panico);
+
+
+
+
+  return true;
+}
+
+static void exec_button_func(int button_func, int is_press, int is_ui) {
+   // KEEP THIS IN SYNC WITH kbd.c
+   switch (button_func) {
+     case BTN_ASSIGN_MENU:
+       if (is_press) {
+          emu_key_pressed(KEYCODE_F12);
+       } else {
+          emu_key_released(KEYCODE_F12);
+       }
+       break;
+     case BTN_ASSIGN_WARP:
+     case BTN_ASSIGN_SWAP_PORTS:
+     case BTN_ASSIGN_STATUS_TOGGLE:
+     case BTN_ASSIGN_TAPE_MENU:
+     case BTN_ASSIGN_CART_MENU:
+     case BTN_ASSIGN_CART_FREEZE:
+     case BTN_ASSIGN_RESET_MENU:
+     case BTN_ASSIGN_RESET_HARD:
+     case BTN_ASSIGN_RESET_SOFT:
+     case BTN_ASSIGN_ACTIVE_DISPLAY:
+     case BTN_ASSIGN_PIP_LOCATION:
+     case BTN_ASSIGN_PIP_SWAP:
+     case BTN_ASSIGN_40_80_COLUMN:
+     case BTN_ASSIGN_VKBD_TOGGLE:
+     case BTN_ASSIGN_FLUSH_DISK:
+       if (is_press) {
+          emu_quick_func_interrupt(button_func);
+       }
+       break;
+     case BTN_ASSIGN_CUSTOM_KEY_1:
+     case BTN_ASSIGN_CUSTOM_KEY_2:
+     case BTN_ASSIGN_CUSTOM_KEY_3:
+     case BTN_ASSIGN_CUSTOM_KEY_4:
+     case BTN_ASSIGN_CUSTOM_KEY_5:
+     case BTN_ASSIGN_CUSTOM_KEY_6:
+        if (is_press) {
+           emu_key_pressed(
+               emu_get_key_binding(button_func - BTN_ASSIGN_CUSTOM_KEY_1));
+        } else {
+           emu_key_released(
+               emu_get_key_binding(button_func - BTN_ASSIGN_CUSTOM_KEY_1));
+        }
+        break;
+     case BTN_ASSIGN_RUN_STOP_BACK:
+       if (is_ui) {
+         emu_ui_key_interrupt(KEYCODE_Escape, is_press);
+       } else {
+         if (is_press) {
+            emu_key_pressed(KEYCODE_Escape);
+         } else {
+            emu_key_released(KEYCODE_Escape);
+         }
+       }
+       break;
+     // Only do direction/fire button assignments for UI, joy is handled
+     // in circle_add_usb_values seperately.
+     case BTN_ASSIGN_UP:
+     case BTN_ASSIGN_DOWN:
+     case BTN_ASSIGN_LEFT:
+     case BTN_ASSIGN_RIGHT:
+     case BTN_ASSIGN_FIRE:
+       if (is_ui) {
+         emu_ui_key_interrupt(func_to_keycode(button_func), is_press);
+       }
+       break;
+     default:
+       break;
+   }
+}
+
+// KEEP THIS IN SYNC WITH kbd.c
+static void handle_button_function(bool is_ui, int device, unsigned buttons) {
+  int button_num = 0;
+
+  int button_func;
+  int is_press;
+
+  while (emu_button_function(device, button_num, buttons,
+                             &button_func, &is_press) >= 0) {
+    exec_button_func(button_func, is_press, is_ui);
+    button_num++;
+  }
+}
+
+#if 0 // COUNT INVOCATIONS PER SECOND
+static unsigned long entry_delay = 5 * TICKS_PER_SECOND;
+static unsigned long entry_start = 0;
+static long invoked;
+#endif
+
+// Interrupt handler. Make this quick.
+void CKernel::GamePadStatusHandler(unsigned nDeviceIndex,
+                                   const TGamePadState *pState) {
+
+#if 0 // COUNT INVOCATIONS PER SECOND
+invoked++;
+if (static_kernel->circle_get_ticks() - entry_start >= entry_delay) {
+   printf ("%ld\n", invoked / 5);
+   invoked = 0;
+   entry_start = static_kernel->circle_get_ticks();
+}
+#endif
+
+  static int dpad_to_joy[8] = {0x01, 0x09, 0x08, 0x0a, 0x02, 0x06, 0x04, 0x05};
+
+  static unsigned int prev_buttons[MAX_USB_DEVICES] = {0, 0, 0, 0};
+  static int prev_dpad[MAX_USB_DEVICES] = {8, 8, 8, 8};
+  static int prev_axes_dirs[MAX_USB_DEVICES][4] = {{0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}, {0, 0, 0, 0}};
+  static int prev_xaxes_values[MAX_USB_DEVICES] = {0,0,0,0};
+  static int prev_yaxes_values[MAX_USB_DEVICES] = {0,0,0,0};
+
+  if (nDeviceIndex >= MAX_USB_DEVICES)
+    return;
+
+  if (emu_wants_raw_usb()) {
+    // Send the raw usb data and we're done.
+    int axes[16];
+    for (int i = 0; i < pState->naxes; i++) {
+      axes[i] = pState->axes[i].value;
+    }
+    emu_set_raw_usb(nDeviceIndex, pState->buttons, pState->hats, axes);
+    return;
+  }
+
+  int ui_activated = emu_is_ui_activated();
+
+  unsigned b = pState->buttons;
+
+  // usb_pref is the value of the usb pref menu item
+  int usb_pref;
+  int axis_x;
+  int axis_y;
+  float thresh_x;
+  float thresh_y;
+  emu_get_usb_pref(nDeviceIndex, &usb_pref, &axis_x, &axis_y, &thresh_x,
+                   &thresh_y);
+
+  int max_index = axis_x;
+  if (axis_y > max_index)
+    max_index = axis_y;
+
+  if ((usb_pref == USB_PREF_HAT || usb_pref == USB_PREF_HAT_AND_PADDLES) &&
+        pState->nhats > 0) {
+    int dpad = pState->hats[0];
+    bool has_changed =
+        (prev_buttons[nDeviceIndex] != b) || (prev_dpad[nDeviceIndex] != dpad);
+
+    if (usb_pref == USB_PREF_HAT_AND_PADDLES) {
+       int xval = pState->axes[axis_x].value;
+       int yval = pState->axes[axis_y].value;
+       has_changed |=
+          prev_xaxes_values[nDeviceIndex] != xval ||
+	   prev_yaxes_values[nDeviceIndex] != yval;
+       prev_xaxes_values[nDeviceIndex] = xval;
+       prev_yaxes_values[nDeviceIndex] = yval;
+    }
+
+    if (has_changed) {
+      int old_dpad = prev_dpad[nDeviceIndex];
+      prev_buttons[nDeviceIndex] = b;
+      prev_dpad[nDeviceIndex] = dpad;
+
+      // If the UI is activated, route to the menu.
+      if (ui_activated) {
+        if (dpad == 0 && old_dpad != 0) {
+          emu_ui_key_interrupt(KEYCODE_Up, 1);
+        } else if (dpad != 0 && old_dpad == 0) {
+          emu_ui_key_interrupt(KEYCODE_Up, 0);
+        }
+        if (dpad == 4 && old_dpad != 4) {
+          emu_ui_key_interrupt(KEYCODE_Down, 1);
+        } else if (dpad != 4 && old_dpad == 4) {
+          emu_ui_key_interrupt(KEYCODE_Down, 0);
+        }
+        if (dpad == 6 && old_dpad != 6) {
+          emu_ui_key_interrupt(KEYCODE_Left, 1);
+        } else if (dpad != 6 && old_dpad == 6) {
+          emu_ui_key_interrupt(KEYCODE_Left, 0);
+        }
+        if (dpad == 2 && old_dpad != 2) {
+          emu_ui_key_interrupt(KEYCODE_Right, 1);
+        } else if (dpad != 2 && old_dpad == 2) {
+          emu_ui_key_interrupt(KEYCODE_Right, 0);
+        }
+        handle_button_function(true, nDeviceIndex, b);
+        return;
+      }
+
+      handle_button_function(false, nDeviceIndex, b);
+
+      int value = 0;
+      if (dpad < 8)
+        value |= dpad_to_joy[dpad];
+      value |= emu_add_button_values(nDeviceIndex, b);
+
+      // Handle axes as paddles here. This will potentially overwrite
+      // 2nd/3rd button configs from the call above if they were
+      // assigned.  The UI does not prevent the user from assigning
+      // potx/poty as buttons and specifying axes as paddles at the same
+      // time.
+      if (usb_pref == USB_PREF_HAT_AND_PADDLES && pState->naxes > max_index) {
+         int minx = pState->axes[axis_x].minimum;
+         int maxx = pState->axes[axis_x].maximum;
+         int miny = pState->axes[axis_y].minimum;
+         int maxy = pState->axes[axis_y].maximum;
+         int distx = maxx - minx;
+         int disty = maxy - miny;
+         double scalex = distx / 255.0d;
+         double scaley = disty / 255.0d;
+         unsigned char valuex = (pState->axes[axis_x].value - minx) / scalex;
+         unsigned char valuey = (pState->axes[axis_y].value - miny) / scaley;
+         value &= ~ 0x1fffe0; // null out potx and poty
+         value |= (valuex << 5);
+         value |= (valuey << 13);
+      }
+
+      emu_set_joy_usb_interrupt(nDeviceIndex, value);
+    }
+
+
+  } else if (usb_pref == USB_PREF_ANALOG && pState->naxes > max_index) {
+    // TODO: Do this just once at init
+    int minx = pState->axes[axis_x].minimum;
+    int maxx = pState->axes[axis_x].maximum;
+    int miny = pState->axes[axis_y].minimum;
+    int maxy = pState->axes[axis_y].maximum;
+    int tx = (maxx - minx) / 2 * thresh_x;
+    int mx = (maxx + minx) / 2;
+    int ty = (maxy - miny) / 2 * thresh_y;
+    int my = (maxy + miny) / 2;
+    int a_left = pState->axes[axis_x].value < mx - tx;
+    int a_right = pState->axes[axis_x].value > mx + tx;
+    int a_up = pState->axes[axis_y].value < my - ty;
+    int a_down = pState->axes[axis_y].value > my + ty;
+    bool has_changed = (prev_buttons[nDeviceIndex] != b) ||
+                       (prev_axes_dirs[nDeviceIndex][0] != a_up) ||
+                       (prev_axes_dirs[nDeviceIndex][1] != a_down) ||
+                       (prev_axes_dirs[nDeviceIndex][2] != a_left) ||
+                       (prev_axes_dirs[nDeviceIndex][3] != a_right);
+    if (has_changed) {
+      int prev_a_up = prev_axes_dirs[nDeviceIndex][0];
+      int prev_a_down = prev_axes_dirs[nDeviceIndex][1];
+      int prev_a_left = prev_axes_dirs[nDeviceIndex][2];
+      int prev_a_right = prev_axes_dirs[nDeviceIndex][3];
+      prev_axes_dirs[nDeviceIndex][0] = a_up;
+      prev_axes_dirs[nDeviceIndex][1] = a_down;
+      prev_axes_dirs[nDeviceIndex][2] = a_left;
+      prev_axes_dirs[nDeviceIndex][3] = a_right;
+      prev_buttons[nDeviceIndex] = b;
+      // If the UI is activated, route to the menu.
+
+      if (ui_activated) {
+        if (a_up && !prev_a_up) {
+          emu_ui_key_interrupt(KEYCODE_Up, 1);
+        } else if (!a_up && prev_a_up) {
+          emu_ui_key_interrupt(KEYCODE_Up, 0);
+        }
+        if (a_down && !prev_a_down) {
+          emu_ui_key_interrupt(KEYCODE_Down, 1);
+        } else if (!a_down && prev_a_down) {
+          emu_ui_key_interrupt(KEYCODE_Down, 0);
+        }
+        if (a_left && !prev_a_left) {
+          emu_ui_key_interrupt(KEYCODE_Left, 1);
+        } else if (!a_left && prev_a_left) {
+          emu_ui_key_interrupt(KEYCODE_Left, 0);
+        }
+        if (a_right && !prev_a_right) {
+          emu_ui_key_interrupt(KEYCODE_Right, 1);
+        } else if (!a_right && prev_a_right) {
+          emu_ui_key_interrupt(KEYCODE_Right, 0);
+        }
+        handle_button_function(true, nDeviceIndex, b);
+        return;
+      }
+
+      handle_button_function(false, nDeviceIndex, b);
+
+      int value = 0;
+      if (a_left)
+        value |= 0x4;
+      if (a_right)
+        value |= 0x8;
+      if (a_up)
+        value |= 0x1;
+      if (a_down)
+        value |= 0x2;
+      value |= emu_add_button_values(nDeviceIndex, b);
+      emu_set_joy_usb_interrupt(nDeviceIndex, value);
+    }
+  } else if (prev_buttons[nDeviceIndex] != b) {
+    prev_buttons[nDeviceIndex] = b;
+    handle_button_function(ui_activated, nDeviceIndex, b);
+
+    if (!ui_activated) {
+      emu_set_joy_usb_interrupt(nDeviceIndex,
+                                emu_add_button_values(nDeviceIndex, b));
+    }
+  }
+}
+
+
+
+void CKernel::MouseRemovedHandler(CDevice *pDevice, void *pContext) {
+  if (static_kernel) {
+    for (unsigned i = 0; i < MAX_USB_DEVICES; i++) {
+      if (static_kernel->m_pMouse[i] == pDevice) {
+
+
+        MouseStatusHandler(0, 0, 0, 0, &usb_input_indices[i]);
+        static_kernel->m_pMouse[i] = 0;
+      }
+    }
+  }
+  CLogger::Get()->Write("kernel", LogNotice, "Mouse removed.");
+}
+void CKernel::KeyRemovedHandler(CDevice *pDevice, void *pContext) {
+  if (static_kernel) {
+    static const unsigned char nessun_tasto[6] = {0, 0, 0, 0, 0, 0};
+    for (unsigned i = 0; i < MAX_USB_DEVICES; i++) {
+      if (static_kernel->m_pKeyboard[i] == pDevice) {
+
+        KeyStatusHandlerRaw(0, nessun_tasto, &usb_input_indices[i]);
+        static_kernel->m_pKeyboard[i] = 0;
+      }
+    }
+  }
+  CLogger::Get()->Write("kernel", LogNotice, "Keyboard removed.");
+}
+void CKernel::GamePadRemovedHandler(CDevice *pDevice, void *pContext) {
+  // Just let the update scan clear nulls
+  if (static_kernel) {
+     for (int i=0; i<MAX_USB_DEVICES; i++) {
+         if (static_kernel->m_pGamePad[i] == pDevice) {
+             static_kernel->m_pGamePad[i] = 0;
+             CLogger::Get()->Write("kernel", LogNotice, "Gamepad %d removed.", i);
+         }
+     }
+  }
+}
+
+void CKernel::SetupUSBKeyboard() {
+  for (unsigned i = 0; i < MAX_USB_DEVICES; i++) {
+    if (m_pKeyboard[i] == 0) {
+      CString nome;
+      nome.Format("ukbd%u", i + 1);
+      m_pKeyboard[i] =
+          (CUSBKeyboardDevice *)mDeviceNameService.GetDevice(nome, FALSE);
+      if (m_pKeyboard[i] != 0) {
+        m_pKeyboard[i]->RegisterRemovedHandler(KeyRemovedHandler);
+        m_pKeyboard[i]->RegisterKeyStatusHandlerRaw(KeyStatusHandlerRaw, FALSE,
+                                                    &usb_input_indices[i]);
+
+        kbd_led_da_mandare = true;
+        CLogger::Get()->Write("kernel", LogNotice,
+                              "Keyboard %u connected and registered.", i + 1);
+      }
+    }
+  }
+}
+
+void CKernel::SetupUSBMouse() {
+  for (unsigned i = 0; i < MAX_USB_DEVICES; i++) {
+    if (m_pMouse[i] == 0) {
+      CString nome;
+      nome.Format("mouse%u", i + 1);
+      m_pMouse[i] = (CMouseDevice *)mDeviceNameService.GetDevice(nome, FALSE);
+      if (m_pMouse[i] != 0) {
+        m_pMouse[i]->RegisterRemovedHandler(MouseRemovedHandler);
+        m_pMouse[i]->RegisterStatusHandler(MouseStatusHandler,
+                                           &usb_input_indices[i]);
+        CLogger::Get()->Write("kernel", LogNotice,
+                              "Mouse %u connected and registered.", i + 1);
+      }
+    }
+  }
+}
+
+
+
+
+
+
+
+extern "C" int circle_gamepad_descriptor(int device, unsigned char *buf,
+                                         int max) {
+  if (device < 0 || device >= MAX_USB_DEVICES || buf == nullptr || max <= 0) {
+    return 0;
+  }
+
+  if (static_kernel == nullptr) {
+    return 0;
+  }
+
+  CUSBGamePadDevice *pPad = static_kernel->GetGamePad(device);
+  if (pPad == nullptr) {
+    return 0;
+  }
+
+  u16 usLength = 0;
+  const u8 *pDesc = pPad->GetReportDescriptor(&usLength);
+  if (pDesc == nullptr || usLength == 0) {
+    return 0;
+  }
+
+  int n = (int) usLength;
+  if (n > max) {
+    n = max;
+  }
+  memcpy(buf, pDesc, (size_t) n);
+
+  return n;
+}
+
+void CKernel::SetupUSBGamepads() {
+  unsigned num_pads = 0;
+  int num_buttons[MAX_USB_DEVICES] = {0, 0, 0, 0};
+  int num_axes[MAX_USB_DEVICES] = {0, 0, 0, 0};
+  int num_hats[MAX_USB_DEVICES] = {0, 0, 0, 0};
+
+  for (unsigned nDevice = 1; nDevice <= MAX_USB_DEVICES; nDevice++) {
+    if (m_pGamePad[nDevice-1] != 0) {
+      const TGamePadState *pState = m_pGamePad[nDevice-1]->GetInitialState();
+      num_axes[num_pads] = pState->naxes;
+      num_hats[num_pads] = pState->nhats;
+      num_buttons[num_pads] = pState->nbuttons;
+      num_pads++;
+      continue;
+    }
+
+    CString DeviceName;
+    DeviceName.Format("upad%u", nDevice);
+    m_pGamePad[nDevice-1] = (CUSBGamePadDevice *)mDeviceNameService.GetDevice(DeviceName, FALSE);
+    
+    if (m_pGamePad[nDevice-1] != 0) {
+      CString *vendor = m_pGamePad[nDevice-1]->GetDevice()->GetName(DeviceNameVendor);
+      unsigned profile = USB_GAMEPAD_DEFAULT_PROFILE_NONE;
+      if (vendor != 0) {
+        profile = usb_gamepad_default_profile_for_vendor((const char *) *vendor);
+        CLogger::Get()->Write("kernel", LogNotice,
+                              "Gamepad %s uses mapping profile %u",
+                              (const char *) *vendor, profile);
+        delete vendor;
+      }
+      emu_set_usb_gamepad_mapping_profile(
+          nDevice - 1,
+          profile);
+      emu_set_usb_gamepad_display_name(
+        nDevice - 1,
+        m_pGamePad[nDevice-1]->GetProperty(CDevice::PropertyProduct));
+      m_pGamePad[nDevice-1]->RegisterRemovedHandler(GamePadRemovedHandler);
+      m_pGamePad[nDevice-1]->RegisterStatusHandler(GamePadStatusHandler);
+      CLogger::Get()->Write("kernel", LogNotice, "Gamepad %d connected and registered.", nDevice);
+
+      const TGamePadState *pState = m_pGamePad[nDevice-1]->GetInitialState();
+      num_axes[num_pads] = pState->naxes;
+      num_hats[num_pads] = pState->nhats;
+      num_buttons[num_pads] = pState->nbuttons;
+      num_pads++;
+    }
+  }
+
+  // Tell the emulator what we found
+  emu_set_gamepad_info(num_pads, num_buttons, num_axes, num_hats);
+}
+
+
+
+
+
+void CKernel::UpdateKeyboardLEDs() {
+  if (!kbd_led_da_mandare) {
+    return;
+  }
+  kbd_led_da_mandare = false;
+
+  unsigned char stato = kbd_led_voluto;
+  for (unsigned i = 0; i < MAX_USB_DEVICES; i++) {
+    if (m_pKeyboard[i] != 0) {
+      m_pKeyboard[i]->SetLEDs(stato);
+    }
+  }
+}
+
+
+
+
+extern "C" unsigned long circle_memoria_libera(void) {
+  return (unsigned long)CMemorySystem::Get()->GetHeapFreeSpace(HEAP_LOW);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static volatile int usb_chiesta_dal_core1 = 0;
+static volatile int usb_ferma_sul_core0 = 0;
+
+extern "C" int circle_usb_presta(void) {
+#ifdef ARM_ALLOW_MULTI_CORE
+  unsigned long inizio;
+
+  if (CMultiCoreSupport::ThisCore() == 0) {
+    return 1;
+  }
+  usb_chiesta_dal_core1 = 1;
+  DataMemBarrier();
+  int dove_prima = bmc_dove;
+  bmc_dove = DOVE_PRESTITO_USB;
+  inizio = circle_get_ticks();
+  while (!usb_ferma_sul_core0) {
+    if (circle_get_ticks() - inizio > 2000000UL) {
+
+      usb_chiesta_dal_core1 = 0;
+      DataMemBarrier();
+      bmc_dove = dove_prima;
+      return 0;
+    }
+  }
+  DataMemBarrier();
+  bmc_dove = dove_prima;
+#endif
+  return 1;
+}
+
+extern "C" void circle_usb_restituisci(void) {
+#ifdef ARM_ALLOW_MULTI_CORE
+  if (CMultiCoreSupport::ThisCore() == 0) {
+    return;
+  }
+  DataMemBarrier();
+  usb_chiesta_dal_core1 = 0;
+#endif
+}
+
+void CKernel::UpdateUSBPlugAndPlay() {
+  if (mUSBHCII.UpdatePlugAndPlay()) {
+    SetupUSBKeyboard();
+    SetupUSBMouse();
+    SetupUSBGamepads();
+
+
+
+    mCambioUsbAudio = 1;
+    DataMemBarrier();
+  }
+}
+
+
+
+
+
+
+
+extern "C" {
+volatile unsigned long bmc_giri[4] = {0, 0, 0, 0};
+
+volatile unsigned long bmc_sid3_lavori = 0;
+volatile int bmc_dove = 0;
+volatile int bmc_scheda_in_uso = 0;
+volatile int bmc_scheda_core0 = 0;
+
+
+
+
+
+
+
+
+volatile int bmc_vice_partito = 0;
+volatile int bmc_dopo_usb_da_scrivere = 0;
+volatile int bmc_usb_pronta = 0;
+volatile int bmc_core0_nella_scheda = 0;
+const char *volatile bmc_core0_nella_scheda_cosa = nullptr;
+volatile int bmc_lucchetto = 0;
+volatile int bmc_blocco_scritto = 0;
+const char *volatile bmc_scheda_cosa = nullptr;
+const char *volatile bmc_scheda_file = nullptr;
+volatile unsigned long bmc_scheda_da = 0;
+
+
+
+volatile unsigned long bmc_scheda_settori = 0;
+
+
+
+volatile int bmc_panico_core = 0;
+extern char bmc_assert_testo[];
+extern char bmc_assert_pila[];
+extern const char *volatile bmc_smb_fase;
+
+
+
+const char *volatile bmc_core0_dove = "avvio del kernel";
+volatile int bmc_lampeggia = 0;
+}
+
+static const char *nome_dove(int d) {
+  switch (d) {
+  case DOVE_EMULA:        return "emulazione (tra due fotogrammi)";
+  case DOVE_SINCRONIA:    return "fine fotogramma, sincronia";
+  case DOVE_ATTESA:       return "attesa del tempo giusto (sleep)";
+  case DOVE_DOPO:         return "dopo la sincronia (tasti, joystick, menu rapidi)";
+  case DOVE_MENU:         return "menu aperto";
+  case DOVE_SCHERMO:      return "presentazione dello schermo (scalatore)";
+  case DOVE_PRESTITO_USB: return "attesa della USB dal core 0";
+  case DOVE_PAUSA_SID:    return "brano del SID in pausa (ALT+P)";
+  default:                return "non ancora partito";
+  }
+}
+
+extern "C" void fbl_scatola_a_schermo(const char *const *righe, int n);
+extern "C" unsigned bmc_ultime_righe(char *d, unsigned spazio);
+extern "C" void fbl_scatola_via(void);
+
+
+
+
+
+
+
+
+#define BLOCCO_NON_ANCORA 0
+#define BLOCCO_SCRITTO 1
+#define BLOCCO_ERRORE 2
+
+
+
+
+
+
+
+
+
+static const char *nome_dove_en(int d) {
+  switch (d) {
+  case DOVE_EMULA:        return "emulation (between two frames)";
+  case DOVE_SINCRONIA:    return "end of frame, sync";
+  case DOVE_ATTESA:       return "waiting for the right time (sleep)";
+  case DOVE_DOPO:         return "after the sync (keys, joystick, hotkeys)";
+  case DOVE_MENU:         return "menu open";
+  case DOVE_SCHERMO:      return "screen output (scaler)";
+  case DOVE_PRESTITO_USB: return "waiting for the USB from core 0";
+  case DOVE_PAUSA_SID:    return "SID tune paused (ALT+P)";
+  default:                return "not started yet";
+  }
+}
+
+static void scatola_a_schermo(unsigned long ora, unsigned long fermo_da,
+                              unsigned long suono_prima,
+                              unsigned long schermo_prima, int blocco) {
+  static char r[24][80];
+  static const char *righe[24];
+  int n = 0;
+  const int dentro = bmc_scheda_in_uso > 0;
+
+  snprintf(r[n++], sizeof(r[0]), "*** BMC64-NG HAS STOPPED ***");
+  r[n++][0] = '\0';
+  if (bmc_panico_core != 0) {
+    snprintf(r[n++], sizeof(r[0]), "Circle panic on core %d",
+             bmc_panico_core);
+    if (bmc_assert_testo[0] != '\0') {
+      snprintf(r[n++], sizeof(r[0]), "assert    : %.58s", bmc_assert_testo);
+    }
+  }
+  snprintf(r[n++], sizeof(r[0]), "emulator  : core 1 stopped for %lu s",
+           (ora - fermo_da) / 1000000UL);
+  snprintf(r[n++], sizeof(r[0]), "where     : %.58s",
+           nome_dove_en(bmc_dove));
+  if (dentro) {
+    const char *cosa = bmc_scheda_cosa;
+    const char *file = bmc_scheda_file;
+    snprintf(r[n++], sizeof(r[0]), "card      : BUSY for %lu ms, %lu sectors",
+             (ora - bmc_scheda_da) / 1000UL, bmc_scheda_settori);
+    snprintf(r[n++], sizeof(r[0]), "function  : %.20s",
+             cosa != nullptr ? cosa : "?");
+    snprintf(r[n++], sizeof(r[0]), "file      : %.58s",
+             file != nullptr ? file : "-");
+  } else {
+    snprintf(r[n++], sizeof(r[0]), "card      : idle");
+  }
+  snprintf(r[n++], sizeof(r[0]), "cores 2, 3: +%lu and +%lu loops",
+           bmc_giri[2] - suono_prima, bmc_giri[3] - schermo_prima);
+  snprintf(r[n++], sizeof(r[0]), "lock      : %s, USB to core 1: %s",
+           bmc_lucchetto == 0 ? "free"
+                              : (bmc_lucchetto == 1 ? "core 0"
+                                 : (bmc_lucchetto == 2 ? "core 1" : "other")),
+           usb_chiesta_dal_core1 ? "yes" : "no");
+  snprintf(r[n++], sizeof(r[0]), "%s",
+           blocco == BLOCCO_SCRITTO ? "BLOCCO.TXT: written to the SD card"
+           : blocco == BLOCCO_ERRORE ? "BLOCCO.TXT: WRITE ERROR"
+           : dentro ? "BLOCCO.TXT: not written, the SD card is busy"
+                    : "BLOCCO.TXT: being written...");
+  r[n++][0] = '\0';
+  snprintf(r[n++], sizeof(r[0]), "PLEASE HELP US FIX THIS BUG:");
+  snprintf(r[n++], sizeof(r[0]),
+           "photograph this screen and open an issue");
+  snprintf(r[n++], sizeof(r[0]), "at github.com/lroby74/BMC64-NG/issues");
+  snprintf(r[n++], sizeof(r[0]),
+           "attaching BLOCCO*.TXT, BMC64-DIAG.TXT and");
+  snprintf(r[n++], sizeof(r[0]),
+           "PASSI*.TXT from the SD card: they tell us");
+  snprintf(r[n++], sizeof(r[0]), "where it stopped, so we can fix it.");
+  snprintf(r[n++], sizeof(r[0]), "Then switch off.");
+  for (int i = 0; i < n; i++) {
+    righe[i] = r[i];
+  }
+  fbl_scatola_a_schermo(righe, n);
+}
+
+
+
+
+
+
+
+
+
+
+static void bmc_panico(void) {
+  const unsigned c = CMultiCoreSupport::ThisCore();
+  if (c == 0) {
+    return;
+  }
+  bmc_panico_core = (int)c;
+  DataSyncBarrier();
+  for (;;) {
+    asm volatile("wfe");
+  }
+}
+
+
+
+
+
+
+
+
+
+static volatile unsigned s_bmc_temperatura = 0;
+static volatile unsigned s_bmc_arm_hz = 0;
+
+static void bmc_sensori_aggiorna(void) {
+  static unsigned long letti = 0;
+  const unsigned long ora = circle_get_ticks();
+  if (letti != 0 && ora - letti < 1000000UL) {
+    return;
+  }
+  letti = ora;
+  s_bmc_temperatura = CCPUThrottle::Get()->GetTemperature();
+  s_bmc_arm_hz = CMachineInfo::Get()->GetClockRate(CLOCK_ID_ARM);
+
+  s_bmc_core_mhz = CMachineInfo::Get()->GetClockRate(CLOCK_ID_CORE) / 1000000;
+  s_bmc_v3d_mhz = CMachineInfo::Get()->GetClockRate(5) / 1000000;
+}
+
+static void cane_da_guardia(void) {
+  static unsigned long controllato = 0;
+  static unsigned long giri_visti = 0;
+  static unsigned long fermo_da = 0;
+  static unsigned long suono_prima = 0, schermo_prima = 0;
+  static unsigned long settori_visti = 0;
+  static int scritto = 0;
+  static int a_schermo = 0;
+  unsigned long ora = circle_get_ticks();
+
+  if (ora - controllato < 1000000UL) {
+    return;
+  }
+  controllato = ora;
+  const int panico = bmc_panico_core != 0;
+
+
+
+
+
+
+
+
+  if (!panico && bmc_dove == DOVE_MENU) {
+    giri_visti = bmc_giri[1];
+    fermo_da = ora;
+    scritto = 0;
+    if (a_schermo) {
+      a_schermo = 0;
+      bmc_lampeggia = 0;
+      fbl_scatola_via();
+    }
+    return;
+  }
+  if (!panico && bmc_giri[1] != giri_visti) {
+    giri_visti = bmc_giri[1];
+    fermo_da = ora;
+    suono_prima = bmc_giri[2];
+    schermo_prima = bmc_giri[3];
+    scritto = 0;
+    if (a_schermo) {
+      a_schermo = 0;
+      bmc_lampeggia = 0;
+      fbl_scatola_via();
+    }
+    return;
+  }
+
+
+
+
+
+
+
+
+
+  unsigned long settori = bmc_scheda_settori;
+  if (!panico && settori != settori_visti) {
+    settori_visti = settori;
+    if (bmc_scheda_in_uso) {
+      fermo_da = ora;
+      scritto = 0;
+      if (a_schermo) {
+        a_schermo = 0;
+        bmc_lampeggia = 0;
+        fbl_scatola_via();
+      }
+      return;
+    }
+  }
+
+
+
+
+
+
+  if (panico) {
+    if (fermo_da == 0) {
+      fermo_da = ora;
+    }
+  } else if (giri_visti == 0) {
+    if (!bmc_vice_partito) {
+      return;
+    }
+    if (fermo_da == 0) {
+      fermo_da = ora;
+      return;
+    }
+    if (ora - fermo_da < 20000000UL) {
+      return;
+    }
+  } else if (ora - fermo_da < 10000000UL) {
+    return;
+  }
+  if (!a_schermo) {
+    a_schermo = 1;
+    bmc_lampeggia = 1;
+    scatola_a_schermo(ora, fermo_da, suono_prima, schermo_prima,
+                      BLOCCO_NON_ANCORA);
+  }
+  if (scritto) {
+    return;
+  }
+
+
+
+  bmc_scheda_core0 = 1;
+  DataMemBarrier();
+  if (bmc_scheda_in_uso) {
+    bmc_scheda_core0 = 0;
+    DataMemBarrier();
+    return;
+  }
+  static char t[6144];
+  int n = snprintf(t, sizeof(t),
+      "LA MACCHINA SI E' FERMATA.\r\n"
+      "Lo scrive il core 0, che e' ancora vivo: il core 1 (l'emulatore)\r\n"
+      "non avanza piu'. Se la macchina e' ripartita da sola era solo\r\n"
+      "un'attesa lunga, e PASSI.TXT lo dice.\r\n\r\n"
+      "ora dall'accensione : %lu ms\r\n"
+      "fermo da            : %lu ms\r\n"
+      "dove era il core 1  : %s (%d)\r\n"
+      "giri del core 1     : %lu\r\n"
+      "core 2 (suono)      : %lu giri, +%lu da quando il core 1 e' fermo\r\n"
+      "core 3 (schermo)    : %lu giri, +%lu da quando il core 1 e' fermo\r\n"
+      "lucchetto di Circle : %s\r\n"
+      "USB chiesta dal c.1 : %s\r\n",
+      ora / 1000, (ora - fermo_da) / 1000,
+      nome_dove(bmc_dove), bmc_dove, giri_visti,
+      bmc_giri[2], bmc_giri[2] - suono_prima,
+      bmc_giri[3], bmc_giri[3] - schermo_prima,
+      bmc_lucchetto == 0 ? "libero"
+                         : (bmc_lucchetto == 1 ? "preso dal core 0"
+                            : (bmc_lucchetto == 2 ? "preso dal core 1"
+                               : "preso da un altro core")),
+      usb_chiesta_dal_core1 ? "si" : "no");
+  if (n > 0 && n < (int)sizeof(t) - 256 && panico &&
+      bmc_assert_testo[0] != '\0') {
+    n += snprintf(t + n, sizeof(t) - n, "ASSERT FALLITO      : %s\r\n",
+                  bmc_assert_testo);
+
+
+
+    if (bmc_assert_pila[0] != '\0' && n < (int)sizeof(t) - 160) {
+      n += snprintf(t + n, sizeof(t) - n, "pila dell'assert    : %s\r\n",
+                    bmc_assert_pila);
+    }
+  }
+  if (n > 0 && n < (int)sizeof(t) - 128 && bmc_smb_fase != nullptr) {
+    n += snprintf(t + n, sizeof(t) - n, "condivisione        : %s\r\n",
+                  (const char *)bmc_smb_fase);
+  }
+
+
+  if (n > 0 && n < (int)sizeof(t) - 64) {
+    n += snprintf(t + n, sizeof(t) - n, "%s\r\nle ultime righe stampate "
+                  "(ms dall'accensione, core):\r\n",
+                  giri_visti == 0 ? "\r\nNESSUN FOTOGRAMMA ANCORA: fermo "
+                                    "nell'avvio del VICE.\r\n" : "");
+    if (n < (int)sizeof(t)) {
+      n += (int)bmc_ultime_righe(t + n, (unsigned)(sizeof(t) - n));
+    }
+  }
+
+
+  if (panico && n > 0 && n < (int)sizeof(t) - 128) {
+    static char reg[LOGGER_BUFSIZE];
+    n += snprintf(t + n, sizeof(t) - n,
+                  "\r\nPANICO DI CIRCLE SUL CORE %d. Gli ultimi messaggi "
+                  "di Circle:\r\n", bmc_panico_core);
+    const int m = CLogger::Get()->Read(reg, sizeof(reg), FALSE);
+    for (int i = m > 1800 ? m - 1800 : 0;
+         i < m && n < (int)sizeof(t) - 3; i++) {
+      const char ch = reg[i];
+      if (ch == '\n') {
+        t[n++] = '\r';
+        t[n++] = '\n';
+      } else if (ch >= 32 && ch < 127) {
+        t[n++] = ch;
+      }
+    }
+  }
+  FIL fb;
+  int esito = BLOCCO_ERRORE;
+  if (f_open(&fb, "/BLOCCO.TXT", FA_WRITE | FA_CREATE_ALWAYS) == FR_OK) {
+    UINT scritti = 0;
+    const UINT quanti =
+        (UINT)(n < (int)sizeof(t) ? n : (int)sizeof(t) - 1);
+    if (f_write(&fb, t, quanti, &scritti) == FR_OK && scritti == quanti) {
+      esito = BLOCCO_SCRITTO;
+    }
+    if (f_close(&fb) != FR_OK) {
+      esito = BLOCCO_ERRORE;
+    }
+  }
+
+
+
+
+
+
+
+
+  {
+    static char d[1100];
+    int k = snprintf(d, sizeof(d),
+                     "\r\n*** BMC64 STOPPED: %s (guardiano, BLOCCO.TXT) ***\r\n"
+                     "    fermo da %lu ms, dove: %s\r\n",
+                     panico ? "panico di Circle" : "l'emulatore non avanza",
+                     (ora - fermo_da) / 1000, nome_dove(bmc_dove));
+    const int coda = n < 900 ? n : 900;
+    int da = n - coda;
+    while (da < n && da > 0 && t[da - 1] != '\n') {
+      da++;
+    }
+    if (k > 0 && k + (n - da) < (int)sizeof(d)) {
+      memcpy(d + k, t + da, (size_t)(n - da));
+      k += n - da;
+    }
+    FIL fd;
+    if (k > 0 && f_open(&fd, "/BMC64-DIAG.TXT", FA_WRITE | FA_OPEN_APPEND) == FR_OK) {
+      UINT scritti = 0;
+      f_write(&fd, d, (UINT)k, &scritti);
+      f_close(&fd);
+    }
+  }
+  DataMemBarrier();
+  bmc_scheda_core0 = 0;
+  DataMemBarrier();
+  scritto = 1;
+  bmc_blocco_scritto = 1;
+
+  scatola_a_schermo(ora, fermo_da, suono_prima, schermo_prima, esito);
+}
+
+ViceApp::TShutdownMode CKernel::Run(void) {
+
+  bmc_core0_dove = "Run: tastiera, mouse, gamepad USB";
+  SetupUSBKeyboard();
+  SetupUSBMouse();
+  SetupUSBGamepads();
+  bmc_core0_dove = "ciclo della guardia";
+
+  emu_set_demo_mode(mViceOptions.DemoEnabled());
+
+#ifndef ARM_ALLOW_MULTI_CORE
+  mUSBPlugAndPlayTask = new USBPlugAndPlayTask(this);
+  mEmulatorCore->LaunchEmulator(mTimingOption);
+#else
+  // This core will do nothing but service interrupts from
+  // usb or gpio.
+  printf("Core 0 idle\n");
+
+  while(1) {
+      cane_da_guardia();
+      bmc_sensori_aggiorna();
+      {
+        static unsigned long lampo = 0;
+        static bool acceso = false;
+        if (bmc_lampeggia) {
+          const unsigned long adesso = circle_get_ticks();
+          if (adesso - lampo >= 100000UL) {
+            lampo = adesso;
+            acceso = !acceso;
+            if (acceso) {
+              mActLED.On();
+            } else {
+              mActLED.Off();
+            }
+          }
+        } else if (acceso) {
+          acceso = false;
+          mActLED.Off();
+        }
+      }
+
+
+
+
+      if (usb_chiesta_dal_core1) {
+        usb_ferma_sul_core0 = 1;
+        DataMemBarrier();
+        asm("wfi");
+        continue;
+      }
+      usb_ferma_sul_core0 = 0;
+      DataMemBarrier();
+
+      UpdateUSBPlugAndPlay();
+
+
+      UpdateKeyboardLEDs();
+      asm("wfi");
+  }
+
+#endif
+  return ShutdownHalt;
+}
+
+void CKernel::ScanKeyboard() {
+  int ui_activated = emu_is_ui_activated();
+
+  int restore = gpioPins[GPIO_KBD_RESTORE_INDEX]->Read();
+  // For restore, there is no public API that triggers it so we will
+  // pass the keycode that will.  NOTE: On the plus/4, this key sym
+  // will be the CLR key according to the keymap.
+  if (restore == LOW && kbdRestoreState == HIGH) {
+     emu_key_pressed(restore_key_sym);
+  } else if (restore == HIGH && kbdRestoreState == LOW) {
+     emu_key_released(restore_key_sym);
+  }
+  kbdRestoreState = restore;
+
+  // Keyboard scan
+  for (int kbdPA = 0; kbdPA < 8; kbdPA++) {
+    gpioPins[kbdPA]->SetMode(GPIOModeOutput);
+    gpioPins[kbdPA]->Write(LOW);
+    circle_sleep(10);
+    for (int kbdPB = 0; kbdPB < 8; kbdPB++) {
+      // Read PB line
+      int val = gpioPins[kbdPB + 8]->Read();
+
+      // My PA/PB to keycode matrix is transposed and I'm too lazy to fix
+      // it. Just swap PB and PA here for the keycode lookup.
+      long keycode = kbdMatrixKeyCodes[kbdPB][kbdPA];
+
+      if (ui_activated) {
+        if (val == LOW && kbdMatrixStates[kbdPA][kbdPB] == HIGH) {
+          if (keycode == KEYCODE_LeftShift) {
+             uiLeftShift = true;
+          } else if (keycode == KEYCODE_RightShift) {
+             uiRightShift = true;
+          }
+
+          if (keycode == KEYCODE_Right && (uiLeftShift || uiRightShift)) {
+             emu_key_pressed(KEYCODE_Left);
+          } else if (keycode == KEYCODE_Down && (uiLeftShift || uiRightShift)) {
+             emu_key_pressed(KEYCODE_Up);
+          } else {
+             emu_key_pressed(keycode);
+          }
+        } else if (val == HIGH && kbdMatrixStates[kbdPA][kbdPB] == LOW) {
+          if (keycode == KEYCODE_LeftShift) {
+             uiLeftShift = false;
+          } else if (keycode == KEYCODE_RightShift) {
+             uiRightShift = false;
+          }
+          if (keycode == KEYCODE_Right && (uiLeftShift || uiRightShift)) {
+             emu_key_released(KEYCODE_Left);
+          } else if (keycode == KEYCODE_Down && (uiLeftShift || uiRightShift)) {
+             emu_key_released(KEYCODE_Up);
+          } else {
+             emu_key_released(keycode);
+          }
+        }
+      } else {
+        // TODO: Need to watch out for key combos here.  Hook into
+        // the handle functions directly in kbd.c so we can invoke the
+        // same hotkey funcs.
+        if (val == LOW && kbdMatrixStates[kbdPA][kbdPB] == HIGH) {
+          emu_key_pressed(keycode);
+        } else if (val == HIGH && kbdMatrixStates[kbdPA][kbdPB] == LOW) {
+          emu_key_released(keycode);
+        }
+      }
+      kbdMatrixStates[kbdPA][kbdPB] = val;
+    }
+    gpioPins[kbdPA]->SetMode(GPIOModeInputPullUp);
+  }
+}
+
+// Read joystick state.
+// If gpioConfig is 0, the NavButtons+Joys config is used where pins can
+// be grounded.
+// If gpioConfig is 1, the Keyboard+Joys PCB config is used (where
+// selector is used to drive pins low instead of GND).
+// If gpioConfig is 2, the Waveshare HAT layout is used.
+void CKernel::ReadJoystick(int device, int gpioConfig) {
+  // For remembering button states for UI only
+  static int js_prev_0[5] = {HIGH, HIGH, HIGH, HIGH, HIGH};
+  static int js_prev_1[5] = {HIGH, HIGH, HIGH, HIGH, HIGH};
+
+  int *js_prev;
+  CGPIOPin **js_pins = NULL;
+  CGPIOPin *js_selector = NULL;
+  int port = 0;
+  int devd = 0;
+  int ui_activated = emu_is_ui_activated();
+
+  // If ui is activated, don't bail if port assignment can't be done
+  // since the event will always go to the ui. We want the joystick to
+  // function in the ui even if the control port is not assigned to be
+  // gpio.
+  if (device == 0) {
+    if (joydevs[0].device == JOYDEV_GPIO_0) {
+      port = joydevs[0].port;
+      devd = JOYDEV_GPIO_0;
+    } else if (joydevs[1].device == JOYDEV_GPIO_0) {
+      port = joydevs[1].port;
+      devd = JOYDEV_GPIO_0;
+    } else if (!ui_activated) {
+      return;
+    }
+
+    js_prev = js_prev_0;
+    switch (gpioConfig) {
+       case GPIO_CONFIG_NAV_JOY:
+          js_pins = config_0_joystickPins1;
+          break;
+       case GPIO_CONFIG_KYB_JOY:
+          js_selector = gpioPins[GPIO_JS1_SELECT_INDEX];
+          js_pins = config_1_joystickPins1;
+          break;
+       case GPIO_CONFIG_WAVESHARE:
+          js_pins = config_2_joystickPins;
+          break;
+       case GPIO_CONFIG_USERPORT:
+          js_pins = config_3_joystickPins1;
+          break;
+       default:
+         assert(false);
+    }
+  } else {
+    if (joydevs[0].device == JOYDEV_GPIO_1) {
+      port = joydevs[0].port;
+      devd = JOYDEV_GPIO_1;
+    } else if (joydevs[1].device == JOYDEV_GPIO_1) {
+      port = joydevs[1].port;
+      devd = JOYDEV_GPIO_1;
+    } else if (!ui_activated) {
+      return;
+    }
+
+    js_prev = js_prev_1;
+    switch (gpioConfig) {
+       case GPIO_CONFIG_NAV_JOY:
+         js_pins = config_0_joystickPins2;
+         break;
+       case GPIO_CONFIG_KYB_JOY:
+         js_selector = gpioPins[GPIO_JS2_SELECT_INDEX];
+         js_pins = config_1_joystickPins2;
+         break;
+       case GPIO_CONFIG_USERPORT:
+          js_pins = config_3_joystickPins2;
+          break;
+       default:
+         assert(false);
+    }
+  }
+
+  if (gpioConfig == 1) {
+    // Drive the select pin low. Don't leave this routine
+    // before setting it as input-pullup again.
+    js_selector->SetMode(GPIOModeOutput);
+    js_selector->Write(LOW);
+    circle_sleep(10);
+  }
+
+  int js_up = js_pins[JOY_UP]->Read();
+  int js_down = js_pins[JOY_DOWN]->Read();
+  int js_left = js_pins[JOY_LEFT]->Read();
+  int js_right = js_pins[JOY_RIGHT]->Read();
+  int js_fire = js_pins[JOY_FIRE]->Read();
+  int js_potx = gpioConfig == 2 ? js_pins[JOY_POTX]->Read() : HIGH;
+  int js_poty = gpioConfig == 2 ? js_pins[JOY_POTY]->Read() : HIGH;
+
+  if (ui_activated) {
+    if (js_up == LOW && js_prev[JOY_UP] != LOW) {
+      emu_ui_key_interrupt(KEYCODE_Up, 1);
+    } else if (js_up != LOW && js_prev[JOY_UP] == LOW) {
+      emu_ui_key_interrupt(KEYCODE_Up, 0);
+    }
+
+    if (js_down == LOW && js_prev[JOY_DOWN] != LOW) {
+      emu_ui_key_interrupt(KEYCODE_Down, 1);
+    } else if (js_down != LOW && js_prev[JOY_DOWN] == LOW) {
+      emu_ui_key_interrupt(KEYCODE_Down, 0);
+    }
+
+    if (js_left == LOW && js_prev[JOY_LEFT] != LOW) {
+      emu_ui_key_interrupt(KEYCODE_Left, 1);
+    } else if (js_left != LOW && js_prev[JOY_LEFT] == LOW) {
+      emu_ui_key_interrupt(KEYCODE_Left, 0);
+    }
+
+    if (js_right == LOW && js_prev[JOY_RIGHT] != LOW) {
+      emu_ui_key_interrupt(KEYCODE_Right, 1);
+    } else if (js_right != LOW && js_prev[JOY_RIGHT] == LOW) {
+      emu_ui_key_interrupt(KEYCODE_Right, 0);
+    }
+
+    if (js_fire == LOW && js_prev[JOY_FIRE] != LOW) {
+      emu_ui_key_interrupt(KEYCODE_Return, 1);
+    } else if (js_fire != LOW && js_prev[JOY_FIRE] == LOW) {
+      emu_ui_key_interrupt(KEYCODE_Return, 0);
+    }
+    js_prev[JOY_UP] = js_up;
+    js_prev[JOY_DOWN] = js_down;
+    js_prev[JOY_LEFT] = js_left;
+    js_prev[JOY_RIGHT] = js_right;
+    js_prev[JOY_FIRE] = js_fire;
+    // not necessary to remember pot values as they are not used for ui
+  } else {
+    emu_joy_interrupt_abs(port, devd,
+                          js_up == LOW,
+                          js_down == LOW,
+                          js_left == LOW,
+                          js_right == LOW,
+                          js_fire == LOW,
+                          js_potx == LOW,
+                          js_poty == LOW);
+  }
+
+  if (gpioConfig == 1) {
+     js_selector->SetMode(GPIOModeInputPullUp);
+  }
+}
+
+void CKernel::ReadCustomGPIO() {
+  int i;
+  unsigned int bank;
+  unsigned int func;
+  int value;
+
+  int js_up_1 = HIGH;
+  int js_down_1 = HIGH;
+  int js_left_1 = HIGH;
+  int js_right_1 = HIGH;
+  int js_fire_1 = HIGH;
+  int js_potx_1 = HIGH;
+  int js_poty_1 = HIGH;
+
+  int js_up_2 = HIGH;
+  int js_down_2 = HIGH;
+  int js_left_2 = HIGH;
+  int js_right_2 = HIGH;
+  int js_fire_2 = HIGH;
+  int js_potx_2 = HIGH;
+  int js_poty_2 = HIGH;
+
+  int ui_activated = emu_is_ui_activated();
+  int port_is_gpio_joy[2] = {0,0};
+
+  for (i = 0 ; i < NUM_GPIO_PINS; i++) {
+    bank = gpio_bindings[i] >> 8;
+    func = gpio_bindings[i] & 0xFF;
+    if (bank > 0) {
+      // This is for a joystick bank
+      value = gpioPins[i]->Read();
+      if (ui_activated) {
+        if (value == LOW && gpio_prev_state[i] != LOW) {
+          emu_ui_key_interrupt(func_to_keycode(func), 1);
+        } else if (value != LOW && gpio_prev_state[i] == LOW) {
+          emu_ui_key_interrupt(func_to_keycode(func), 0);
+        }
+        gpio_prev_state[i] = value;
+      } else {
+        int dev_match = bank == 1 ? JOYDEV_GPIO_0 : JOYDEV_GPIO_1;
+
+        int port;
+        if (joydevs[0].device == dev_match) {
+          port = joydevs[0].port;
+        } else if (joydevs[1].device == dev_match) {
+          port = joydevs[1].port;
+        } else {
+          continue;
+        }
+
+        port_is_gpio_joy[port-1] = 1;
+
+        switch (func) {
+          case BTN_ASSIGN_UP:
+            if (port == 1) {
+              js_up_1 &= value;
+            } else {
+              js_up_2 &= value;
+            }
+            break;
+          case BTN_ASSIGN_DOWN:
+            if (port == 1) {
+              js_down_1 &= value;
+            } else {
+              js_down_2 &= value;
+            }
+            break;
+          case BTN_ASSIGN_LEFT:
+            if (port == 1) {
+              js_left_1 &= value;
+            } else {
+              js_left_2 &= value;
+            }
+            break;
+          case BTN_ASSIGN_RIGHT:
+            if (port == 1) {
+              js_right_1 &= value;
+            } else {
+              js_right_2 &= value;
+            }
+            break;
+          case BTN_ASSIGN_FIRE:
+            if (port == 1) {
+              js_fire_1 &= value;
+            } else {
+              js_fire_2 &= value;
+            }
+            break;
+          case BTN_ASSIGN_POTX:
+            if (port == 1) {
+              js_potx_1 &= value;
+            } else {
+              js_potx_2 &= value;
+            }
+            break;
+          case BTN_ASSIGN_POTY:
+            if (port == 1) {
+              js_poty_1 &= value;
+            } else {
+              js_poty_2 &= value;
+            }
+            break;
+          }
+        }
+      } else {
+        int debounced = ReadDebounced(i);
+        if (debounced == BTN_PRESS) {
+          exec_button_func(func, 1, ui_activated);
+        } else if (debounced == BTN_RELEASE) {
+          exec_button_func(func, 0, ui_activated);
+        }
+     }
+   }
+
+   // Only send a value if there was a device match
+   // The device here doesn't really matter.
+   if (port_is_gpio_joy[0]) {
+      emu_joy_interrupt_abs(1, JOYDEV_GPIO_0,
+                         js_up_1 == LOW,
+                         js_down_1 == LOW,
+                         js_left_1 == LOW,
+                         js_right_1 == LOW,
+                         js_fire_1 == LOW,
+                         js_potx_1 == LOW,
+                         js_poty_1 == LOW);
+   }
+
+   // The device here doesn't really matter.
+   if (port_is_gpio_joy[1]) {
+      emu_joy_interrupt_abs(2, JOYDEV_GPIO_1,
+                         js_up_2 == LOW,
+                         js_down_2 == LOW,
+                         js_left_2 == LOW,
+                         js_right_2 == LOW,
+                         js_fire_2 == LOW,
+                         js_potx_2 == LOW,
+                         js_poty_2 == LOW);
+   }
+}
+
+// Configure user port DDR
+void CKernel::SetupUserport() {
+  // Unless enable_gpio_outputs is true, this will have no effect. Menu item
+  // should reflect this.
+  if (circle_gpio_outputs_enabled()) {
+    uint8_t ddr = circle_get_userport_ddr();
+    for (int i = 0; i < 8; i++) {
+      uint8_t bit_pos = 1<<i;
+      uint8_t ddr_value = ddr & bit_pos;
+      config_3_userportPins[i]->SetMode(ddr_value ? GPIOModeOutput : GPIOModeInputPullUp);
+    }
+  }
+}
+
+// Read input pins and send to output pins
+void CKernel::ReadWriteUserport() {
+  // Unless enable_gpio_outputs is true, this will have no effect. Menu item
+  // should reflect this.
+  if (circle_gpio_outputs_enabled()) {
+    uint8_t ddr = circle_get_userport_ddr();
+    uint8_t value = circle_get_userport();
+    uint8_t new_value = 0;
+    for (int i = 0; i < 8; i++) {
+      uint8_t bit_pos = 1<<i;
+      uint8_t ddr_value = ddr & bit_pos;
+      uint8_t data_value = value & bit_pos;
+      if (ddr_value) {
+        // output bit
+        config_3_userportPins[i]->Write(data_value ? HIGH : LOW);
+        new_value |= data_value;
+      } else {
+        // input bit
+        if (config_3_userportPins[i]->Read() == HIGH) {
+          new_value |= bit_pos;
+        }
+      }
+    }
+    circle_set_userport(new_value);
+  }
+}
+
+void CKernel::circle_sleep(long delay) { mTimer.SimpleusDelay(delay); }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+extern "C" unsigned long bmc_tempo_us(void) {
+#if AARCH == 64
+  InstructionSyncBarrier();
+  u64 conta, frequenza;
+  asm volatile("mrs %0, CNTPCT_EL0" : "=r"(conta));
+  asm volatile("mrs %0, CNTFRQ_EL0" : "=r"(frequenza));
+  u64 us = (conta / frequenza) * 1000000ULL +
+           (conta % frequenza) * 1000000ULL / frequenza;
+#else
+  u64 us = CTimer::GetClockTicks64();
+#endif
+
+
+
+
+
+
+  return (unsigned long)us;
+}
+
+unsigned long CKernel::circle_get_ticks() { return bmc_tempo_us(); }
+
+// Called from VICE: Core 1
+int CKernel::circle_sound_init(const char *param, int *speed, int *fragsize,
+                               int *fragnr, int *channels) {
+
+  *speed = (int)mSoundSampleRate;
+  *fragsize = FRAG_SIZE;
+  *fragnr = NUM_FRAGS;
+  mNumSoundChannels = *channels;
+  raspi_snd_canali = (unsigned)*channels;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  if (mViceSound && raspi_snd_dev == 3 && mCanaliAperti == *channels &&
+      mViceSound->PlaybackActive()) {
+     raspi_snd_restart = 2;
+     raspi_snd_restarts++;
+     return 0;
+  }
+
+
+
+
+  if (mViceSound && raspi_snd_dev == 3 && mCanaliAperti != *channels &&
+      mViceSound->PlaybackActive() && mViceSound->CambiaCanali(*channels)) {
+     mCanaliAperti = *channels;
+     raspi_snd_restart = 3;
+     raspi_snd_restarts++;
+     return 0;
+  }
+
+  // NOTE: We init sound after boot is complete to avoid an initial
+  // sound sync issue if a cartridge is attached. But if it's already
+  // initialised, cancel and restart here in case channels has changed.
+  if (mViceSound) {
+     mViceSound->CancelPlayback();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+     unsigned attesa_inizio = mTimer.GetClockTicks();
+     while (mViceSound->PlaybackActive() &&
+            mTimer.GetClockTicks() - attesa_inizio < 1000000) {
+       CScheduler::Get()->Yield();
+       mTimer.SimpleusDelay(1000);
+     }
+
+
+
+     if (mViceSound->PlaybackActive()) {
+       raspi_snd_restart = -2;
+     } else {
+       raspi_snd_restart =
+           mViceSound->Playback(vol_percent_to_vchiq(mVolume),
+                                mNumSoundChannels) ? 1 : 0;
+       mCanaliAperti = mNumSoundChannels;
+     }
+     raspi_snd_restarts++;
+  }
+  return 0;
+}
+
+// Called from VICE: Core 1
+int CKernel::circle_sound_write(int16_t *pbuf, size_t nr) {
+
+
+
+
+
+  {
+    unsigned p = raspi_snd_picco;
+    unsigned ps = raspi_snd_picco_sx, pd = raspi_snd_picco_dx;
+
+
+
+    const bool due = mNumSoundChannels == 2;
+    size_t i;
+
+    for (i = 0; i < nr; i++) {
+      int v = pbuf[i];
+      unsigned a = (unsigned)(v < 0 ? -v : v);
+
+      if (a > p) {
+        p = a;
+      }
+      if ((!due || (i & 1) == 0) && a > ps) {
+        ps = a;
+      }
+      if ((!due || (i & 1) == 1) && a > pd) {
+        pd = a;
+      }
+    }
+    raspi_snd_picco = p;
+    raspi_snd_picco_sx = ps;
+    raspi_snd_picco_dx = pd;
+  }
+  raspi_snd_dal_vice += nr;
+  if (mViceSound) {
+
+
+
+    raspi_snd_written += nr;
+    return mViceSound->AddChunk(pbuf, nr);
+  }
+  return 0;
+}
+
+void CKernel::circle_sound_close(void) {
+  // Nothing to do here since we never actually close vc4.
+}
+
+int CKernel::circle_sound_suspend(void) { return 0; }
+
+int CKernel::circle_sound_resume(void) { return 0; }
+
+
+
+
+
+
+
+
+static volatile unsigned long snd_pieno_fino = 0;
+
+void circle_sound_banco_blocca(int millisecondi) {
+  if (millisecondi <= 0) {
+
+
+
+    snd_pieno_fino = (unsigned long)-1;
+    printf("[SND] il dispositivo audio si dichiara pieno PER SEMPRE\n");
+    return;
+  }
+  snd_pieno_fino = circle_get_ticks() + (unsigned long)millisecondi * 1000UL;
+  printf("[SND] il dispositivo audio si dichiara pieno per %d ms\n",
+         millisecondi);
+}
+
+int CKernel::circle_sound_bufferspace(void) {
+  if (snd_pieno_fino != 0) {
+    if (circle_get_ticks() < snd_pieno_fino) {
+      return 0;
+    }
+    snd_pieno_fino = 0;
+    printf("[SND] il dispositivo audio si e' sbloccato\n");
+  }
+  if (mViceSound) {
+    raspi_snd_space = mViceSound->BufferSpaceSamples();
+
+
+
+
+
+    if (raspi_snd_space >= FRAG_SIZE * NUM_FRAGS) {
+      if (!snd_era_a_secco) {
+        snd_era_a_secco = true;
+        raspi_snd_vuoti++;
+      }
+    } else {
+      snd_era_a_secco = false;
+    }
+    return raspi_snd_space;
+  }
+  return FRAG_SIZE * NUM_FRAGS;
+}
+
+void CKernel::circle_yield(void) { CScheduler::Get()->Yield(); }
+
+void CKernel::MouseStatusHandler(unsigned nButtons, int deltaX, int deltaY,
+                                 int nWheelMove, void *pContext) {
+  unsigned posto = *(unsigned *)pContext;
+  if (posto >= MAX_USB_DEVICES) {
+    return;
+  }
+
+  unsigned prev_buttons = 0;
+  for (unsigned i = 0; i < MAX_USB_DEVICES; i++) {
+    prev_buttons |= mouse_button_states[i];
+  }
+  mouse_button_states[posto] = nButtons;
+  unsigned nButtons_uniti = 0;
+  for (unsigned i = 0; i < MAX_USB_DEVICES; i++) {
+    nButtons_uniti |= mouse_button_states[i];
+  }
+  nButtons = nButtons_uniti;
+
+
+
+  emu_spinner_mouse(nButtons, nWheelMove);
+
+  emu_mouse_move(deltaX, deltaY);
+
+  if ((prev_buttons & MOUSE_BUTTON_LEFT) && !(nButtons & MOUSE_BUTTON_LEFT)) {
+    emu_mouse_button_left(0);
+  } else if (!(prev_buttons & MOUSE_BUTTON_LEFT) &&
+             (nButtons & MOUSE_BUTTON_LEFT)) {
+    emu_mouse_button_left(1);
+  }
+  if ((prev_buttons & MOUSE_BUTTON_RIGHT) && !(nButtons & MOUSE_BUTTON_RIGHT)) {
+    emu_mouse_button_right(0);
+  } else if (!(prev_buttons & MOUSE_BUTTON_RIGHT) &&
+             (nButtons & MOUSE_BUTTON_RIGHT)) {
+    emu_mouse_button_right(1);
+  }
+
+
+
+
+  if ((prev_buttons & MOUSE_BUTTON_MIDDLE) &&
+      !(nButtons & MOUSE_BUTTON_MIDDLE)) {
+    emu_mouse_button_middle(0);
+  } else if (!(prev_buttons & MOUSE_BUTTON_MIDDLE) &&
+             (nButtons & MOUSE_BUTTON_MIDDLE)) {
+    emu_mouse_button_middle(1);
+  }
+
+
+  while (nWheelMove > 0) {
+    emu_mouse_wheel_up(1);
+    nWheelMove--;
+  }
+  while (nWheelMove < 0) {
+    emu_mouse_wheel_down(1);
+    nWheelMove++;
+  }
+  prev_buttons = nButtons;
+}
+
+void CKernel::KeyStatusHandlerRaw(unsigned char ucModifiers,
+                                  const unsigned char RawKeys[6],
+                                  void *pContext) {
+  unsigned posto = *(unsigned *)pContext;
+  if (posto >= MAX_USB_DEVICES) {
+    return;
+  }
+
+  bool new_states[MAX_KEY_CODES];
+  memset(new_states, 0, MAX_KEY_CODES * sizeof(bool));
+
+
+  mod_states[posto] = ucModifiers;
+  for (unsigned i = 0; i < 6; i++) {
+    const unsigned char key = RawKeys[i];
+
+
+
+
+
+
+    if (key >= MAX_KEY_CODES) {
+      kbd_fuori_scala = key;
+      continue;
+    }
+    if (key != 0) {
+      new_states[key] = true;
+    }
+  }
+  memcpy(key_states[posto], new_states, sizeof(new_states));
+
+
+  unsigned char mod_uniti = 0;
+  for (unsigned i = 0; i < MAX_USB_DEVICES; i++) {
+    mod_uniti |= mod_states[i];
+  }
+
+
+
+
+  emu_modificatori_grezzi(mod_uniti);
+
+  // Compare previous to present and handle press/release that come from
+  // modifier keys.
+  int v = 1;
+  for (int i = 0; i < 8; i++) {
+    if ((mod_uniti & v) && !(merged_mod_states & v)) {
+      switch (i) {
+      case 0: // LeftControl
+        emu_key_pressed(KEYCODE_LeftControl);
+        break;
+      case 4: // RightControl
+        emu_key_pressed(KEYCODE_RightControl);
+        break;
+      case 1: // LeftShift
+        if (emu_is_ui_activated()) {
+          uiLeftShift = true;
+        }
+        emu_key_pressed(KEYCODE_LeftShift);
+        break;
+      case 5: // RightShift
+        if (emu_is_ui_activated()) {
+          uiRightShift = true;
+        }
+        emu_key_pressed(KEYCODE_RightShift);
+        break;
+      case 3: // LeftSuper
+        emu_key_pressed(KEYCODE_LeftSuper);
+        break;
+      case 2: // LeftAlt
+        emu_key_pressed(KEYCODE_LeftAlt);
+        break;
+      case 6: // RightAlt
+        emu_key_pressed(KEYCODE_RightAlt);
+        break;
+      default:
+        break;
+      }
+    } else if (!(mod_uniti & v) && (merged_mod_states & v)) {
+      switch (i) {
+      case 0: // LeftControl
+        emu_key_released(KEYCODE_LeftControl);
+        break;
+      case 4: // RightControl
+        emu_key_released(KEYCODE_RightControl);
+        break;
+      case 1: // LeftShift
+        if (emu_is_ui_activated()) {
+          uiLeftShift = false;
+        }
+        emu_key_released(KEYCODE_LeftShift);
+        break;
+      case 5: // RightShift
+        if (emu_is_ui_activated()) {
+          uiRightShift = false;
+        }
+        emu_key_released(KEYCODE_RightShift);
+        break;
+      case 3: // LeftSuper
+        emu_key_released(KEYCODE_LeftSuper);
+        break;
+      case 2: // LeftAlt
+        emu_key_released(KEYCODE_LeftAlt);
+        break;
+      case 6: // RightAlt
+        emu_key_released(KEYCODE_RightAlt);
+        break;
+      default:
+        break;
+      }
+    }
+    v = v * 2;
+  }
+  merged_mod_states = mod_uniti;
+
+  // Compare previous to present and handle key press/release events.
+  int ui_activated = emu_is_ui_activated();
+  for (unsigned i = 1; i < MAX_KEY_CODES; i++) {
+    bool stato_unito = false;
+    for (unsigned d = 0; d < MAX_USB_DEVICES; d++) {
+      stato_unito |= key_states[d][i];
+    }
+    if (merged_key_states[i] == true && stato_unito == false) {
+      if (ui_activated) {
+        // We have to handle shift+left/right here or else our ui
+        // isn't navigable by keyrah with real C64 board. Keep
+        // key_states below managing the state of the original key,
+        // not the translated one.
+        if ((uiLeftShift || uiRightShift) && i == KEYCODE_Right) {
+          emu_key_released(KEYCODE_Left);
+        } else if ((uiLeftShift || uiRightShift) && i == KEYCODE_Down) {
+          emu_key_released(KEYCODE_Up);
+        } else {
+          emu_key_released(i);
+        }
+      } else {
+        emu_key_released(i);
+      }
+    } else if (merged_key_states[i] == false && stato_unito == true) {
+      if (ui_activated) {
+        // See above note on shift.
+        if ((uiLeftShift || uiRightShift) && i == KEYCODE_Right) {
+          emu_key_pressed(KEYCODE_Left);
+        } else if ((uiLeftShift || uiRightShift) && i == KEYCODE_Down) {
+          emu_key_pressed(KEYCODE_Up);
+        } else {
+          emu_key_pressed(i);
+        }
+      } else {
+        emu_key_pressed(i);
+      }
+    }
+    merged_key_states[i] = stato_unito;
+  }
+}
+
+int CKernel::ReadDebounced(int pinIndex) {
+  CGPIOPin *pin = gpioPins[pinIndex];
+
+  if (gpio_debounce_state[pinIndex] == BTN_PRESS) {
+    gpio_debounce_state[pinIndex] = BTN_DOWN;
+  } else if (gpio_debounce_state[pinIndex] == BTN_RELEASE) {
+    gpio_debounce_state[pinIndex] = BTN_UP;
+  }
+
+  if (pin->Read() == LOW) {
+    if (gpio_debounce_state[pinIndex] == BTN_UP) {
+      circle_sleep(5);
+      if (pin->Read() == LOW) {
+        gpio_debounce_state[pinIndex] = BTN_PRESS;
+      }
+    }
+  } else {
+    if (gpio_debounce_state[pinIndex] == BTN_DOWN) {
+      if (pin->Read() == HIGH) {
+        circle_sleep(5);
+        if (pin->Read() == HIGH) {
+          gpio_debounce_state[pinIndex] = BTN_RELEASE;
+        }
+      }
+    }
+  }
+  return gpio_debounce_state[pinIndex];
+}
+
+// Called from main emulation loop before pending event queues are
+// drained. Checks whether any of our gpio pins have triggered some
+// function. Also scans a real C64 keyboard and joysticks if enabled.
+// Otherwise, just scans gpio joysticks.
+void CKernel::circle_check_gpio() {
+
+
+
+
+
+  if (bmc_dopo_usb_da_scrivere) {
+    bmc_dopo_usb_da_scrivere = 0;
+    DataMemBarrier();
+    ScriviListeDopoLaUsb();
+  }
+
+
+
+  {
+    unsigned char voluto = emu_get_keyboard_shiftlock() ? 0x02 : 0x00;
+    if (voluto != kbd_led_voluto) {
+      kbd_led_voluto = voluto;
+      kbd_led_da_mandare = true;
+    }
+  }
+
+
+
+
+  if (kbd_fuori_scala != 0 && !kbd_fuori_scala_detto) {
+    char riga[64];
+    kbd_fuori_scala_detto = 1;
+    snprintf(riga, sizeof(riga),
+             "la tastiera manda il codice %u, oltre i %d della tabella",
+             (unsigned)kbd_fuori_scala, MAX_KEY_CODES);
+    passo_nota(riga);
+  }
+
+  // TODO: Find a better place for this. Piggy back on emulation loop
+  // to initialize sound when helper cores were late initializing the sid
+  // tables.
+#ifdef ARM_ALLOW_MULTI_CORE
+  {
+
+
+
+
+
+    bool crea = false;
+    circle_lock_acquire();
+    if (mNeedSoundInit && mNumCoresComplete >= 2 && SuonoPuoPartire()) {
+       mNeedSoundInit = false;
+       crea = true;
+    }
+    circle_lock_release();
+    if (crea) {
+       mViceSound = CreateSound();
+    }
+  }
+#endif
+
+  ApplicaCambioAudioUsb();
+
+  int gpio_config = emu_get_gpio_config();
+
+  switch(gpio_config) {
+    case GPIO_CONFIG_NAV_JOY:
+     // Nav Buttons + Real Joys
+     if (ReadDebounced(GPIO_CONFIG_0_MENU_INDEX) == BTN_PRESS) {
+      emu_key_pressed(KEYCODE_F12);
+      emu_key_released(KEYCODE_F12);
+     }
+     if (ReadDebounced(GPIO_CONFIG_0_MENU_BACK_INDEX) == BTN_PRESS) {
+      emu_key_pressed(KEYCODE_Escape);
+      emu_key_released(KEYCODE_Escape);
+     }
+     if (ReadDebounced(GPIO_CONFIG_0_MENU_UP_INDEX) == BTN_PRESS) {
+      emu_key_pressed(KEYCODE_Up);
+      emu_key_released(KEYCODE_Up);
+     }
+     if (ReadDebounced(GPIO_CONFIG_0_MENU_DOWN_INDEX) == BTN_PRESS) {
+      emu_key_pressed(KEYCODE_Down);
+      emu_key_released(KEYCODE_Down);
+     }
+     if (ReadDebounced(GPIO_CONFIG_0_MENU_LEFT_INDEX) == BTN_PRESS) {
+      emu_key_pressed(KEYCODE_Left);
+      emu_key_released(KEYCODE_Left);
+     }
+     if (ReadDebounced(GPIO_CONFIG_0_MENU_RIGHT_INDEX) == BTN_PRESS) {
+      emu_key_pressed(KEYCODE_Right);
+      emu_key_released(KEYCODE_Right);
+     }
+     if (ReadDebounced(GPIO_CONFIG_0_MENU_ENTER_INDEX) == BTN_PRESS) {
+      emu_key_pressed(KEYCODE_Return);
+      emu_key_released(KEYCODE_Return);
+     }
+     if (ReadDebounced(GPIO_CONFIG_0_MENU_VKBD_INDEX) == BTN_PRESS) {
+      emu_quick_func_interrupt(BTN_ASSIGN_VKBD_TOGGLE);
+     }
+     ReadJoystick(0, GPIO_CONFIG_NAV_JOY);
+     ReadJoystick(1, GPIO_CONFIG_NAV_JOY);
+     break;
+    case GPIO_CONFIG_KYB_JOY:
+     // Real Kyb + Joys
+     ScanKeyboard();
+     ReadJoystick(0, GPIO_CONFIG_KYB_JOY);
+     ReadJoystick(1, GPIO_CONFIG_KYB_JOY);
+     break;
+    case GPIO_CONFIG_WAVESHARE:
+     // Waveshare Hat
+     if (ReadDebounced(GPIO_CONFIG_2_WAVESHARE_START_INDEX) == BTN_PRESS) {
+       emu_key_pressed(KEYCODE_F12);
+       emu_key_released(KEYCODE_F12);
+     }
+     if (ReadDebounced(GPIO_CONFIG_2_WAVESHARE_TL_INDEX) == BTN_PRESS) {
+       emu_key_pressed(KEYCODE_Escape);
+       emu_key_released(KEYCODE_Escape);
+     }
+     if (ReadDebounced(GPIO_CONFIG_2_WAVESHARE_TR_INDEX) == BTN_PRESS) {
+       emu_quick_func_interrupt(BTN_ASSIGN_WARP);
+     }
+     if (ReadDebounced(GPIO_CONFIG_2_WAVESHARE_X_INDEX) == BTN_PRESS) {
+       emu_quick_func_interrupt(BTN_ASSIGN_VKBD_TOGGLE);
+     }
+     if (ReadDebounced(GPIO_CONFIG_2_WAVESHARE_SELECT_INDEX) == BTN_PRESS) {
+       emu_quick_func_interrupt(BTN_ASSIGN_STATUS_TOGGLE);
+     }
+     ReadJoystick(0, GPIO_CONFIG_WAVESHARE);
+     break;
+    case GPIO_CONFIG_USERPORT:
+     SetupUserport();
+     ReadWriteUserport();
+     ReadJoystick(0, GPIO_CONFIG_USERPORT);
+     ReadJoystick(1, GPIO_CONFIG_USERPORT);
+     break;
+    case GPIO_CONFIG_CUSTOM:
+     ReadCustomGPIO();
+     break;
+    default:
+     // Disabled
+     break;
+  }
+}
+
+// Reset the state of the GPIO pins.
+// Needed when switching to and from GPIO_CONFIG_USERPORT
+void CKernel::circle_reset_gpio(int gpio_config) {
+  switch (gpio_config) {
+    case GPIO_CONFIG_NAV_JOY:
+    case GPIO_CONFIG_KYB_JOY:
+    case GPIO_CONFIG_WAVESHARE:
+    case GPIO_CONFIG_CUSTOM:
+      // Joystick and keyboard settings require all ports
+      // to be inputs
+      for (int i = 0; i < NUM_GPIO_PINS; i++) {
+        gpioPins[i]->SetMode(GPIOModeInputPullUp);
+      }
+      break;
+    case GPIO_CONFIG_USERPORT:
+      for (int i = 0; i < 5; i++) {
+        config_3_joystickPins1[i]->SetMode(GPIOModeInputPullUp);
+        config_3_joystickPins2[i]->SetMode(GPIOModeInputPullUp);
+      }
+      SetupUserport();
+      break;
+    default:
+      // Disabled
+      break;
+  }
+}
+
+void CKernel::circle_lock_acquire() {
+  m_Lock.Acquire();
+#ifdef ARM_ALLOW_MULTI_CORE
+  bmc_lucchetto = (int)CMultiCoreSupport::ThisCore() + 1;
+#endif
+}
+
+void CKernel::circle_lock_release() {
+  bmc_lucchetto = 0;
+  m_Lock.Release();
+}
+
+
+
+
+
+
+
+
+
+bool CKernel::SuonoPuoPartire(void) {
+#ifdef BMC64_HAVE_USB_SOUND
+  if (mViceOptions.GetAudioOut() != VCHIQSoundDestinationUSB || bmc_usb_pronta) {
+    return true;
+  }
+  if (mAttesaUsbDa == 0) {
+    mAttesaUsbDa = mTimer.GetClockTicks() | 1;
+    printf("[AUDIO] audio_out=usb: aspetto la USB prima di aprire il suono\n");
+  }
+  if (mTimer.GetClockTicks() - mAttesaUsbDa >= 10000000) {
+    printf("[AUDIO] la USB non e' pronta dopo 10 s: si apre il suono lo stesso\n");
+    return true;
+  }
+  return false;
+#else
+  return true;
+#endif
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void CKernel::ApplicaCambioAudioUsb(void) {
+#ifdef BMC64_HAVE_USB_SOUND
+
+
+
+
+  const unsigned ATTESA_DAC_US = 3000000;
+  const int cambiata = mCambioUsbAudio;
+
+  if (cambiata) {
+    mCambioUsbAudio = 0;
+    DataMemBarrier();
+  }
+  if (mViceSound == nullptr ||
+      mViceOptions.GetAudioOut() != VCHIQSoundDestinationUSB) {
+    mDacViaDa = 0;
+    return;
+  }
+
+  if (raspi_snd_dev == 3) {
+
+
+
+
+    if (mViceSound->PlaybackActive()) {
+      mDacViaDa = 0;
+      mDacRiprova = 0;
+      return;
+    }
+
+
+    if (ViceSoundUSB::UscitaPresente()) {
+
+
+
+
+      const unsigned ora = mTimer.GetClockTicks();
+
+      if (mDacRiprova != 0 && ora - mDacRiprova < 1000000) {
+        return;
+      }
+      mDacRiprova = ora | 1;
+      mDacViaDa = 0;
+      raspi_snd_play = mViceSound->Playback(vol_percent_to_vchiq(mVolume),
+                                            mNumSoundChannels) ? 1 : 0;
+      mCanaliAperti = mNumSoundChannels;
+      usblog_riga("audio: il DAC si era fermato, riacceso (%d)",
+                  raspi_snd_play);
+      if (raspi_snd_play) {
+        return;
+      }
+    }
+
+    if (mDacViaDa == 0) {
+      mDacViaDa = mTimer.GetClockTicks() | 1;
+      raspi_snd_assenze++;
+      usblog_riga("audio: il DAC non risponde, aspetto tre secondi");
+      return;
+    }
+    if (mTimer.GetClockTicks() - mDacViaDa < ATTESA_DAC_US) {
+      return;
+    }
+    usblog_riga("audio: il DAC non e' tornato, si cambia uscita");
+  } else {
+
+    if (!cambiata || !ViceSoundUSB::UscitaPresente()) {
+      return;
+    }
+    usblog_riga("audio: DAC attaccato dopo l'avvio, si cambia uscita");
+  }
+  mDacViaDa = 0;
+  mViceSound->CancelPlayback();
+  aspetta_che_si_fermi(mViceSound);
+  if (mViceSound->PlaybackActive()) {
+
+
+    printf("[AUDIO] l'uscita di prima non si ferma: la lascio\n");
+    usblog_riga("audio: l'uscita di prima non si ferma, niente cambio");
+    return;
+  }
+  delete mViceSound;
+  mViceSound = nullptr;
+  raspi_snd_dev = 0;
+  raspi_snd_play = 0;
+  raspi_snd_cambi++;
+  mViceSound = CreateSound();
+  usblog_riga("audio: adesso si suona %s a %u Hz",
+              raspi_snd_dev == 3 ? "dal DAC USB" : "dall'uscita di sempre",
+              mSoundSampleRate);
+#endif
+}
+
+void CKernel::circle_boot_complete() {
+  // NOTE: We init the sound device here to avoid a sound sync
+  // issue if a cartridge is attached.  If this is done too
+  // early, the sound data consumer is a bit further behind.
+  if (!mViceSound) {
+#ifdef ARM_ALLOW_MULTI_CORE
+    bool crea = false;
+    circle_lock_acquire();
+    if (mNumCoresComplete >= 2 && SuonoPuoPartire()) {
+       // Cores 1/2 are done initing sound tables before we tried to
+       // start playback device.
+       crea = true;
+    } else {
+       // Cores 1/2 are still initializing sound tables. We'll init
+       // sound later.  This is to get around the crashing noise you
+       // can get on boot if you have a cartridge attached.
+       mNeedSoundInit = true;
+    }
+    circle_lock_release();
+    if (crea) {
+       mViceSound = CreateSound();
+    }
+#else
+    mViceSound = CreateSound();
+#endif
+  }
+
+  DisableBootStat();
+}
+
+int CKernel::circle_alloc_fbl(int layer, int pixelmode, uint8_t **pixels,
+                              int width, int height, int *pitch) {
+  return fbl[layer].Allocate(pixelmode, pixels, width, height, pitch);
+}
+
+int CKernel::circle_realloc_fbl(int layer, int shader) {
+  return fbl[layer].ReAllocate(shader);
+}
+
+int CKernel::circle_shader_backend_available() {
+  return FrameBufferLayer::ShaderBackendAvailable() ? 1 : 0;
+}
+
+int CKernel::circle_shader_backend_available_for_layer(int layer) {
+  return FrameBufferLayer::ShaderBackendAvailableForLayer(layer) ? 1 : 0;
+}
+
+int CKernel::circle_status_layer_can_coexist_with_ui() {
+
+  return 1;
+}
+
+void CKernel::circle_free_fbl(int layer) {
+  fbl[layer].Free();
+}
+
+void CKernel::circle_clear_fbl(int layer) {
+  fbl[layer].Clear();
+}
+
+void CKernel::circle_show_fbl(int layer) {
+  fbl[layer].Show();
+}
+
+void CKernel::circle_hide_fbl(int layer) {
+  fbl[layer].Hide();
+}
+
+void CKernel::circle_present_fbl(uint32_t ready_mask, int sync) {
+  PresentFrameBufferLayers(ready_mask, sync);
+}
+
+
+
+void CKernel::PresentFrameBufferLayers(uint32_t readyMask, int sync) {
+  if (readyMask == 0) {
+    return;
+  }
+  for (unsigned i = 0; i < FB_NUM_LAYERS; i++) {
+    if (readyMask & FB_LAYER_MASK(i)) {
+      fbl[i].FrameReady(sync);
+    }
+  }
+  FrameBufferLayer::PresentLayers(sync, fbl, readyMask);
+}
+
+void CKernel::circle_set_palette_fbl(int layer, uint8_t index, uint16_t rgb565) {
+  fbl[layer].SetPalette(index, rgb565);
+}
+
+void CKernel::circle_set_palette32_fbl(int layer, uint8_t index, uint32_t argb) {
+  fbl[layer].SetPalette(index, argb);
+}
+
+void CKernel::circle_update_palette_fbl(int layer) {
+  fbl[layer].UpdatePalette();
+}
+
+void CKernel::circle_set_stretch_fbl(int layer, double hstretch, double vstretch, int hintstr, int vintstr, int use_hintstr, int use_vintstr) {
+  fbl[layer].SetStretch(hstretch, vstretch, hintstr, vintstr, use_hintstr, use_vintstr);
+}
+
+void CKernel::circle_set_center_offset(int layer, int cx, int cy) {
+  fbl[layer].SetCenterOffset(cx, cy);
+}
+
+void CKernel::circle_set_src_rect_fbl(int layer, int x, int y, int w, int h) {
+  fbl[layer].SetSrcRect(x,y,w,h);
+}
+
+void CKernel::circle_set_valign_fbl(int layer, int align, int padding) {
+  fbl[layer].SetVerticalAlignment(align, padding);
+}
+
+void CKernel::circle_set_halign_fbl(int layer, int align, int padding) {
+  fbl[layer].SetHorizontalAlignment(align, padding);
+}
+
+void CKernel::circle_set_padding_fbl(int layer, double lpad, double rpad, double tpad, double bpad) {
+  fbl[layer].SetPadding(lpad, rpad, tpad, bpad);
+}
+
+void CKernel::circle_set_zlayer_fbl(int layer, int zlayer) {
+  fbl[layer].SetLayer(zlayer);
+}
+
+int CKernel::circle_get_zlayer_fbl(int layer) {
+  return fbl[layer].GetLayer();
+}
+
+void CKernel::circle_set_volume(int value) {
+  // TODO: This is a race condition between two cores. Fix this.
+  mVolume = value;
+  if (mViceSound) {
+     mViceSound->SetControl(vol_percent_to_vchiq(value),
+                            mViceOptions.GetAudioOut());
+  }
+}
+
+int CKernel::circle_get_model() {
+  return mMachineInfo.GetModelMajor();
+}
+
+unsigned CKernel::circle_get_arm_clock() {
+  if (s_bmc_arm_hz != 0) {
+    return s_bmc_arm_hz;
+  }
+  return mMachineInfo.GetClockRate(CLOCK_ID_ARM);
+}
+
+
+
+unsigned CKernel::circle_get_temperature() {
+  if (s_bmc_temperatura != 0) {
+    return s_bmc_temperatura;
+  }
+  return CCPUThrottle::Get()->GetTemperature();
+}
+
+
+
+
+
+
+void CKernel::circle_cpu_slow(int slow) {
+  CCPUThrottle::Get()->SetSpeed(slow ? CPUSpeedLow : CPUSpeedMaximum, TRUE);
+}
+
+int CKernel::circle_gpio_enabled() {
+  // When DPI is enabled, GPIO scanning must be disabled.
+  return mViceOptions.DPIEnabled() == 0;
+}
+
+int CKernel::circle_gpio_outputs_enabled() {
+  return !mViceOptions.DPIEnabled() && mViceOptions.GPIOOutputsEnabled();
+}
+
+// Called by cores 1 and 2 after they are done initializing
+// sid tables.  Used to know whether volume should be set to
+// 0 or requested initial volume after boot.
+void CKernel::circle_kernel_core_init_complete(int core) {
+  circle_lock_acquire();
+  mNumCoresComplete++;
+  circle_lock_release();
+}
+
+void CKernel::circle_get_fbl_dimensions(int layer,
+                               int *display_w, int *display_h,
+                               int *fb_w, int *fb_h,
+                               int *src_w, int *src_h,
+                               int *dst_w, int *dst_h) {
+  return fbl[layer].GetDimensions(display_w, display_h,
+                                  fb_w, fb_h,
+                                  src_w, src_h,
+                                  dst_w, dst_h);
+}
+
+void CKernel::circle_get_scaling_params(int display,
+                                        int *fbw, int *fbh,
+                                        int *sx, int *sy) {
+  mViceOptions.GetScalingParams(display, fbw, fbh, sx, sy);
+}
+
+void CKernel::circle_set_interpolation(int enable) {
+  FrameBufferLayer::SetInterpolation(enable);
+}
+
+void CKernel::circle_set_use_shader(int enable) {
+	// Only the main display (layer 0) ever gets a shader.
+  fbl[0].SetUsesShader(enable);
+}
+
+void CKernel::circle_set_shader_params(
+    const struct bmx_crt_effect_params &params) {
+  // Only the main display (layer 0) ever gets a shader.
+  fbl[0].SetShaderParams(params);
+}

@@ -1,0 +1,34 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_mask_vignette_probe",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_mask_vignette_probe.frag",
+  "gles_version": 2,
+  "targets": ["bcm2711-v3d42", "bcm2712-v3d71"],
+  "$include": "includes/probe_rgb565_nearest_4x4_compact.inc",
+  "$include": "includes/fullscreen_state_inline.inc",
+  "$include": "includes/source_texture_compact.inc",
+  "probe_uniform_values": {
+    "$include": "includes/probe_values_u_output_size_through_u_vignette_enable.inc",
+    "u_vignette_scale": 0.8, "u_vignette_softness": 0.46
+  },
+  "uniform_storage": {
+    "fragment": {
+      "$include": "includes/uniforms_0_through_160.inc",
+      "164": {"semantic": "phosphor_mask_enable", "type": "float32"},
+      "168": {"semantic": "phosphor_mask_pattern", "type": "float32"},
+      "172": {"semantic": "phosphor_mask_brightness", "type": "float32"},
+      "176": {"semantic": "vignette_enable", "type": "float32"},
+      "180": {"semantic": "vignette_strength", "type": "float32"},
+      "184": {"semantic": "vignette_scale", "type": "float32"},
+      "188": {"semantic": "vignette_softness", "type": "float32"},
+      "192": {"semantic": "fragcoord_y_scale", "type": "float32", "rule": "negative_one"},
+      "193": {"semantic": "fragcoord_y_bias", "type": "float32", "rule": "output_height"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42": "src/v3dcrt/shaders/generated/v3d42/crt_mask_vignette_probe.h",
+    "bcm2712-v3d71": "src/v3dcrt/shaders/generated/v3d71/crt_mask_vignette_probe.h"
+  },
+  "symbol_prefix": "kV3dCrtMaskVignetteProbe"
+}

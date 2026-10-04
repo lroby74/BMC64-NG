@@ -1,0 +1,1832 @@
+/*
+ * menu_c64.c
+ *
+ * Written by
+ *  Randy Rossi <randy.rossi@gmail.com>
+ *
+ * This file is part of VICE, the Versatile Commodore Emulator.
+ * See README for copyright notice.
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
+ *  02111-1307  USA.
+ *
+ */
+
+#include "../raspi_machine.h"
+
+#include <memory.h>
+#include <stdio.h>
+
+// VICE includes
+#include "c64/c64.h"
+#include "c64/c64iec.h"
+#include "c64/c64keyboard.h"
+#include "c64/c64model.h"
+#include "c64/c64rom.h"
+#include "cia.h"
+#include "sid.h"
+#include "sid-snapshot.h"
+#include "sound.h"
+#include "tapeport.h"
+#include "userport.h"
+#include "resources.h"
+#include "keyboard.h"
+#include "cartridge.h"
+#include "c64/cart/reu.h"
+
+// RASPI includes
+#include "emux_api.h"
+#include "menu.h"
+#include "ui.h"
+#include "keycodes.h"
+
+static int reu_size_to_index[8] =
+    { 128, 256, 512, 1024, 2048, 4096, 8192, 16384 };
+
+static struct menu_item *reu_image_menu;
+static struct menu_item *reu_attach_image_item;
+static struct menu_item *reu_detach_image_item;
+static struct menu_item *reu_save_image_item;
+static struct menu_item *reu_save_image_as_item;
+static struct menu_item *reu_auto_save_item;
+static struct menu_item *reu_size_item;
+
+
+
+static void update_reu_image_enabled(int enabled) {
+  const char *filename;
+  int disabled = enabled == 0;
+
+  resources_get_string("REUfilename", &filename);
+  reu_image_menu->disabled = disabled;
+  reu_attach_image_item->disabled = disabled;
+  reu_detach_image_item->disabled =
+      disabled || filename == NULL || *filename == '\0';
+  reu_save_image_item->disabled =
+      disabled || filename == NULL || *filename == '\0';
+  reu_save_image_as_item->disabled = disabled;
+  reu_auto_save_item->disabled = disabled;
+}
+
+static struct menu_item *ide64_autodetect_items[4];
+static struct menu_item *ide64_cylinders_items[4];
+static struct menu_item *ide64_heads_items[4];
+static struct menu_item *ide64_sectors_items[4];
+
+static void update_ide64_geometry_enabled(int device) {
+  int autodetect = ide64_autodetect_items[device]->value != 0;
+  ide64_cylinders_items[device]->disabled = autodetect;
+  ide64_heads_items[device]->disabled = autodetect;
+  ide64_sectors_items[device]->disabled = autodetect;
+}
+
+#ifdef HAVE_NETWORK
+static struct menu_item *ide64_usb_address_item;
+
+static void update_ide64_usb_enabled(int enabled) {
+  ide64_usb_address_item->disabled = enabled == 0;
+}
+#endif
+
+
+
+
+
+static const int cartucce_altre[] = {
+  CARTRIDGE_IEEE488, CARTRIDGE_RAMLINK, CARTRIDGE_IEEEFLASH64,
+  CARTRIDGE_MAGIC_VOICE, CARTRIDGE_MMC64, CARTRIDGE_DQBB,
+  CARTRIDGE_EXPERT, CARTRIDGE_ISEPIC, CARTRIDGE_RAMCART };
+#define CARTUCCE_ALTRE (sizeof(cartucce_altre) / sizeof(cartucce_altre[0]))
+
+static int cartuccia_attaccata(void) {
+  unsigned int i;
+
+  if (cartridge_get_id(0) != CARTRIDGE_NONE) {
+    return 1;
+  }
+  for (i = 0; i < CARTUCCE_ALTRE; i++) {
+    if (cartridge_type_enabled(cartucce_altre[i])) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void menu_value_changed(struct menu_item *item) {
+   switch (item->id) {
+      case MENU_REU:
+        if (item->value && cartuccia_attaccata()) {
+          emux_detach_cart(0);
+        }
+
+
+
+         if (resources_set_int("REU", item->value) < 0) {
+            item->value = 0;
+            ui_error("Unable to enable RAM Expansion");
+         }
+         update_reu_image_enabled(item->value);
+         break;
+      case MENU_REU_SIZE:
+         if (item->value >=0 && item->value < 8)
+            resources_set_int("REUsize", reu_size_to_index[item->value]);
+         break;
+      case MENU_IDE64_VERSION:
+        resources_set_int("IDE64version", item->value);
+        break;
+      case MENU_IDE64_RTC_SAVE:
+        resources_set_int("IDE64RTCSave", item->value);
+        break;
+  #ifdef HAVE_NETWORK
+      case MENU_IDE64_USB_SERVER:
+        resources_set_int("IDE64USBServer", item->value);
+        update_ide64_usb_enabled(item->value);
+        break;
+      case MENU_IDE64_USB_SERVER_ADDRESS:
+        resources_set_string("IDE64USBServerAddress", item->str_value);
+        break;
+    #endif
+      case MENU_IDE64_AUTODETECT_1:
+      case MENU_IDE64_AUTODETECT_2:
+      case MENU_IDE64_AUTODETECT_3:
+      case MENU_IDE64_AUTODETECT_4: {
+        int device = item->id - MENU_IDE64_AUTODETECT_1;
+        resources_set_int_sprintf("IDE64AutodetectSize%i", item->value,
+                          device + 1);
+        update_ide64_geometry_enabled(device);
+        break;
+      }
+      case MENU_IDE64_CYLINDERS_1:
+      case MENU_IDE64_CYLINDERS_2:
+      case MENU_IDE64_CYLINDERS_3:
+      case MENU_IDE64_CYLINDERS_4:
+        resources_set_int_sprintf("IDE64Cylinders%i", item->value,
+                          item->id - MENU_IDE64_CYLINDERS_1 + 1);
+        break;
+      case MENU_IDE64_HEADS_1:
+      case MENU_IDE64_HEADS_2:
+      case MENU_IDE64_HEADS_3:
+      case MENU_IDE64_HEADS_4:
+        resources_set_int_sprintf("IDE64Heads%i", item->value,
+                          item->id - MENU_IDE64_HEADS_1 + 1);
+        break;
+      case MENU_IDE64_SECTORS_1:
+      case MENU_IDE64_SECTORS_2:
+      case MENU_IDE64_SECTORS_3:
+      case MENU_IDE64_SECTORS_4:
+        resources_set_int_sprintf("IDE64Sectors%i", item->value,
+                          item->id - MENU_IDE64_SECTORS_1 + 1);
+        break;
+      default:
+         break;
+   }
+}
+
+unsigned long emux_calculate_timing(double fps) {
+  if (fps >= 49 && fps <= 51) {
+    return C64_PAL_CYCLES_PER_LINE * C64_PAL_SCREEN_LINES * fps;
+  } else if (fps >= 59 && fps <= 61) {
+    return C64_NTSC_CYCLES_PER_LINE * C64_NTSC_SCREEN_LINES * fps;
+  } else {
+    return 0;
+  }
+}
+
+double emux_calculate_fps() {
+  if (is_ntsc()) {
+     return (double)circle_cycles_per_sec() / (C64_NTSC_CYCLES_PER_LINE * C64_NTSC_SCREEN_LINES);
+  }
+  return (double)circle_cycles_per_sec() / (C64_PAL_CYCLES_PER_LINE * C64_PAL_SCREEN_LINES);
+}
+
+void emux_set_color_brightness(int display_num, int value) {
+  resources_set_int("VICIIColorBrightness", value);
+}
+
+void emux_set_color_contrast(int display_num, int value) {
+  resources_set_int("VICIIColorContrast", value);
+}
+
+void emux_set_color_gamma(int display_num, int value) {
+  resources_set_int("VICIIColorGamma", value);
+}
+
+void emux_set_color_tint(int display_num, int value) {
+  resources_set_int("VICIIColorTint", value);
+}
+
+void emux_set_color_saturation(int display_num, int value) {
+  resources_set_int("VICIIColorSaturation", value);
+}
+
+void emux_set_video_cache(int value) {
+  resources_set_int("VICIIVideoCache", value);
+}
+
+void emux_set_hw_scale(int value) {
+
+
+}
+
+int emux_get_color_brightness(int display_num) {
+  int value;
+  resources_get_int("VICIIColorBrightness", &value);
+  return value;
+}
+
+int emux_get_color_contrast(int display_num) {
+  int value;
+  resources_get_int("VICIIColorContrast", &value);
+  return value;
+}
+
+int emux_get_color_gamma(int display_num) {
+  int value;
+  resources_get_int("VICIIColorGamma", &value);
+  return value;
+}
+
+int emux_get_color_tint(int display_num) {
+  int value;
+  resources_get_int("VICIIColorTint", &value);
+  return value;
+}
+
+int emux_get_color_saturation(int display_num) {
+  int value;
+  resources_get_int("VICIIColorSaturation", &value);
+  return value;
+}
+
+void cartridge_freeze(void) {
+  keyboard_clear_keymatrix();
+  cartridge_trigger_freeze();
+}
+
+struct menu_item* emux_add_palette_options(int menu_id, struct menu_item* parent) {
+  struct menu_item* palette_item =
+      ui_menu_add_multiple_choice(menu_id, parent, "Color Palette");
+  palette_item->num_choices = 17;
+  palette_item->value = 0;
+  strcpy(palette_item->choices[0], "VICE");
+  strcpy(palette_item->choices[1], "Pepto (PAL)");
+  strcpy(palette_item->choices[2], "Pepto (old PAL)");
+  strcpy(palette_item->choices[3], "Pepto (NTSC, Sony)");
+  strcpy(palette_item->choices[4], "Pepto (NTSC)");
+  strcpy(palette_item->choices[5], "Colodore (PAL)");
+  strcpy(palette_item->choices[6], "ChristopherJam");
+  strcpy(palette_item->choices[7], "C64HQ");
+  strcpy(palette_item->choices[8], "C64S");
+  strcpy(palette_item->choices[9], "CCS64");
+  strcpy(palette_item->choices[10], "Frodo");
+  strcpy(palette_item->choices[11], "Godot");
+  strcpy(palette_item->choices[12], "PC64");
+  strcpy(palette_item->choices[13], "RGB");
+  strcpy(palette_item->choices[14], "Deekay");
+  strcpy(palette_item->choices[15], "Ptoing");
+  strcpy(palette_item->choices[16], "Community Colors");
+  return palette_item;
+}
+
+
+
+
+
+
+
+
+
+
+
+static void c64_apply_model(int modello) {
+  int cia, sid, iecreset, kernal;
+  int registratore = 1, seriale = 1, userport = 1, tastiera = 1;
+
+  switch (modello) {
+    case 1:
+      cia = CIA_MODEL_6526A; sid = SID_MODEL_8580; iecreset = 1;
+      kernal = C64_KERNAL_REV3;
+      break;
+    case 2:
+      cia = CIA_MODEL_6526; sid = SID_MODEL_6581; iecreset = 0;
+      kernal = is_ntsc() ? C64_KERNAL_REV1 : C64_KERNAL_REV2;
+      break;
+    case 3:
+      cia = CIA_MODEL_6526; sid = SID_MODEL_6581; iecreset = 0;
+      kernal = C64_KERNAL_SX64;
+      registratore = 0;
+      break;
+    case 4:
+      cia = CIA_MODEL_6526A; sid = SID_MODEL_8580; iecreset = 1;
+      kernal = C64_KERNAL_GS64;
+      registratore = 0; seriale = 0; userport = 0; tastiera = 0;
+      break;
+    default:
+      cia = CIA_MODEL_6526; sid = SID_MODEL_6581; iecreset = 0;
+      kernal = C64_KERNAL_REV3;
+      break;
+  }
+
+  resources_set_int("CIA1Model", cia);
+  resources_set_int("CIA2Model", cia);
+  resources_set_int("BoardType", BOARD_C64);
+  resources_set_int("IECReset", iecreset);
+  resources_set_int("KernalRev", kernal);
+
+
+  {
+    int old_engine, old_sid;
+    resources_get_int("SidEngine", &old_engine);
+    resources_get_int("SidModel", &old_sid);
+    if ((old_sid == SID_MODEL_8580 || old_sid == SID_MODEL_8580D)
+        != (sid == SID_MODEL_8580)) {
+      sid_set_engine_model(old_engine, sid);
+    }
+  }
+
+
+  menu_set_cartridge_only(modello == 4);
+
+  userport_enable(userport);
+  c64keyboard_enable(tastiera);
+  c64iec_enable(seriale);
+  tapeport_enable(registratore);
+
+
+
+
+
+  emux_reset(0);
+}
+
+static const char *c64_model_names[] = {
+  "C64", "C64C", "C64 old", "SX-64", "C64 GS",
+};
+#define C64_NUM_MODELS 5
+
+
+static int c64_current_model(void) {
+  int kernal = C64_KERNAL_REV3, cia = CIA_MODEL_6526, sid = SID_MODEL_6581;
+  resources_get_int("KernalRev", &kernal);
+  resources_get_int("CIA1Model", &cia);
+  resources_get_int("SidModel", &sid);
+  switch (kernal) {
+    case C64_KERNAL_GS64: return 4;
+    case C64_KERNAL_SX64: return 3;
+    case C64_KERNAL_REV1:
+    case C64_KERNAL_REV2: return 2;
+    default:
+
+
+      return (cia == CIA_MODEL_6526A && sid == SID_MODEL_8580) ? 1 : 0;
+  }
+}
+
+static void c64_model_picked(struct menu_item *item) {
+  c64_apply_model(item->value);
+  ui_pop_all_and_toggle();
+}
+
+static void c64_open_model_list(struct menu_item *item) {
+  struct menu_item *lista = ui_push_menu(12, 8);
+  int in_vigore = c64_current_model();
+  int i;
+  for (i = 0; i < C64_NUM_MODELS; i++) {
+    struct menu_item *v =
+        ui_menu_add_button(MENU_C64_MODEL_SELECT, lista, c64_model_names[i]);
+    v->value = i;
+    if (i == in_vigore) {
+      strcat(v->displayed_value, " (*)");
+    }
+    v->on_value_changed = c64_model_picked;
+  }
+}
+
+
+
+
+static void c64_model_ports(int modello) {
+  userport_enable(modello != 4);
+  c64keyboard_enable(modello != 4);
+  c64iec_enable(modello != 4);
+  tapeport_enable(modello != 3 && modello != 4);
+}
+
+static void c64_add_model_option(struct menu_item *parent) {
+  struct menu_item *item =
+      ui_menu_add_button(MENU_C64_MODEL, parent, "Model...");
+  item->on_value_changed = c64_open_model_list;
+  menu_set_cartridge_only(c64_current_model() == 4);
+
+
+
+
+  c64_model_ports(c64_current_model());
+}
+
+void emux_add_machine_options(struct menu_item* parent) {
+
+
+  if (emux_machine_class != BMC64_MACHINE_CLASS_SCPU64) {
+    c64_add_model_option(parent);
+  }
+  struct menu_item* roms_parent = ui_menu_add_folder(parent, "ROMs...");
+  ui_menu_add_button(MENU_LOAD_KERNAL, roms_parent, "Load Kernal ROM...");
+  ui_menu_add_button(MENU_LOAD_BASIC, roms_parent, "Load Basic ROM...");
+  ui_menu_add_button(MENU_LOAD_CHARGEN, roms_parent, "Load Chargen ROM...");
+}
+
+struct menu_item* emux_add_cartridge_options(struct menu_item* root) {
+  struct menu_item* parent = ui_menu_add_folder(root, "Cartridge");
+  ui_menu_add_button(MENU_C64_ATTACH_CART, parent, "Attach cart...");
+  ui_menu_add_button(MENU_C64_ATTACH_CART_8K, parent, "Attach 8k raw...");
+  ui_menu_add_button(MENU_C64_ATTACH_CART_16K, parent, "Attach 16 raw...");
+  ui_menu_add_button(MENU_C64_ATTACH_CART_ULTIMAX, parent, "Attach Ultimax raw...");
+  ui_menu_add_button(MENU_DETACH_CART, parent, "Detach cartridge");
+
+  ui_menu_add_button(MENU_TEXT, parent, "");
+  ui_menu_add_button(MENU_MAKE_CART_DEFAULT, parent,
+                     "Set current cart default");
+
+  ui_menu_add_button(MENU_SAVE_EASYFLASH, parent, "Save EasyFlash Now");
+  ui_menu_add_button(MENU_CART_FREEZE, parent, "Cartridge Freeze");
+
+
+
+
+
+
+  struct menu_item* child =
+      ui_menu_add_folder(root, "Ram Expansion Unit (REU)");
+
+  int tmp;
+  resources_get_int("REU", &tmp);
+  struct menu_item* reu_item =
+     ui_menu_add_toggle(MENU_REU, child, "Ram Expansion", tmp);
+  reu_item->on_value_changed = menu_value_changed;
+
+  reu_size_item =
+      ui_menu_add_multiple_choice(MENU_REU_SIZE, child, "Memory Size");
+  reu_size_item->on_value_changed = menu_value_changed;
+  reu_size_item->num_choices = 8;
+
+  resources_get_int("REUsize", &tmp);
+  reu_size_item->value = 2;
+  for (int t=0;t<8;t++) {
+    if (tmp == reu_size_to_index[t])
+       reu_size_item->value = t;
+  }
+
+  strcpy(reu_size_item->choices[0], "128k");
+  strcpy(reu_size_item->choices[1], "256k");
+  strcpy(reu_size_item->choices[2], "512k");
+  strcpy(reu_size_item->choices[3], "1024k");
+  strcpy(reu_size_item->choices[4], "2048k");
+  strcpy(reu_size_item->choices[5], "4096k");
+  strcpy(reu_size_item->choices[6], "8192k");
+  strcpy(reu_size_item->choices[7], "16384k");
+
+
+
+
+
+  reu_image_menu = ui_menu_add_folder(child, "Ram Image (optional)");
+  reu_attach_image_item = ui_menu_add_button(
+    MENU_REU_ATTACH_IMAGE, reu_image_menu, "Load image...");
+  reu_detach_image_item = ui_menu_add_button(
+    MENU_REU_DETACH_IMAGE, reu_image_menu, "Clear image");
+  reu_save_image_item = ui_menu_add_button(
+    MENU_REU_SAVE_IMAGE, reu_image_menu, "Save image now");
+  reu_save_image_as_item = ui_menu_add_button(
+    MENU_REU_SAVE_IMAGE_AS, reu_image_menu, "Save image as...");
+
+
+
+
+
+
+  {
+    int scrivi = 0;
+    resources_get_int("REUImageWrite", &scrivi);
+    reu_auto_save_item = ui_menu_add_toggle(
+      MENU_REU_IMAGE_WRITE, reu_image_menu, "Auto-save image", scrivi);
+  }
+  update_reu_image_enabled(reu_item->value);
+
+    parent = ui_menu_add_folder(parent, "IDE64");
+    child = ui_menu_add_multiple_choice(MENU_IDE64_VERSION, parent,
+                      "Cartridge Version");
+    child->on_value_changed = menu_value_changed;
+    child->num_choices = 3;
+    resources_get_int("IDE64version", &child->value);
+    strcpy(child->choices[0], "V3");
+    strcpy(child->choices[1], "V4.1");
+    strcpy(child->choices[2], "V4.2");
+
+    resources_get_int("IDE64RTCSave", &tmp);
+    child = ui_menu_add_toggle(MENU_IDE64_RTC_SAVE, parent,
+                 "Save RTC When Changed", tmp);
+    child->on_value_changed = menu_value_changed;
+
+  #ifdef HAVE_NETWORK
+    resources_get_int("IDE64USBServer", &tmp);
+    child = ui_menu_add_toggle(MENU_IDE64_USB_SERVER, parent,
+                 "Enable USB Server", tmp);
+    child->on_value_changed = menu_value_changed;
+
+    const char *usb_address;
+    resources_get_string("IDE64USBServerAddress", &usb_address);
+    ide64_usb_address_item = ui_menu_add_text_field_limit(
+      MENU_IDE64_USB_SERVER_ADDRESS, parent, "USB Server Address",
+      (char *)usb_address, MAX_STR_VAL_LEN - 1);
+    ide64_usb_address_item->on_value_changed = menu_value_changed;
+    ide64_usb_address_item->textfield_right_aligned = 1;
+    update_ide64_usb_enabled(tmp);
+  #endif
+
+    for (int device = 0; device < 4; device++) {
+    char label[20];
+    sprintf(label, "ATA Device %d", device + 1);
+    struct menu_item *device_menu = ui_menu_add_folder(parent, label);
+
+    child = ui_menu_add_button(MENU_IDE64_IMAGE_1 + device, device_menu, "Attach Image...");
+
+    resources_get_int_sprintf("IDE64AutodetectSize%i", &tmp, device + 1);
+    ide64_autodetect_items[device] = ui_menu_add_toggle(
+      MENU_IDE64_AUTODETECT_1 + device, device_menu, "Autodetect", tmp);
+    ide64_autodetect_items[device]->on_value_changed = menu_value_changed;
+
+    resources_get_int_sprintf("IDE64Cylinders%i", &tmp, device + 1);
+    ide64_cylinders_items[device] = ui_menu_add_range(
+      MENU_IDE64_CYLINDERS_1 + device, device_menu, "Cylinders", 1, 65535,
+      1, tmp);
+    ide64_cylinders_items[device]->on_value_changed = menu_value_changed;
+
+    resources_get_int_sprintf("IDE64Heads%i", &tmp, device + 1);
+    ide64_heads_items[device] = ui_menu_add_range(
+      MENU_IDE64_HEADS_1 + device, device_menu, "Heads", 1, 16, 1, tmp);
+    ide64_heads_items[device]->on_value_changed = menu_value_changed;
+
+    resources_get_int_sprintf("IDE64Sectors%i", &tmp, device + 1);
+    ide64_sectors_items[device] = ui_menu_add_range(
+      MENU_IDE64_SECTORS_1 + device, device_menu, "Sectors", 1, 63, 1,
+      tmp);
+    ide64_sectors_items[device]->on_value_changed = menu_value_changed;
+
+    update_ide64_geometry_enabled(device);
+    }
+
+  return parent;
+}
+
+int emux_save_reu_image(const char *path) {
+  if (!reu_cart_enabled()) {
+    return -2;
+  }
+  return reu_bin_save(path);
+}
+
+#include "psid.h"
+#include "machine.h"
+
+
+
+
+
+
+
+
+
+
+static int sid_brano_ora = 0;
+
+int emux_sid_quale_brano(void) {
+  return sid_brano_ora;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#include <stdlib.h>
+#include <string.h>
+#include "c64/c64cart.h"
+#include "c64/c64mem.h"
+#include "c64/c64pla.h"
+#include "interrupt.h"
+#include "maincpu.h"
+#include "mem.h"
+#include "snapshot.h"
+#include "vicii.h"
+
+#define FOTO_PAGINA  256
+#define FOTO_PAGINE  (0x10000 / FOTO_PAGINA)
+
+#define FOTO_BLOCCO  256
+
+
+#define FOTO_TETTO   (48UL * 1024UL * 1024UL)
+#define FOTO_RISERVA (128UL * 1024UL * 1024UL)
+#define FOTO_SID     8
+
+typedef struct {
+  int secondo;
+  unsigned long clk0;
+  uint32_t pagina[FOTO_PAGINE];
+  uint32_t *stato;
+  size_t stato_len;
+  pport_t porta;
+  int sids;
+  uint8_t sid[FOTO_SID][32];
+} foto_t;
+
+static foto_t *foto = NULL;
+static int foto_n = 0;
+static int foto_posti = 0;
+static uint8_t **foto_blocchi = NULL;
+static int foto_blocchi_n = 0;
+static int foto_blocchi_posti = 0;
+static uint32_t foto_pagine_n = 0;
+static unsigned long foto_byte = 0;
+static int foto_piena = 0;
+static long foto_firma[5];
+static int foto_firma_ok = 0;
+static int foto_chiesta = -1;
+static unsigned long foto_chiesta_clk0 = 0;
+static int foto_da_rimettere = -1;
+static int foto_andata_male = 0;
+
+extern unsigned long circle_memoria_libera(void);
+
+extern int raster_snapshot_senza_disegno;
+
+
+extern int c64_glue_snapshot_write_module(snapshot_t *s) __attribute__((weak));
+extern int c64_glue_snapshot_read_module(snapshot_t *s) __attribute__((weak));
+
+static uint8_t *foto_pagina(uint32_t i) {
+  return foto_blocchi[i / FOTO_BLOCCO] + (i % FOTO_BLOCCO) * FOTO_PAGINA;
+}
+
+static int foto_macchina_giusta(void) {
+  return machine_class == VICE_MACHINE_C64 ||
+         machine_class == VICE_MACHINE_C64SC;
+}
+
+
+
+static int foto_brano(void) {
+  int predefinito = 0;
+
+  if (sid_brano_ora >= 1) {
+    return sid_brano_ora;
+  }
+  psid_tunes(&predefinito);
+  return predefinito;
+}
+
+static void foto_firma_ora(long f[5]) {
+  int stereo = 0;
+
+  resources_get_int("SidStereo", &stereo);
+  f[0] = foto_brano();
+  f[1] = (long)machine_get_cycles_per_second();
+  f[2] = stereo;
+  f[3] = (long)export.exrom;
+  f[4] = (long)export.game;
+}
+
+static int foto_esatta(int secondo) {
+  int i;
+
+  for (i = foto_n - 1; i >= 0; i--) {
+    if (foto[i].secondo == secondo) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+
+static int foto_prima_di(int secondo) {
+  int i;
+  int migliore = -1;
+
+  for (i = 0; i < foto_n; i++) {
+    if (foto[i].secondo <= secondo &&
+        (migliore < 0 || foto[i].secondo > foto[migliore].secondo)) {
+      migliore = i;
+    }
+  }
+  return migliore;
+}
+
+void emux_sid_foto_via(void) {
+  int i;
+
+  if (foto_n > 0) {
+    printf("[FOTO] via: %d fotografie, %lu KB\n", foto_n, foto_byte / 1024UL);
+  }
+  for (i = 0; i < foto_n; i++) {
+    free(foto[i].stato);
+  }
+  free(foto);
+  foto = NULL;
+  foto_n = 0;
+  foto_posti = 0;
+  for (i = 0; i < foto_blocchi_n; i++) {
+    free(foto_blocchi[i]);
+  }
+  free(foto_blocchi);
+  foto_blocchi = NULL;
+  foto_blocchi_n = 0;
+  foto_blocchi_posti = 0;
+  foto_pagine_n = 0;
+  foto_byte = 0;
+  foto_piena = 0;
+  foto_firma_ok = 0;
+  foto_chiesta = -1;
+  if (foto_da_rimettere >= 0) {
+
+    foto_da_rimettere = -1;
+    foto_andata_male = 1;
+  }
+}
+
+
+
+static int foto_scorta(uint32_t servono) {
+  while (foto_pagine_n + servono > (uint32_t)foto_blocchi_n * FOTO_BLOCCO) {
+    uint8_t *b;
+
+    if (foto_byte + FOTO_BLOCCO * FOTO_PAGINA > FOTO_TETTO ||
+        circle_memoria_libera() < FOTO_RISERVA + FOTO_BLOCCO * FOTO_PAGINA) {
+      return 0;
+    }
+    if (foto_blocchi_n == foto_blocchi_posti) {
+      const int posti = foto_blocchi_posti ? foto_blocchi_posti * 2 : 16;
+      uint8_t **nuovi = realloc(foto_blocchi, posti * sizeof(*nuovi));
+
+      if (nuovi == NULL) {
+        return 0;
+      }
+      foto_blocchi = nuovi;
+      foto_blocchi_posti = posti;
+    }
+    b = malloc(FOTO_BLOCCO * FOTO_PAGINA);
+    if (b == NULL) {
+      return 0;
+    }
+    foto_blocchi[foto_blocchi_n++] = b;
+    foto_byte += FOTO_BLOCCO * FOTO_PAGINA;
+  }
+  return 1;
+}
+
+
+
+
+static uint32_t foto_metti_pagina(const uint8_t *da, size_t quanti,
+                                  long vecchia) {
+  uint8_t *p;
+
+  if (vecchia >= 0 &&
+      memcmp(da, foto_pagina((uint32_t)vecchia), quanti) == 0) {
+    return (uint32_t)vecchia;
+  }
+  p = foto_pagina(foto_pagine_n);
+  memcpy(p, da, quanti);
+  if (quanti < FOTO_PAGINA) {
+    memset(p + quanti, 0, FOTO_PAGINA - quanti);
+  }
+  return foto_pagine_n++;
+}
+
+static foto_t *foto_posto(void) {
+  if (foto_n == foto_posti) {
+    const int posti = foto_posti ? foto_posti * 2 : 64;
+    const unsigned long in_piu =
+        (unsigned long)(posti - foto_posti) * sizeof(foto_t);
+    foto_t *nuove;
+
+    if (foto_byte + in_piu > FOTO_TETTO) {
+      return NULL;
+    }
+    nuove = realloc(foto, posti * sizeof(foto_t));
+    if (nuove == NULL) {
+      return NULL;
+    }
+    foto = nuove;
+    foto_posti = posti;
+    foto_byte += in_piu;
+  }
+  return &foto[foto_n];
+}
+
+
+
+static void foto_scatta(uint16_t addr, void *data) {
+  long firma[5];
+  foto_t *f;
+  foto_t *prima;
+  snapshot_t *s;
+  char *buf = NULL;
+  size_t len = 0;
+  uint32_t *indici;
+  uint32_t n_stato;
+  uint32_t k;
+  int p;
+  int i;
+  int scritta;
+  int stereo = 0;
+  const int secondo = foto_chiesta;
+
+  (void)addr;
+  (void)data;
+  foto_chiesta = -1;
+  if (secondo < 0 || foto_piena || foto_da_rimettere >= 0 ||
+      !foto_macchina_giusta()) {
+    return;
+  }
+  foto_firma_ora(firma);
+  if (foto_firma_ok && memcmp(firma, foto_firma, sizeof(firma)) != 0) {
+    emux_sid_foto_via();
+  }
+  memcpy(foto_firma, firma, sizeof(firma));
+  foto_firma_ok = 1;
+  if (foto_esatta(secondo) >= 0) {
+    return;
+  }
+  s = snapshot_create_mem(&buf, &len, 1, 0, machine_get_name());
+  if (s == NULL) {
+    free(buf);
+    return;
+  }
+  sound_snapshot_prepare();
+  raster_snapshot_senza_disegno = 1;
+  scritta = maincpu_snapshot_write_module(s) >= 0 &&
+            ciacore_snapshot_write_module(machine_context.cia1, s) >= 0 &&
+            ciacore_snapshot_write_module(machine_context.cia2, s) >= 0 &&
+            vicii_snapshot_write_module(s) >= 0 &&
+            (c64_glue_snapshot_write_module == NULL ||
+             c64_glue_snapshot_write_module(s) >= 0);
+  raster_snapshot_senza_disegno = 0;
+  if (!scritta) {
+    const char *modulo = snapshot_get_current_module();
+
+    snapshot_close(s);
+    free(buf);
+    printf("[FOTO] secondo %d: lo snapshot in memoria non si scrive (%s)\n",
+           secondo, modulo != NULL ? modulo : "?");
+    return;
+  }
+  if (snapshot_close(s) < 0 || buf == NULL || len == 0) {
+    free(buf);
+    return;
+  }
+  n_stato = (uint32_t)((len + FOTO_PAGINA - 1) / FOTO_PAGINA);
+  indici = malloc(n_stato * sizeof(uint32_t));
+  if (indici == NULL || !foto_scorta(FOTO_PAGINE + n_stato) ||
+      (f = foto_posto()) == NULL) {
+    free(indici);
+    free(buf);
+    foto_piena = 1;
+    printf("[FOTO] memoria al completo: %d fotografie, %lu KB; le altre no\n",
+           foto_n, foto_byte / 1024UL);
+    return;
+  }
+  prima = foto_n > 0 ? &foto[foto_n - 1] : NULL;
+  for (p = 0; p < FOTO_PAGINE; p++) {
+    f->pagina[p] = foto_metti_pagina(mem_ram + p * FOTO_PAGINA, FOTO_PAGINA,
+                                     prima != NULL ? (long)prima->pagina[p]
+                                                   : -1L);
+  }
+  for (k = 0; k < n_stato; k++) {
+    const size_t da = (size_t)k * FOTO_PAGINA;
+    const size_t quanti = len - da < FOTO_PAGINA ? len - da : FOTO_PAGINA;
+
+
+    indici[k] = foto_metti_pagina((const uint8_t *)buf + da, quanti,
+                                  (prima != NULL && prima->stato_len == len)
+                                      ? (long)prima->stato[k]
+                                      : -1L);
+  }
+  free(buf);
+  f->porta = pport;
+  resources_get_int("SidStereo", &stereo);
+  f->sids = stereo + 1 > FOTO_SID ? FOTO_SID : stereo + 1;
+  for (i = 0; i < f->sids; i++) {
+    memcpy(f->sid[i], sid_get_siddata(i), 32);
+  }
+  f->secondo = secondo;
+  f->clk0 = foto_chiesta_clk0;
+  f->stato = indici;
+  f->stato_len = len;
+  foto_byte += n_stato * sizeof(uint32_t);
+  foto_n++;
+}
+
+
+
+static void foto_male(const char *perche) {
+  printf("[FOTO] la fotografia non torna (%s): il brano ricomincia\n", perche);
+  emux_sid_foto_via();
+  foto_andata_male = 1;
+  emux_sid_brano(0);
+}
+
+
+
+
+static const char *foto_rimetti_da(const foto_t *f) {
+  snapshot_t *s;
+  uint8_t maggiore;
+  uint8_t minore;
+  uint8_t *stato;
+  size_t k;
+  int p;
+  int i;
+  int r;
+  int letta;
+
+
+  stato = malloc(f->stato_len);
+  if (stato == NULL) {
+    return "memoria";
+  }
+  for (k = 0; k * FOTO_PAGINA < f->stato_len; k++) {
+    const size_t da = k * FOTO_PAGINA;
+    const size_t quanti =
+        f->stato_len - da < FOTO_PAGINA ? f->stato_len - da : FOTO_PAGINA;
+
+    memcpy(stato + da, foto_pagina(f->stato[k]), quanti);
+  }
+  s = snapshot_open_mem(stato, f->stato_len, &maggiore, &minore,
+                        machine_get_name());
+  if (s == NULL) {
+    free(stato);
+    return "snapshot";
+  }
+  vicii_snapshot_prepare();
+  if (maincpu_snapshot_read_module(s) < 0) {
+    snapshot_close(s);
+    free(stato);
+    return "CPU";
+  }
+
+
+  sound_snapshot_finish();
+  for (p = 0; p < FOTO_PAGINE; p++) {
+    memcpy(mem_ram + p * FOTO_PAGINA, foto_pagina(f->pagina[p]), FOTO_PAGINA);
+  }
+  pport = f->porta;
+  mem_pla_config_changed();
+  raster_snapshot_senza_disegno = 1;
+  letta = ciacore_snapshot_read_module(machine_context.cia1, s) >= 0 &&
+          ciacore_snapshot_read_module(machine_context.cia2, s) >= 0 &&
+          vicii_snapshot_read_module(s) >= 0 &&
+          (c64_glue_snapshot_read_module == NULL ||
+           c64_glue_snapshot_read_module(s) >= 0);
+  raster_snapshot_senza_disegno = 0;
+  if (!letta) {
+    snapshot_close(s);
+    free(stato);
+    return "CIA, VIC-II o glue";
+  }
+  snapshot_close(s);
+  free(stato);
+  for (i = 0; i < f->sids; i++) {
+    for (r = 0; r < 32; r++) {
+      const uint16_t a = (uint16_t)r;
+      const uint8_t v = f->sid[i][r];
+
+      switch (i) {
+        case 0:  sid_store(a, v);  break;
+        case 1:  sid2_store(a, v); break;
+        case 2:  sid3_store(a, v); break;
+        case 3:  sid4_store(a, v); break;
+        case 4:  sid5_store(a, v); break;
+        case 5:  sid6_store(a, v); break;
+        case 6:  sid7_store(a, v); break;
+        default: sid8_store(a, v); break;
+      }
+    }
+  }
+  sound_snapshot_finish();
+  return NULL;
+}
+
+
+static void foto_rimetti(uint16_t addr, void *data) {
+  long firma[5];
+  const char *male;
+  const int quale = foto_da_rimettere;
+
+  (void)addr;
+  (void)data;
+  foto_da_rimettere = -1;
+  if (quale < 0 || quale >= foto_n) {
+    return;
+  }
+  foto_firma_ora(firma);
+  if (!foto_firma_ok || memcmp(firma, foto_firma, sizeof(firma)) != 0) {
+    foto_male("la macchina e' cambiata");
+    return;
+  }
+  male = foto_rimetti_da(&foto[quale]);
+  if (male != NULL) {
+    foto_male(male);
+    return;
+  }
+  printf("[FOTO] rimessa la fotografia del secondo %d (%d fotografie, %lu KB)\n",
+         foto[quale].secondo, foto_n, foto_byte / 1024UL);
+}
+
+
+
+
+int emux_sid_foto_chiedi(int secondo, unsigned long clk0) {
+  if (!foto_macchina_giusta() || foto_piena || secondo < 0 ||
+      foto_chiesta >= 0 || foto_da_rimettere >= 0 ||
+      foto_esatta(secondo) >= 0) {
+    return 0;
+  }
+  foto_chiesta = secondo;
+  foto_chiesta_clk0 = clk0;
+  interrupt_maincpu_trigger_trap(foto_scatta, NULL);
+  return 1;
+}
+
+
+int emux_sid_foto_cerca(int dove) {
+  long firma[5];
+  int i;
+
+  if (!foto_macchina_giusta() || foto_n == 0) {
+    return -1;
+  }
+  foto_firma_ora(firma);
+  if (!foto_firma_ok || memcmp(firma, foto_firma, sizeof(firma)) != 0) {
+    emux_sid_foto_via();
+    return -1;
+  }
+  i = foto_prima_di(dove);
+  return i >= 0 ? foto[i].secondo : -1;
+}
+
+
+
+int emux_sid_foto_torna(int secondo, unsigned long *clk0) {
+  const int i = foto_esatta(secondo);
+
+  if (i < 0 || !foto_macchina_giusta()) {
+    return -1;
+  }
+  if (clk0 != NULL) {
+    *clk0 = foto[i].clk0;
+  }
+  if (foto_da_rimettere < 0) {
+    interrupt_maincpu_trigger_trap(foto_rimetti, NULL);
+  }
+  foto_da_rimettere = i;
+  return 0;
+}
+
+
+int emux_sid_foto_in_volo(void) {
+  return (foto_da_rimettere >= 0 && foto_da_rimettere < foto_n)
+             ? foto[foto_da_rimettere].secondo
+             : -1;
+}
+
+
+
+int emux_sid_foto_andata_male(void) {
+  const int r = foto_andata_male;
+
+  foto_andata_male = 0;
+  return r;
+}
+
+
+void emux_sid_foto_conta(int *quante, int *dal, int *al, unsigned long *byte,
+                         unsigned long *pagine) {
+  *quante = foto_n;
+  *dal = foto_n > 0 ? foto[0].secondo : -1;
+  *al = foto_n > 0 ? foto[foto_n - 1].secondo : -1;
+  *byte = foto_byte;
+  *pagine = foto_pagine_n;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+static int sid_utente_salvato = 0;
+
+
+
+
+
+
+
+
+
+
+
+
+extern int sid_lettore_attivo;
+extern int sid_lettore_lati[8][8];
+extern int sid_lettore_stereo;
+#define LATO_SX 0
+#define LATO_C 1
+#define LATO_DX 2
+
+static const int lati_di_partenza[8][8] = {
+  { LATO_C, LATO_C, LATO_C, LATO_C },
+  { LATO_SX, LATO_DX, LATO_C, LATO_C },
+  { LATO_SX, LATO_C, LATO_DX, LATO_C },
+  { LATO_SX, LATO_SX, LATO_DX, LATO_DX },
+  { LATO_SX, LATO_DX, LATO_SX, LATO_DX, LATO_C },
+  { LATO_SX, LATO_DX, LATO_SX, LATO_DX, LATO_SX, LATO_DX },
+  { LATO_SX, LATO_DX, LATO_SX, LATO_DX, LATO_SX, LATO_DX, LATO_C },
+  { LATO_SX, LATO_DX, LATO_SX, LATO_DX, LATO_SX, LATO_DX, LATO_SX, LATO_DX },
+};
+
+
+static int lati_quanti(void) {
+  int stereo = 0;
+
+  if (resources_get_int("SidStereo", &stereo) < 0 || stereo < 0) {
+    stereo = 0;
+  }
+  return stereo + 1 > 8 ? 8 : stereo + 1;
+}
+
+
+
+static void lati_del_brano(void) {
+  sid_lettore_stereo = (sid_lettore_lati[0][0] != LATO_C);
+  sid_lettore_attivo = 1;
+}
+
+
+static void lati_via(void) {
+  int m;
+  int s;
+
+  sid_lettore_attivo = 0;
+  sid_lettore_stereo = 0;
+  for (m = 0; m < 8; m++) {
+    for (s = 0; s < 8; s++) {
+      sid_lettore_lati[m][s] = lati_di_partenza[m][s];
+    }
+  }
+}
+static int sid_utente_stereo = 0;
+static int sid_utente_indirizzo = 0xd420;
+
+
+
+static int sid_utente_indirizzi[6] = { 0xdf00, 0xdf80, 0xde80, 0xdf40, 0xde40, 0xdfc0 };
+static int sid_utente_motore = SID_ENGINE_RESID;
+static int sid_utente_campionamento = SID_RESID_SAMPLING_RESAMPLING;
+
+
+
+
+
+static int sid_utente_modello[3] = { 0, 0, 0 };
+static int sid_utente_video = 0;
+static const char *const sid_risorsa_modello[3] = {
+    "SidModel", "Sid2Model", "Sid3Model"
+};
+
+
+
+static void sid_rimetti(const char *risorsa, int valore) {
+  int ora = 0;
+
+  if (resources_get_int(risorsa, &ora) < 0 || ora != valore) {
+    resources_set_int(risorsa, valore);
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int porta_presa = 0;
+static int porta_tipo = CARTRIDGE_NONE;
+static char porta_file[1024];
+static int porta_altre[CARTUCCE_ALTRE];
+static int porta_quante_altre = 0;
+
+static void lettore_prende_la_porta(void) {
+  unsigned int i;
+
+  if (!cartuccia_attaccata()) {
+    return;
+  }
+  if (!porta_presa) {
+    char *nome = cartridge_get_filename_by_slot(0);
+
+    porta_tipo = cartridge_get_id(0);
+    porta_file[0] = '\0';
+    if (porta_tipo != CARTRIDGE_NONE && nome != NULL) {
+      strncpy(porta_file, nome, sizeof(porta_file) - 1);
+      porta_file[sizeof(porta_file) - 1] = '\0';
+    }
+    porta_quante_altre = 0;
+    for (i = 0; i < CARTUCCE_ALTRE; i++) {
+      if (cartucce_altre[i] != porta_tipo &&
+          cartridge_type_enabled(cartucce_altre[i])) {
+        porta_altre[porta_quante_altre++] = cartucce_altre[i];
+      }
+    }
+    porta_presa = 1;
+  }
+
+  emux_detach_cart(0);
+}
+
+static void lettore_rende_la_porta(void) {
+  int reu = 0;
+  int i;
+
+  if (!porta_presa) {
+    return;
+  }
+  porta_presa = 0;
+  if (resources_get_int("REU", &reu) < 0) {
+    reu = 0;
+  }
+  if (reu) {
+    return;
+  }
+  for (i = 0; i < porta_quante_altre; i++) {
+    cartridge_enable(porta_altre[i]);
+  }
+  if (porta_tipo != CARTRIDGE_NONE && porta_file[0] != '\0') {
+
+
+    if (cartridge_attach_image(CARTRIDGE_CRT, porta_file) < 0) {
+      cartridge_attach_image(porta_tipo, porta_file);
+    }
+  }
+}
+
+void emux_sid_lascia_la_porta(void) {
+  porta_presa = 0;
+}
+
+
+static void sid_rimetti_utente(void) {
+  int i;
+
+  for (i = 0; i < 3; i++) {
+    sid_rimetti(sid_risorsa_modello[i], sid_utente_modello[i]);
+  }
+  sid_rimetti("MachineVideoStandard", sid_utente_video);
+  resources_set_int("Sid2AddressStart", sid_utente_indirizzo);
+  resources_set_int("SidStereo", sid_utente_stereo);
+
+
+
+  for (i = 0; i < 6; i++) {
+    char nome[24];
+
+    snprintf(nome, sizeof(nome), "Sid%dAddressStart", i + 3);
+    sid_rimetti(nome, sid_utente_indirizzi[i]);
+  }
+  sid_rimetti("SidEngine", sid_utente_motore);
+  sid_rimetti("SidResidSampling", sid_utente_campionamento);
+  emux_sid_uscita_come_i_chip();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+extern int circle_get_model();
+
+
+
+static int sid_lettore_motore = -1;
+
+static void lettore_motore_per_tanti_sid(void) {
+  const int quanti = psid_quanti_sid();
+  const int pi4 = circle_get_model() < 5;
+
+  if (quanti <= 4) {
+    return;
+  }
+  if (sid_lettore_motore < 0) {
+    sid_rimetti("SidEngine", SID_ENGINE_RESID);
+  }
+  if (pi4) {
+    sid_rimetti("SidResidSampling", SID_RESID_SAMPLING_FAST);
+  }
+  if (sid_lettore_motore < 0) {
+    printf("[SID] %d SID: motore reSID, modo %s\n", quanti,
+           pi4 ? "Fast (Pi 4)" : "del menu (Pi 5)");
+  } else {
+    printf("[SID] %d SID: motore %s scelto con S, modo %s\n", quanti,
+           sid_lettore_motore == SID_ENGINE_RESID ? "reSID" : "reSIDfp",
+           pi4 ? "Fast (Pi 4)" : "del menu (Pi 5)");
+  }
+}
+
+
+
+
+
+
+
+
+
+
+const char *emux_sid_motore_cambia(void) {
+#ifdef HAVE_RESIDFP
+  int motore = SID_ENGINE_RESID;
+
+  resources_get_int("SidEngine", &motore);
+  motore = motore == SID_ENGINE_RESIDFP ? SID_ENGINE_RESID
+                                        : SID_ENGINE_RESIDFP;
+  if (resources_set_int("SidEngine", motore) < 0) {
+    return NULL;
+  }
+  sid_lettore_motore = motore;
+  printf("[SID] tasto S: motore %s\n",
+         motore == SID_ENGINE_RESIDFP ? "reSIDfp" : "reSID");
+  return motore == SID_ENGINE_RESIDFP ? "ENGINE: reSIDfp" : "ENGINE: reSID";
+#else
+  return NULL;
+#endif
+}
+
+int emux_sid_carica(const char *percorso) {
+  if (percorso == NULL) {
+    return -1;
+  }
+  emux_sid_foto_via();
+  if (sid_utente_salvato) {
+
+
+
+
+
+
+
+
+
+    sid_rimetti_utente();
+    printf("[SID] macchina dell'utente rimessa prima del file nuovo\n");
+  }
+  if (!sid_utente_salvato) {
+    int i;
+
+    resources_get_int("SidStereo", &sid_utente_stereo);
+    resources_get_int("Sid2AddressStart", &sid_utente_indirizzo);
+    for (i = 0; i < 3; i++) {
+      resources_get_int(sid_risorsa_modello[i], &sid_utente_modello[i]);
+    }
+
+    for (i = 0; i < 6; i++) {
+      char nome[24];
+
+      snprintf(nome, sizeof(nome), "Sid%dAddressStart", i + 3);
+      resources_get_int(nome, &sid_utente_indirizzi[i]);
+    }
+    resources_get_int("SidEngine", &sid_utente_motore);
+    resources_get_int("SidResidSampling", &sid_utente_campionamento);
+    resources_get_int("MachineVideoStandard", &sid_utente_video);
+    sid_utente_salvato = 1;
+    printf("[SID] messi da parte: modelli %d %d %d, video %d, Dual SID %d a $%04x\n",
+           sid_utente_modello[0], sid_utente_modello[1],
+           sid_utente_modello[2], sid_utente_video, sid_utente_stereo,
+           (unsigned)sid_utente_indirizzo);
+  }
+  if (psid_load_file(percorso) < 0) {
+    return -1;
+  }
+  if (sid_lettore_motore >= 0) {
+
+    sid_rimetti("SidEngine", sid_lettore_motore);
+  }
+  lettore_motore_per_tanti_sid();
+  lati_del_brano();
+  lettore_prende_la_porta();
+  emux_sid_uscita_come_i_chip();
+
+  psid_set_tune(0);
+  sid_brano_ora = 0;
+  machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
+  return 0;
+}
+
+
+
+
+int emux_sid_brano(int passo) {
+  int predefinito = 0;
+  int quanti = psid_tunes(&predefinito);
+  int ora;
+
+  if (quanti <= 0) {
+    return -1;
+  }
+  if (passo != 0) {
+    emux_sid_foto_via();
+  }
+  ora = emux_sid_quale_brano();
+  if (ora < 1) {
+    ora = predefinito;
+  }
+  ora += passo;
+  if (ora < 1) {
+    ora = quanti;
+  }
+  if (ora > quanti) {
+    ora = 1;
+  }
+  psid_set_tune(ora);
+  sid_brano_ora = ora;
+  machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
+  return ora;
+}
+
+
+int emux_sid_quanti_brani(void) {
+  int predefinito = 0;
+  return psid_tunes(&predefinito);
+}
+
+const char *emux_sid_chi_suona(int quale) {
+  return psid_chi_suona(quale);
+}
+
+
+
+
+
+
+
+const char *emux_sid_velocita(void) {
+  static char testo[20];
+  unsigned long hz;
+  int brano;
+  int a_cia;
+
+  if (emux_sid_quanti_brani() <= 0) {
+    return "";
+  }
+  brano = emux_sid_quale_brano();
+  if (brano <= 0) {
+    int predefinito = 0;
+    psid_tunes(&predefinito);
+    brano = predefinito;
+  }
+  a_cia = psid_brano_a_cia(brano);
+  if (a_cia < 0) {
+    return "";
+  }
+  if (a_cia) {
+    unsigned latch = 0;
+
+    if (machine_context.cia1 != NULL) {
+      latch = (unsigned)(machine_context.cia1->c_cia[4] |
+                         (machine_context.cia1->c_cia[5] << 8));
+    }
+    hz = (latch > 0 && machine_get_cycles_per_second() > 0)
+             ? ((unsigned long)machine_get_cycles_per_second() + latch / 2) /
+                   (latch + 1)
+             : 0;
+    if (hz > 0 && hz < 1000) {
+      snprintf(testo, sizeof(testo), "CIA %luHz", hz);
+    } else {
+      snprintf(testo, sizeof(testo), "CIA");
+    }
+    return testo;
+  }
+  hz = (machine_get_cycles_per_frame() > 0)
+           ? ((unsigned long)machine_get_cycles_per_second() +
+              machine_get_cycles_per_frame() / 2) /
+                 machine_get_cycles_per_frame()
+           : 0;
+  snprintf(testo, sizeof(testo), "%s %luHz", hz >= 55 ? "NTSC" : "PAL", hz);
+  return testo;
+}
+
+
+extern void circle_diag_audio(const char *quando);
+
+
+void emux_sid_ferma(void) {
+  emux_sid_foto_via();
+  sid_lettore_motore = -1;
+
+
+
+  if (sid_utente_salvato) {
+    circle_diag_audio("all'uscita dal lettore SID");
+  }
+  psid_set_tune(-1);
+  sid_brano_ora = 0;
+  lati_via();
+  if (sid_utente_salvato) {
+    sid_rimetti_utente();
+    {
+
+      int motore = -1;
+      resources_get_int("SidEngine", &motore);
+      printf("[SID] allo stop il motore del menu: %d\n", motore);
+    }
+    sid_utente_salvato = 0;
+    printf("[SID] rimessi: modelli %d %d %d, video %d, Dual SID %d a $%04x\n",
+           sid_utente_modello[0], sid_utente_modello[1],
+           sid_utente_modello[2], sid_utente_video, sid_utente_stereo,
+           (unsigned)sid_utente_indirizzo);
+  }
+  lettore_rende_la_porta();
+  machine_trigger_reset(MACHINE_RESET_MODE_POWER_CYCLE);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static uint8_t livelli_gate_prima[24];
+static uint8_t livelli_inv_prima[24];
+
+
+
+
+
+
+
+static int livelli_picco[24];
+#define VU_CADUTA 96
+
+
+
+
+static int sid_voci_mute = 0;
+
+int emux_sid_livelli(int *livello) {
+  int motore = 0;
+  int quanti = 0;
+  int s;
+
+
+  if (emux_sid_quanti_brani() <= 0) {
+    return 0;
+  }
+  resources_get_int("SidEngine", &motore);
+
+
+  if (motore != SID_ENGINE_RESID
+#ifdef HAVE_RESIDFP
+      && motore != SID_ENGINE_RESIDFP
+#endif
+      ) {
+    return 0;
+  }
+
+
+  if (resources_get_int("SidStereo", &quanti) < 0) {
+    quanti = 0;
+  }
+  quanti += 1;
+
+
+
+
+
+  if (quanti > 8) {
+    quanti = 8;
+  }
+  for (s = 0; s < quanti; s++) {
+    sid_snapshot_state_t st;
+    int volume;
+    int v;
+
+    if (sound_get_psid(s) == NULL) {
+      break;
+    }
+    sid_state_read(s, &st);
+    volume = st.sid_register[0x18] & 0x0f;
+    for (v = 0; v < 3; v++) {
+      int i = s * 3 + v;
+      int gate = st.sid_register[v * 7 + 4] & 1;
+      int inv = st.envelope_counter[v];
+      int attacco_perso = st.envelope_state[v] == 1   &&
+          ((gate && !livelli_gate_prima[i]) || inv > livelli_inv_prima[i]);
+
+      int adesso = (attacco_perso ? 255 : inv) * (volume + 1) / 16;
+
+      if (adesso >= livelli_picco[i]) {
+        livelli_picco[i] = adesso;
+      } else {
+        livelli_picco[i] -= VU_CADUTA;
+        if (livelli_picco[i] < adesso) {
+          livelli_picco[i] = adesso;
+        }
+      }
+      if (sid_voci_mute & (1 << i)) {
+        livelli_picco[i] = 0;
+      }
+      livello[i] = livelli_picco[i];
+      livelli_gate_prima[i] = (uint8_t)gate;
+      livelli_inv_prima[i] = (uint8_t)inv;
+    }
+  }
+  return s;
+}
+
+extern void resid_bmc_voci_mute(sound_t *psid, int chip, int mute);
+#ifdef HAVE_RESIDFP
+extern void residfp_bmc_voci_mute(sound_t *psid, int chip, int mute);
+#endif
+extern volatile int bmc_drive_zitti;
+
+int emux_sid_voci_mute(void) {
+  return sid_voci_mute;
+}
+
+void emux_sid_voci_imposta(int mute) {
+  int motore = 0;
+  int s;
+
+
+
+
+  sid_voci_mute = mute & 0xffffff;
+  resources_get_int("SidEngine", &motore);
+  for (s = 0; s < 8; s++) {
+
+
+    resid_bmc_voci_mute(motore == SID_ENGINE_RESID ? sound_get_psid(s) : NULL,
+                        s, (sid_voci_mute >> (s * 3)) & 7);
+#ifdef HAVE_RESIDFP
+
+
+    residfp_bmc_voci_mute(motore == SID_ENGINE_RESIDFP ? sound_get_psid(s) : NULL,
+                          s, (sid_voci_mute >> (s * 3)) & 7);
+#endif
+  }
+}
+
+
+
+
+
+int emux_sid_lato(int s) {
+  int uscita = 0;
+  int q;
+
+  if (!sid_lettore_attivo || s < 0) {
+    return -1;
+  }
+  q = lati_quanti();
+  if (s >= q) {
+    return -1;
+  }
+  if (resources_get_int("SoundOutput", &uscita) == 0 &&
+      uscita == SOUND_OUTPUT_MONO) {
+    return -1;
+  }
+  return sid_lettore_lati[q - 1][s];
+}
+
+
+
+
+
+int emux_sid_lato_cambia(int s) {
+  int lato;
+  int q;
+
+  if (emux_sid_lato(s) < 0) {
+    return -1;
+  }
+  q = lati_quanti();
+  lato = (sid_lettore_lati[q - 1][s] + 1) % 3;
+  sid_lettore_lati[q - 1][s] = lato;
+  if (q == 1 && lato != LATO_C && !sid_lettore_stereo) {
+    sid_lettore_stereo = 1;
+    emux_sid_uscita_come_i_chip();
+  }
+  return lato;
+}
+
+void emux_sid_drive_zitti(int zitti) {
+  bmc_drive_zitti = zitti ? 1 : 0;
+}
+
+int emux_sid_drive_zitti_ora(void) {
+  return bmc_drive_zitti;
+}
+
+void emux_reu_image_loaded(int size_kb) {
+  if (size_kb > 0) {
+    int index;
+    for (index = 0; index < 8; index++) {
+      if (reu_size_to_index[index] == size_kb) {
+        reu_size_item->value = index;
+        break;
+      }
+    }
+  }
+  update_reu_image_enabled(reu_cart_enabled());
+}
+
+void emux_machine_load_settings_done(void) {
+}
+
+void machine_keymap_changed(int row, int col, signed long sym) {
+  if (row == 7 && col == 5 && !commodore_key_sym_set) {
+     commodore_key_sym = sym;
+     commodore_key_sym_set = 1;
+  } else if (row == 7 && col == 2 && !ctrl_key_sym_set) {
+     ctrl_key_sym = sym;
+     ctrl_key_sym_set = 1;
+  } else if (row == -3 && col == 0 && !restore_key_sym_set) {
+     restore_key_sym = sym;
+     restore_key_sym_set = 1;
+  }
+}

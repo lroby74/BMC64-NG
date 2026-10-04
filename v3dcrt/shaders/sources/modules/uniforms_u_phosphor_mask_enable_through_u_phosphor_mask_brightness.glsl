@@ -1,0 +1,3 @@
+uniform float u_phosphor_mask_enable;
+uniform float u_phosphor_mask_pattern;
+uniform float u_phosphor_mask_brightness;

@@ -1,0 +1,3 @@
+# VICE keyboard mapping file
+
+!INCLUDE rpi_buus_pos.vkm

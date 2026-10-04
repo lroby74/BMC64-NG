@@ -1,0 +1,14 @@
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="200" cy="200" r="180" fill="none" stroke="#2F363D" stroke-width="12" />
+  
+  <circle cx="200" cy="200" r="160" fill="none" stroke="#2F363D" stroke-width="2" stroke-dasharray="10,10" opacity="0.5" />
+
+  <path d="M150 130 L110 130 L110 270 L150 270" fill="none" stroke="#C51A4A" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M250 130 L290 130 L290 270 L250 270" fill="none" stroke="#C51A4A" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+
+  <text x="200" y="200" dominant-baseline="central" font-family="monospace, Courier" font-size="70" font-weight="bold" fill="#2F363D" text-anchor="middle">std</text>
+  
+  <a href="https://codeberg.org/larchcone/circle-stdlib">
+    <text x="200" y="330" font-family="sans-serif" font-size="24" font-weight="600" fill="#2F363D" text-anchor="middle" letter-spacing="2">circle-stdlib</text>
+  </a>
+</svg>

@@ -1,0 +1,51 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_source_noise",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_source_noise.frag",
+  "gles_version": 2,
+  "targets": [
+    "bcm2711-v3d42",
+    "bcm2712-v3d71"
+  ],
+  "$include": "includes/probe_rgb565_nearest_4x4.inc",
+  "$include": "includes/fullscreen_state.inc",
+  "$include": "includes/source_texture.inc",
+  "probe_uniform_values": {
+    "$include": "includes/probe_values_u_output_size_through_u_blue_offset_y.inc",
+    "u_convergence_radial_strength": 0.5,
+    "u_composite_artifacts_enable": 1.0,
+    "u_composite_chroma_blur": 0.5,
+    "u_composite_luma_sharpen": 0.1,
+    "u_composite_color_bleed": 0.09,
+    "u_horizontal_jitter_enable": 1.0,
+    "u_horizontal_jitter_strength": 0.5,
+    "u_horizontal_jitter_frequency": 0.08,
+    "u_noise_enable": 1.0,
+    "u_luminance_noise": 0.04,
+    "u_chroma_noise": 0.03,
+    "u_horizontal_jitter_speed": 0.35,
+    "u_noise_speed": 0.5,
+    "u_temporal_frame": 17.0
+  },
+  "uniform_storage": {
+    "fragment": {
+      "$include": "includes/uniforms_0_through_48.inc",
+      "52": {"semantic": "composite_color_bleed", "type": "float32"},
+      "56": {"semantic": "horizontal_jitter_enable", "type": "float32"},
+      "60": {"semantic": "horizontal_jitter_strength", "type": "float32"},
+      "64": {"semantic": "horizontal_jitter_frequency", "type": "float32"},
+      "68": {"semantic": "noise_enable", "type": "float32"},
+      "72": {"semantic": "luminance_noise", "type": "float32"},
+      "76": {"semantic": "chroma_noise", "type": "float32"},
+      "80": {"semantic": "horizontal_jitter_speed", "type": "float32"},
+      "84": {"semantic": "noise_speed", "type": "float32"},
+      "88": {"semantic": "temporal_frame", "type": "float32"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42": "src/v3dcrt/shaders/generated/v3d42/crt_source_noise.h",
+    "bcm2712-v3d71": "src/v3dcrt/shaders/generated/v3d71/crt_source_noise.h"
+  },
+  "symbol_prefix": "kV3dCrtSourceNoise"
+}

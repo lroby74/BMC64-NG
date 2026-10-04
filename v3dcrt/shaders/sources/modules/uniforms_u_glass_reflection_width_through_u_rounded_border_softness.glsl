@@ -1,0 +1,5 @@
+uniform float u_glass_reflection_width;
+uniform float u_glass_reflection_position;
+uniform float u_rounded_screen_mask_enable;
+uniform float u_rounded_corner_radius;
+uniform float u_rounded_border_softness;

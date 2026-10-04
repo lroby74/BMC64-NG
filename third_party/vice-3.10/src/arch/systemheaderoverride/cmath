@@ -1,0 +1,8 @@
+/* BMC64 / bare metal: con -nostdinc++ le intestazioni C++ non
+ * esistono. reSID 1.0 usa <cmath> solo per quello che sta in
+ * <math.h>, e non chiama niente con il prefisso std::.
+ */
+#ifndef BMC64_CXX_CMATH_H
+#define BMC64_CXX_CMATH_H
+#include <math.h>
+#endif

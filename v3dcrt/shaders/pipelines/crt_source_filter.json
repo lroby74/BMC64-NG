@@ -1,0 +1,36 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_source_filter",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_source_filter.frag",
+  "gles_version": 2,
+  "targets": [
+    "bcm2711-v3d42",
+    "bcm2712-v3d71"
+  ],
+  "$include": "includes/probe_rgb565_nearest_4x4.inc",
+  "$include": "includes/fullscreen_state.inc",
+  "$include": "includes/source_texture.inc",
+  "probe_uniform_values": {
+    "u_output_size": [16.0, 16.0],
+    "u_scanline_weight": 0.0,
+    "u_gap_brightness": 1.0,
+    "u_source_texel_x": 0.25,
+    "u_source_texel_y": 0.25,
+    "u_horizontal_filter_enable": 1.0,
+    "u_horizontal_sigma_x": 0.5
+  },
+  "uniform_storage": {
+    "fragment": {
+      "0": {"semantic": "source_texel_x", "type": "float32"},
+      "4": {"semantic": "source_texel_y", "type": "float32"},
+      "8": {"semantic": "horizontal_filter_enable", "type": "float32"},
+      "12": {"semantic": "horizontal_sigma_x", "type": "float32"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42": "src/v3dcrt/shaders/generated/v3d42/crt_source_filter.h",
+    "bcm2712-v3d71": "src/v3dcrt/shaders/generated/v3d71/crt_source_filter.h"
+  },
+  "symbol_prefix": "kV3dCrtSourceFilter"
+}

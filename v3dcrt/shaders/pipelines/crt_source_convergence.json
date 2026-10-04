@@ -1,0 +1,37 @@
+{
+  "schema": "bmx.v3d_pipeline.v1",
+  "id": "crt_source_convergence",
+  "vertex": "src/v3dcrt/shaders/sources/fullscreen.vert",
+  "fragment": "src/v3dcrt/shaders/sources/crt_source_convergence.frag",
+  "gles_version": 2,
+  "targets": [
+    "bcm2711-v3d42",
+    "bcm2712-v3d71"
+  ],
+  "$include": "includes/probe_rgb565_nearest_4x4.inc",
+  "$include": "includes/fullscreen_state.inc",
+  "$include": "includes/source_texture.inc",
+  "probe_uniform_values": {
+    "$include": "includes/probe_values_u_output_size_through_u_blue_offset_y.inc",
+    "u_convergence_radial_strength": 0.5
+  },
+  "uniform_storage": {
+    "fragment": {
+      "0": {"semantic": "source_texel_x", "type": "float32"},
+      "4": {"semantic": "source_texel_y", "type": "float32"},
+      "8": {"semantic": "horizontal_filter_enable", "type": "float32"},
+      "12": {"semantic": "horizontal_sigma_x", "type": "float32"},
+      "16": {"semantic": "convergence_enable", "type": "float32"},
+      "20": {"semantic": "red_offset_x", "type": "float32"},
+      "24": {"semantic": "red_offset_y", "type": "float32"},
+      "28": {"semantic": "blue_offset_x", "type": "float32"},
+      "32": {"semantic": "blue_offset_y", "type": "float32"},
+      "36": {"semantic": "convergence_radial_strength", "type": "float32"}
+    }
+  },
+  "generated_headers": {
+    "bcm2711-v3d42": "src/v3dcrt/shaders/generated/v3d42/crt_source_convergence.h",
+    "bcm2712-v3d71": "src/v3dcrt/shaders/generated/v3d71/crt_source_convergence.h"
+  },
+  "symbol_prefix": "kV3dCrtSourceConvergence"
+}

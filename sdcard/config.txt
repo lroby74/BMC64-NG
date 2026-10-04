@@ -1,0 +1,52 @@
+#
+# Bare Metal Commodore 64 Emulator For The Raspberry Pi
+#
+
+arm_64bit=1
+kernel_address=0x80000
+
+[pi4]
+armstub=armstub8-rpi4.bin
+max_framebuffers=2
+
+[pi5]
+max_framebuffers=2
+
+[all]
+
+# uncomment scaling_kernel and set the desired value if you want to
+# change the scaling that affects the overall sharpness of the picture.
+# 8 = NEAREST NEIGHBOUR - sharp edges
+# 2 = SINC_BLACKMAN - good looking compromise
+# 6 = HAMMING - soft edges (default)
+#scaling_kernel=2
+
+# NOTE: Since v3.0, the video settings here and the
+# accompanying cmdline.txt settings are configured by
+# machines.txt. See README.md for how to switch
+# machine configs.
+disable_overscan=1
+sdtv_mode=18
+hdmi_group=1
+hdmi_mode=19
+
+# -----------------------------------------------------
+# Optional settings follow
+# -----------------------------------------------------
+
+# uncomment if you get no picture on HDMI for a default "safe" mode
+#hdmi_safe=1
+
+hdmi_drive=2
+
+# uncomment to increase signal to HDMI, if you have interference, blanking, or
+# no display
+#config_hdmi_boost=4
+
+gpu_mem=64
+disable_splash=1
+boot_delay=0
+
+# IMPORTANT: A kernel= parameter will appear here after
+# a machine switch to a kernel other than C64.
+

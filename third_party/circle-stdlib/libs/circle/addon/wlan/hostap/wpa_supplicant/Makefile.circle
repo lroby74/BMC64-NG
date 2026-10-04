@@ -1,0 +1,96 @@
+#
+# Makefile
+#
+
+CIRCLEHOME = ../../../..
+
+OBJS	= \
+	  bss.o \
+	  bssid_ignore.o \
+	  config.o \
+	  config_file.o \
+	  eap_register.o \
+	  events.o \
+	  main_circle.o \
+	  notify.o \
+	  op_classes.o \
+	  rrm.o \
+	  scan.o \
+	  twt.o \
+	  wpa_supplicant.o \
+	  wpas_glue.o \
+	  wpasupplicant.o
+
+OBJS2	= \
+	  ../src/common/hw_features_common.o \
+	  ../src/common/ieee802_11_common.o \
+	  ../src/common/ptksa_cache.o \
+	  ../src/common/wpa_common.o \
+	  ../src/crypto/aes-internal.o \
+	  ../src/crypto/aes-internal-dec.o \
+	  ../src/crypto/aes-internal-enc.o \
+	  ../src/crypto/aes-unwrap.o \
+	  ../src/crypto/aes-omac1.o \
+	  ../src/crypto/md5-internal.o \
+	  ../src/crypto/md5.o \
+	  ../src/crypto/rc4.o \
+	  ../src/crypto/sha1-internal.o \
+	  ../src/crypto/sha1-pbkdf2.o \
+	  ../src/crypto/sha1-prf.o \
+	  ../src/crypto/sha1.o \
+	  ../src/crypto/sha256-internal.o \
+	  ../src/crypto/sha256-prf.o \
+	  ../src/crypto/sha256-tlsprf.o \
+	  ../src/crypto/sha256.o \
+	  ../src/crypto/tls_none.o \
+	  ../src/drivers/driver_circle.o \
+	  ../src/drivers/driver_common.o \
+	  ../src/drivers/drivers.o \
+	  ../src/eap_common/eap_common.o \
+	  ../src/eap_peer/eap.o \
+	  ../src/eap_peer/eap_methods.o \
+	  ../src/eapol_supp/eapol_supp_sm.o \
+	  ../src/l2_packet/l2_packet_circle.o \
+	  ../src/rsn_supp/pmksa_cache.o \
+	  ../src/rsn_supp/preauth.o \
+	  ../src/rsn_supp/wpa.o \
+	  ../src/rsn_supp/wpa_ie.o \
+	  ../src/utils/base64.o \
+	  ../src/utils/bitfield.o \
+	  ../src/utils/common.o \
+	  ../src/utils/config.o \
+	  ../src/utils/crc32.o \
+	  ../src/utils/eloop_circle.o \
+	  ../src/utils/os_circle.o \
+	  ../src/utils/wpa_debug_circle.o \
+	  ../src/utils/wpabuf.o
+
+OBJS	+= $(OBJS2)
+
+INCLUDE += \
+	  -I ../src \
+	  -I ../src/common \
+	  -I ../src/crypto \
+	  -I ../src/rsn_supp \
+	  -I ../src/utils
+
+DEFINE	+= \
+	   -DCONFIG_DRIVER_CIRCLE \
+	   -DCONFIG_CRYPTO_INTERNAL \
+	   -DCONFIG_BACKEND_FILE \
+	   -DCONFIG_NO_CONFIG_WRITE \
+	   -DCONFIG_NO_RANDOM_POOL \
+	   -DCONFIG_NO_ROBUST_AV \
+	   -DCONFIG_NO_WMM_AC \
+	   -DIEEE8021X_EAPOL
+
+EXTRACLEAN += $(OBJS2) $(OBJS2:.o=.d)
+
+libwpa_supplicant.a: $(OBJS)
+	@echo "  AR    $@"
+	@rm -f $@
+	@$(AR) cr $@ $(OBJS)
+
+include $(CIRCLEHOME)/Rules.mk
+
+-include $(DEPS)

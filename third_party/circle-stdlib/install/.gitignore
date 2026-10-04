@@ -1,0 +1,7 @@
+/arm-none-circle/
+/arm-none-circle-libc++/
+/arm-none-circle-libc++-threading/
+/aarch64-none-circle/
+/aarch64-none-circle-libc++/
+/aarch64-none-circle-libc++-threading/
+/share/

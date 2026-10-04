@@ -1,0 +1,7 @@
+    "u_red_offset_x": 0.25,
+    "u_red_offset_y": 0.0,
+    "u_blue_offset_x": -0.25,
+    "u_blue_offset_y": 0.0,
+    "u_convergence_radial_strength": 0.5,
+    "u_horizontal_filter_enable": 1.0,
+    "u_horizontal_sigma_x": 0.5,
