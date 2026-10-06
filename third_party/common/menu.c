@@ -122,7 +122,8 @@ static void spegni(void) {
 
 
 
-#define VERSIONE_BMC64_NG "1.1"
+
+#define VERSIONE_BMC64_NG "1.1.1"
 
 #ifdef RASPI_LITE
 #define VARIANT_STRING "-Lite"
@@ -8816,6 +8817,11 @@ void menu_banco_player2(int porta) {
   emux_set_joy_port_device(porta, JOYDEV_CURS_LC);
   printf("[JOY] player 2: cursori+CTRL sulla porta %d\n", porta);
 }
+
+
+
+
+
 
 
 

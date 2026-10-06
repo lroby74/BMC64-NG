@@ -114,6 +114,24 @@ static bool HasWifiFirmware(const char *firmware_path) {
       return false;
     }
   }
+#if RASPPI < 5
+
+
+  TMachineModel machine_model = CMachineInfo::Get()->GetMachineModel();
+  if (machine_model == MachineModel400 || machine_model == MachineModelCM4) {
+    static const char *const firmware_43456[] = {
+        "brcmfmac43456-sdio.bin",
+        "brcmfmac43456-sdio.txt",
+        "brcmfmac43456-sdio.clm_blob",
+    };
+    for (unsigned int index = 0;
+         index < sizeof(firmware_43456) / sizeof(firmware_43456[0]); index++) {
+      if (!HasWifiFirmwareFile(firmware_path, firmware_43456[index])) {
+        return false;
+      }
+    }
+  }
+#endif
   return true;
 }
 

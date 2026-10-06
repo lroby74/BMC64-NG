@@ -303,7 +303,8 @@ public:
     : ViceScreenApp(kernel), mUSBHCII(&mInterrupt, &mTimer, TRUE),
           mEMMC(&mInterrupt, &mTimer, &mActLED), mNetworkDevice(0),
           mTimezoneOffsetMinutes(0), mTimezoneDst(0), mAddressMode(0),
-          mWLAN(nullptr), mNet(nullptr), mWPASupplicant(nullptr),
+          mWLAN(nullptr), mWLANNonPartito(nullptr), mNet(nullptr),
+          mWPASupplicant(nullptr),
           mNetworkStatus(0) {}
 
   virtual bool Initialize(void);
@@ -351,6 +352,7 @@ protected:
   int mAddressMode;
   u8 mStaticAddress[4][4];
   CBcm4343Device *mWLAN;
+  CBcm4343Device *mWLANNonPartito;
   CNetSubSystem *mNet;
   CWPASupplicant *mWPASupplicant;
   int mNetworkStatus;

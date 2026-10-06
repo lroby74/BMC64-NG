@@ -992,7 +992,10 @@ void ViceStdioApp::InitializeNetwork() {
   if (!mWLAN->Initialize()) {
     SetNetworkStatus(CIRCLE_NETWORK_WIFI_DEVICE_INIT_FAILED);
     mLogger.Write(GetKernelName(), LogError, "Cannot initialize WLAN");
-    delete mWLAN;
+
+
+
+    mWLANNonPartito = mWLAN;
     mWLAN = nullptr;
     return;
   }
@@ -1103,20 +1106,25 @@ int ViceStdioApp::ScanWifiAccessPoints(struct wifi_access_point *access_points,
 
 
   if (mWLAN == nullptr) {
+    if (mWLANNonPartito != nullptr) {
+      mLogger.Write(GetKernelName(), LogError,
+                    "Wi-Fi scan: the WLAN did not start before, not retried");
+      return CIRCLE_WIFI_SCAN_NOT_STARTED;
+    }
     CString firmwarePath;
     firmwarePath.Format("%s:/firmware/", mViceOptions.GetDiskVolume());
     if (!ViceNetworkHasWifiFirmware((const char *)firmwarePath)) {
       mLogger.Write(GetKernelName(), LogError,
                     "Wi-Fi scan: firmware is missing from %s",
                     (const char *)firmwarePath);
-      return 0;
+      return CIRCLE_WIFI_SCAN_NO_FIRMWARE;
     }
     mWLAN = new CBcm4343Device((const char *)firmwarePath);
     if (!mWLAN->Initialize()) {
       mLogger.Write(GetKernelName(), LogError, "Wi-Fi scan: cannot initialize WLAN");
-      delete mWLAN;
+      mWLANNonPartito = mWLAN;
       mWLAN = nullptr;
-      return 0;
+      return CIRCLE_WIFI_SCAN_NOT_STARTED;
     }
     mLogger.Write(GetKernelName(), LogNotice, "Wi-Fi scan: WLAN started for the scan");
   }

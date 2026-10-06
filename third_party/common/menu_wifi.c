@@ -47,6 +47,16 @@ void show_wifi_access_points(struct menu_item *ssid_item,
 
   wifi_ssid_item = ssid_item;
   wifi_security_item = security_item;
+  if (wifi_access_point_count == CIRCLE_WIFI_SCAN_NO_FIRMWARE) {
+    ui_menu_add_button(MENU_ID_DO_NOTHING, root,
+                       "WiFi firmware missing on the SD card")->disabled = 1;
+    return;
+  }
+  if (wifi_access_point_count == CIRCLE_WIFI_SCAN_NOT_STARTED) {
+    ui_menu_add_button(MENU_ID_DO_NOTHING, root,
+                       "The WiFi chip did not start")->disabled = 1;
+    return;
+  }
   if (wifi_access_point_count <= 0) {
     ui_menu_add_button(MENU_ID_DO_NOTHING, root, "No WiFi networks found")->disabled = 1;
     return;

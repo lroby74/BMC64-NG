@@ -256,6 +256,9 @@ void circle_smb_giro(unsigned microsecondi);
 void circle_usb_nota_menu(void);
 const char *circle_smb_fase(void);
 
+
+#define CIRCLE_WIFI_SCAN_NO_FIRMWARE (-1)
+#define CIRCLE_WIFI_SCAN_NOT_STARTED (-2)
 int circle_scan_wifi_access_points(struct wifi_access_point *access_points,
                                    unsigned int max_access_points);
 
