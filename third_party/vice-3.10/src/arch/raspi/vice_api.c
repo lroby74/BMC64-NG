@@ -25,6 +25,7 @@
  */
 
 #include "emux_api.h"
+#include "bmc_nib.h"
 
 #include <assert.h>
 #include <stdio.h>
@@ -299,7 +300,26 @@ int emux_disk_is_read_only(int unit) {
   return (img != NULL && img->read_only) ? 1 : 0;
 }
 
+
+
+
+static char *nib_in_g64(char *filename, char *g64, unsigned int len) {
+  if (!bmc_nib_e_nib(filename)) {
+    return filename;
+  }
+  if (bmc_nib_prepara(filename, g64, len) < 0) {
+    log_error(LOG_DEFAULT, "%s: the .NIB image could not be converted", filename);
+    return NULL;
+  }
+  return g64;
+}
+
 int emux_attach_disk_image(int unit, char* filename) {
+  static char g64[256];
+  filename = nib_in_g64(filename, g64, sizeof g64);
+  if (filename == NULL) {
+    return -1;
+  }
 
 
   int esito = file_system_attach_disk(unit, 0, filename);
@@ -670,8 +690,13 @@ static int autostart_riprova_iniettando(char *filename, unsigned int modo)
 }
 
 int emux_autostart_file(char* filename) {
+   static char g64[256];
    int esito;
 
+   filename = nib_in_g64(filename, g64, sizeof g64);
+   if (filename == NULL) {
+      return -1;
+   }
    autostart_scegli_la_strada();
    esito = autostart_autodetect(filename, NULL, 0, AUTOSTART_MODE_RUN);
    if (esito < 0) {
@@ -681,8 +706,13 @@ int emux_autostart_file(char* filename) {
 }
 
 int emux_load_prg_file(char* filename) {
+   static char g64[256];
    int esito;
 
+   filename = nib_in_g64(filename, g64, sizeof g64);
+   if (filename == NULL) {
+      return -1;
+   }
    autostart_scegli_la_strada();
    esito = autostart_autodetect(filename, NULL, 0, AUTOSTART_MODE_LOAD);
    if (esito < 0) {

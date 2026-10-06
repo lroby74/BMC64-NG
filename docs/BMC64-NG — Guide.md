@@ -88,6 +88,7 @@ You need a microSD card and a USB keyboard (only for the 4 and the 5). Everythin
 - **Floppy disks** on up to **four drives** at the same time (8, 9, 10, 11).
   Fifteen formats: `.d64` `.d67` `.d71` `.d80` `.d81` `.d82` `.d1m` `.d2m`
   `.d4m` `.g64` `.g71` `.g41` `.p64` `.x64` `.dhd`.
+- **`.nib` images**, the low-level copies made with nibtools, protected disks included: you choose them like the other disks, from **Attach Disk...** or **Autostart Prg/Disk...**. BMC64-NG converts them to `.g64` with the nibconv code of nibtools, in the `/nib-g64` folder of the card, and attaches that; the `.nib` is never changed. The `.g64` is made again each time the `.nib` is attached: to keep what a game saves on the disk, attach the `.g64` from the `/nib-g64` folder. Plus4Emu does not read them: it does not read `.g64` files either.
 - **Drive models** chosen one by one: 1541, 1541-II, 1570, 1571, 1581,
   or none. Each of the four drives can be a different model.
   Plus the 1551 on the C16 / Plus4

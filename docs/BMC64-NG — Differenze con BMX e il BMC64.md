@@ -2,7 +2,7 @@
 
 ### Le differenze, una per una
 
-Aggiornata al 4 ottobre 2026. Per il BMC64 vale la versione 5.1.1 (la guida e i sorgenti che abbiamo), con le novità del 5.2 dove sono citate. Per BMX vale la versione 2026.08.19, l'ultima del suo registro delle modifiche.
+Aggiornata al 6 ottobre 2026. Per il BMC64 vale la versione 5.1.1 (la guida e i sorgenti che abbiamo), con le novità del 5.2 dove sono citate. Per BMX vale la versione 2026.08.19, l'ultima del suo registro delle modifiche.
 
 ---
 
@@ -67,6 +67,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 - **Immagini .REU**: **ALT + 0** carica un file dalla cartella `/REU`, **ALT + SHIFT + 0** lo stacca.
 - **Le cartucce EasyFlash salvano** (Cartridge > Save EasyFlash Now, e da sole quando si stacca la cartuccia). Il BMC64 ha Save EasyFlash Now, ma non salva da solo quando si stacca la cartuccia.
 - **Drive senza dischetto in Plus4Emu**: ALT + 2 e ALT + 3 mettono il 1541 o il 1551 e aprono l'elenco dei `.D64`.
+- **Immagini .NIB** (le copie a basso livello di nibtools, anche dei dischi protetti): si montano e si avviano come gli altri dischetti, convertite in `.g64` col codice del nibconv di nibtools. Il BMC64 no.
 
 **Rete**
 
@@ -141,6 +142,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 - **Immagini .REU**: BMC64-NG con **ALT + 0** dalla cartella `/REU` e dal menu. BMX solo dal menu della REU.
 - **Programmi .prg**: in BMC64-NG partono anche senza drive. BMX usa un dischetto temporaneo e vuole un drive.
 - **File .SID**: solo BMC64-NG.
+- **Immagini .NIB**: solo BMC64-NG (convertite in `.g64` col codice del nibconv di nibtools).
 - **Salvataggio dei dischi**: Prefs > Flush disk writes in BMC64-NG, e le cartucce EasyFlash salvano.
 
 **Rete**

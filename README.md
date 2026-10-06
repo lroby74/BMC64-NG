@@ -56,7 +56,7 @@ There's no Linux underneath: the Pi boots straight into the Commodore.
 2. Format it as **FAT32** with a normal cluster (allocation unit) size: **32 KB**, as the SD Association's SD Card Formatter does, or the Windows default.
    - **Do not use 512-byte clusters.** The Raspberry Pi then reads its own start-up files and the kernel in tiny pieces: a Pi 4 or 400 waits 9-10 seconds before BMC64-NG even begins, and with a 32 GB card it took 45 seconds. With normal clusters, power-on to the BASIC prompt takes about 11 seconds. Changing machine restarts the Pi, so it gets the same benefit.
    - For cards bigger than 32 GB use a tool such as FAT32Format.
-3. Download the full archive of the latest release, such as `BMC64-NG V1.1.1.7z`, from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
+3. Download the full archive of the latest release, such as `BMC64-NG V1.2.7z`, from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
 4. Copy the Commodore ROMs into the machine folders of the card: see [ROM files](#rom-files) below.
 5. Put the card in the Pi and switch it on. It starts as a PAL Commodore 64 (cycle exact) on HDMI, 720p at 50 Hz; Machine > Switch changes machine and video mode.
 
@@ -122,8 +122,8 @@ In any file list, type the first letters of a name and press ENTER. The ? and * 
 ## Updating
 
 Every release has two archives:
-- the full one, such as `BMC64-NG V1.1.1.7z`, for a new card;
-- the update, such as `BMC64-NG Update V1.1.1.7z`, with only the files that changed since the previous release. Copy its whole content onto your card and replace the files that are already there. If you skipped a release, apply its update first, or start again from the full archive.
+- the full one, such as `BMC64-NG V1.2.7z`, for a new card;
+- the update, such as `BMC64-NG Update V1.2.7z`, with only the files that changed since the previous release. Copy its whole content onto your card and replace the files that are already there. If you skipped a release, apply its update first, or start again from the full archive.
 
 The update never contains `config.txt`, `cmdline.txt`, `machines.txt`, `wpa_supplicant.conf` or the `settings*.txt` files: they hold your own settings. Replace one of them only when the release notes say so. Neither archive contains ROMs, and the ones already on your card stay where they are.
 
@@ -188,7 +188,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 
 ### Disks, tapes and cartridges
 
-- **Up to four drives.** Drives 8, 9, 10 and 11 work at the same time, with fifteen disk image formats: `.d64` `.d67` `.d71` `.d80` `.d81` `.d82` `.d1m` `.d2m` `.d4m` `.g64` `.g71` `.g41` `.p64` `.x64` `.dhd`. ALT + 8 and ALT + 9 attach a disk to drive 8 or 9, and with SHIFT they detach it.
+- **Up to four drives.** Drives 8, 9, 10 and 11 work at the same time, with fifteen disk image formats: `.d64` `.d67` `.d71` `.d80` `.d81` `.d82` `.d1m` `.d2m` `.d4m` `.g64` `.g71` `.g41` `.p64` `.x64` `.dhd`. `.nib` images (the low-level copies made with nibtools, protected disks included) are attached and started like the others: BMC64-NG converts them to `.g64` in the `/nib-g64` folder with the nibconv code of nibtools (not in Plus4Emu, which does not read `.g64` files). ALT + 8 and ALT + 9 attach a disk to drive 8 or 9, and with SHIFT they detach it.
 - **A model for each drive.** Each drive can be a 1541, 1541-II, 1570, 1571, 1581 or none, and the Plus/4 adds the 1551. ALT and a number key set the model of drive 8, and ALT + SHIFT and a number key that of drive 9.
 - **The sound of the disk going in and out.** With Prefs > Drive sound emulation on, attaching and detaching an image makes the sound of the disk going into and out of the real drive, along with the motor and the head. These sounds come from the Ultimate-II+; the 1581 has its own set, quieter, as a 3.5" drive is.
 - **True 1541 emulation.** The drive runs its own processor and program, like the original, so fast loaders and the copy protections of vintage games work.

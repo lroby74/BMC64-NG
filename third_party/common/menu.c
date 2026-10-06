@@ -123,7 +123,7 @@ static void spegni(void) {
 
 
 
-#define VERSIONE_BMC64_NG "1.1.1"
+#define VERSIONE_BMC64_NG "1.2"
 
 #ifdef RASPI_LITE
 #define VARIANT_STRING "-Lite"
@@ -350,7 +350,7 @@ static int modello_per_immagine(const char *nome, int adesso) {
   }
   if (estensione_e(nome, "d64") || estensione_e(nome, "g64") ||
       estensione_e(nome, "d67") || estensione_e(nome, "p64") ||
-      estensione_e(nome, "x64")) {
+      estensione_e(nome, "x64") || estensione_e(nome, "nib")) {
     switch (adesso) {
       case 1540:
       case 1541:
@@ -1041,10 +1041,11 @@ static char sid_filt_ext[1][5] = {".sid"};
 const int num_reu_ext = 1;
 static char reu_filt_ext[1][5] = {".reu"};
 
-const int num_disk_ext = 15;
-static char disk_filt_ext[15][5] = {".d64", ".d67", ".d71", ".d80", ".d81",
+
+const int num_disk_ext = 16;
+static char disk_filt_ext[16][5] = {".d64", ".d67", ".d71", ".d80", ".d81",
                                     ".d82", ".d1m", ".d2m", ".d4m", ".g64",
-                                    ".g71", ".g41", ".p64", ".x64", ".dhd"};
+                                    ".g71", ".g41", ".p64", ".x64", ".dhd", ".nib"};
 
 const int num_tape_ext = 2;
 static char tape_filt_ext[2][5] = {".t64", ".tap"};

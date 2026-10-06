@@ -88,6 +88,7 @@ Serve una microSD e una tastiera USB (solo per il 4 e il 5). Il resto è opziona
 - **Dischetti** fino a **quattro unità** contemporaneamente (8, 9, 10, 11).
   Quindici formati: `.d64` `.d67` `.d71` `.d80` `.d81` `.d82` `.d1m` `.d2m`
   `.d4m` `.g64` `.g71` `.g41` `.p64` `.x64` `.dhd`.
+- **I `.nib`**, le copie a basso livello fatte con nibtools, anche dei dischi protetti: si scelgono come gli altri dischetti, da **Attach Disk...** o da **Autostart Prg/Disk...**. BMC64-NG li converte in `.g64` col codice del nibconv di nibtools, nella cartella `/nib-g64` della scheda, e monta quello; il `.nib` non si tocca. Il `.g64` si rifà a ogni montaggio del `.nib`: per tenere quello che un gioco salva sul dischetto, si monta il `.g64` della cartella `/nib-g64`. Plus4Emu non li legge: non legge nemmeno i `.g64`.
 - **Modelli di drive** scelti uno per uno: 1541, 1541-II, 1570, 1571, 1581,
   o nessuno. Ognuna delle quattro unità può essere un modello diverso.
   Piú il 1551 sul C16 / Plus4

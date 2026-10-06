@@ -10,6 +10,14 @@ OBJ = crt_preset.o demo.o emux_api.o font.o joy.o kbd.o keycodes.o menu.o menu_t
 
 
 
+
+NIB_OBJ = bmc_nib.o nibtools/gcr.o nibtools/prot.o nibtools/fileio.o nibtools/crc.o \
+	nibtools/md5.o nibtools/lz.o
+OBJ += $(NIB_OBJ) bmc_nib_cartella.o
+$(NIB_OBJ): CFLAGS_FOR_TARGET += -std=gnu99 -DNDEBUG -Dmode=nib_mode -I nibtools -w
+
+
+
 NEWLIB_ARCH ?= arm-none-circle
 
 INCLUDES = -I $(CIRCLE_STDLIB_HOME)/install/$(NEWLIB_ARCH)/include \
@@ -31,4 +39,4 @@ libbmc64common.a: $(OBJ)
 	$(RANLIB_FOR_TARGET) libbmc64common.a
 
 clean:
-	rm -rf *.o *.a
+	rm -rf *.o *.a nibtools/*.o

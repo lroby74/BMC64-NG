@@ -2,7 +2,7 @@
 
 ### The differences, one by one
 
-Up to date as of 4 October 2026. For BMC64 this means version 5.1.1 (the guide and the sources we have), with the news from 5.2 where they are mentioned. For BMX this means version 2026.08.19, the last one in its changelog.
+Up to date as of 6 October 2026. For BMC64 this means version 5.1.1 (the guide and the sources we have), with the news from 5.2 where they are mentioned. For BMX this means version 2026.08.19, the last one in its changelog.
 
 ---
 
@@ -67,6 +67,7 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 - **.REU images**: **ALT + 0** loads a file from the `/REU` folder, **ALT + SHIFT + 0** detaches it.
 - **EasyFlash cartridges save** (Cartridge > Save EasyFlash Now, and by themselves when the cartridge is detached). BMC64 has Save EasyFlash Now, but does not save by itself when the cartridge is detached.
 - **Drive without a disk in Plus4Emu**: ALT + 2 and ALT + 3 set the 1541 or the 1551 and open the list of `.D64` files.
+- **.NIB images** (the low-level copies made with nibtools, protected disks included): attached and started like the other disks, converted to `.g64` with the nibconv code of nibtools. BMC64 does not have them.
 
 **Network**
 
@@ -141,6 +142,7 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 - **.REU images**: BMC64-NG with **ALT + 0** from the `/REU` folder and from the menu. BMX only from the REU menu.
 - **.prg programs**: in BMC64-NG they start even without a drive. BMX uses a temporary disk and needs a drive.
 - **.SID files**: BMC64-NG only.
+- **.NIB images**: BMC64-NG only (converted to `.g64` with the nibconv code of nibtools).
 - **Saving disks**: Prefs > Flush disk writes in BMC64-NG, and EasyFlash cartridges save.
 
 **Network**
