@@ -2,7 +2,7 @@
 
 ### The differences, one by one
 
-Up to date as of 6 October 2026. For BMC64 this means version 5.1.1 (the guide and the sources we have), with the news from 5.2 where they are mentioned. For BMX this means version 2026.08.19, the last one in its changelog.
+Up to date as of 11 October 2026. For BMC64 this means version 5.1.1 (the guide and the sources we have), with the news from 5.2 where they are mentioned. For BMX this means version 2026.08.19, the last one in its changelog.
 
 ---
 
@@ -40,16 +40,18 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 - **C128 on two monitors**: Video > Active Display set to Two HDMI sends the VIC-II to one monitor and the VDC to the other. BMC64 does not: VIC-II and VDC go to a single output, with Active Display and PIP.
 - **Composite output**: BMC64-NG has **PAL Composite 576p@50Hz** and **NTSC Composite 480p@60Hz** in every machine's Switch menu, only on the Pi 4 B (3.5 mm jack, 4-pole AV cable), with the borders kept apart from the HDMI ones. BMC64 has the same two composite modes for its Raspberry Pi models.
 - **VGA**: BMC64-NG has 1024x768 VGA modes at 50 and 60 Hz for every machine (HDMI with a VGA adapter). BMC64 takes another route (DPI with a VGA666, or 1920x1080 with `raster_skip`).
+- **VGA and HDMI monitors together**: Video > VGA Monitor On tells which HDMI port the VGA monitor is on, and Switch sends the screen to the VGA with the VGA entries and to the other monitor with the others, with a single restart. BMC64 does not: it has only one screen.
 - **CRT shader**: BMC64-NG has BMX's shader, with geometry, scanlines, phosphor mask, bloom, reflections and the `.crt` presets. BMC64 has davej's CRT filter.
 - **Video mode confirmation**: after a machine or mode change there are 15 seconds to confirm with a key, otherwise it goes back to what it was (Safety timer (15s) at the bottom of the Switch menu). BMC64 does not: it asks for confirmation only for resets, and to go back it has CTRL + F7 held for 5 seconds.
 
 **Sound**
 
-- **SID engines**: besides ReSid there is **ReSIDfp** (Sound > SID Engine), with its own settings and the background noise (Background Noise). BMC64 does not: its SID Engine has only Fast and ReSid.
+- **SID engines**: besides ReSid there is **ReSIDfp** (Sound > SID Engine), with its own settings, the 6581 composer profiles (Composer Profile) and the background noise (Background Noise). BMC64 does not: its SID Engine has only Fast and ReSid.
 - **Resampling**: SID Resampling is set at the factory to Resampling, the most faithful. In BMC64 on the Pi 3 you choose between Fast, Interpolation and Fast Resampling, and on the Pi Zero and 2 there is only Fast.
 - **reSID filters**: in the Sound menu the reSID Filter Settings folder (Passband %, Gain %, Filter Bias) for the 6581 and the 8580. In BMC64's guide Passband and Gain must stay at the factory values.
 - **Stereo or mono** (Sound > Channels) with more than one SID.
 - **SID Card on PET and Plus/4**, off at the factory. BMC64 does not have it: the second SID exists only on the C64 and the C128.
+- **Autostart on the PET**, with `.prg` files only. BMC64 does not have it: there is no Autostart on the PET.
 - **.SID file player**: ALT + S opens the `/sids` folder; it also plays files with two, three, four and up to eight SIDs (PSID v4E; with eight-SID tunes, such as The Tuneful Eight, 24 bars and reSID to start with; S switches between reSID and reSIDfp live), with VU meters, song time, 10-second jumps (back at once, from a snapshot of the machine kept in memory), voices one by one and the side of each SID (F1-F4, F1-F8 with eight-SID tunes). BMC64 does not have it.
 - **SIDs on more cores**: with 2 or 3 SIDs, and in the player up to 8, the ones after the first are computed by core 2 and, when the screen leaves it free, by core 3. BMC64 does not: its extra cores only compute the filter tables at startup, then stay idle.
 - **USB DAC**: Sound > Audio out chooses between Auto, Jack, HDMI and USB DAC from the menu. The DAC can be plugged and unplugged while the machine is on, and 48 kHz-only DACs work too. BMC64 does not: the audio output (HDMI, jack or automatic) is chosen only in `machines.txt`, with no USB DAC.
@@ -64,6 +66,7 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 - **Real Commodore drive**: a 1541, 1571 or 1581 on an XUM1541 or ZoomFloppy adapter (ALT + 7). BMC64 does not have it.
 - **USB floppy drives from a PC** read as FLP1 and FLP2. BMC64 does not have them.
 - **Search in the file list**: you type the first letters, with wildcards (the question mark and the asterisk), and if nothing is found it searches inside the name. BMC64 only jumps to the first letter typed.
+- **Long names in the menu**: a name that does not fit in the line scrolls when the cursor is on it, so you can read it all (it stops for a moment, scrolls, then starts again). BMC64 cuts it.
 - **.REU images**: **ALT + 0** loads a file from the `/REU` folder, **ALT + SHIFT + 0** detaches it.
 - **EasyFlash cartridges save** (Cartridge > Save EasyFlash Now, and by themselves when the cartridge is detached). BMC64 has Save EasyFlash Now, but does not save by itself when the cartridge is detached.
 - **Drive without a disk in Plus4Emu**: ALT + 2 and ALT + 3 set the 1541 or the 1551 and open the list of `.D64` files.
@@ -76,20 +79,22 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 - **Fixed address**: IP Address Mode set to DHCP or Static (Static IP, Netmask, Gateway, DNS). The Raspberry Pi introduces itself to the router as BMC64-NG. BMC64 does not: only the automatic address (DHCP).
 - **Daylight saving time**: Daylight Saving (Off, On, Auto (EU)) under Timezone. BMC64 takes the time from the network and has a time zone in minutes in the settings file (`timezone_offset_minutes`); with no daylight saving time.
 - **Date and time**: at the top of the main menu, taken from the network with the time zone and daylight saving of the Network menu; the files seen through SD Card Sharing get the same time. BMC64 takes the time from the network but does not show it.
-- **SD Card Sharing...**: the microSD seen from the PC (`\\BMC64-NG` or `\\address`, user bmc64, password bmc64, changeable with Sharing Password). BMC64 does not have it.
+- **SD Card Sharing...**: the microSD seen from the PC (`\\BMC64-NG-400`, with the name of the model, or `\\address`, user bmc64, password bmc64, changeable with Sharing Password). BMC64 does not have it.
 - **NAS**: the NAS entry (NAS IP Address, NAS User Name, NAS Password, SMB Protocol, NAS Path, Test NAS Connection) opens a NAS the way the MiSTer does; NAS Path is the share and the folder the browser starts from, one per machine, empty at the factory like the other fields; the password is typed in clear text and after the reboot it is shown as asterisks. BMC64 does not have it.
-- **The modem like the Ultimate II+** (C64 and C128 only): Modem (SwiftLink) off at the factory, Modem Address `DE00` at the factory. It also receives calls, on port 3000 (RING, **ATA**, **ATS0=1**). BMC64's modem only dials out; its factory address is `DE00` in 5.1.1 and `D700` from 5.2.
+- **The modem like the Ultimate II+** (C64, C128, Plus/4 and VIC-20): Modem (SwiftLink) off at the factory, Modem Address `DE00` at the factory. It also receives calls, on port 3000 (RING, **ATA**, **ATS0=1**). BMC64's modem only dials out; its factory address is `DE00` in 5.1.1 and `D700` from 5.2. The modem on the Plus/4 (the built-in ACIA, `$FD00`) and on the VIC-20 (the user port) is in BMC64 too, from 5.2.6. On the C64 and the C128 the line is on DSR, as on the Ultimate II+; in BMC64 it is on DCD.
 
 **Controls**
 
+- **The user port joystick adapter**: in BMC64-NG the Starbyte can be chosen (in BMC64 it is in the list but the menu never reaches it) and after a snapshot the menu finds the right type again (BMC64 only looks at the first one).
 - **Spinner as a paddle** (Joyports > USB Spinner (Paddle), with Spinner Sensitivity) on C64, C128 and VIC-20. BMC64 does not: as a paddle it uses only the analog axes of gamepads.
+- **The menu by blocks with ALT**: in the menu **ALT** + **↑** and **↓** jump up and down by blocks like **PgUp** and **PgDn** (held down, they keep going), with any keyboard: the 500+ too, where FN does not reach the computer. In BMC64 **ALT** does nothing in the menu, and **↑** and **↓** move one row.
 - **Tape controls with no tape**: with no tape mounted the recorder controls do nothing and **NO TAPE** appears at the bottom.
 - **Status bar**: the real lights of each drive model, the track (half-tracks too), the tape counter, and temperature and frequency on the second line (**ALT + SHIFT + O**).
 
 **When something goes wrong**
 
 - **The watchdog**: if the emulator stays still for ten seconds a large black box appears, in English (BMC64-NG HAS STOPPED), with the address for reporting the defect on GitHub.
-- **Files on the card**: `BMC64-DIAG.TXT`, `PASSI.TXT` (and `PASSI-PRIMA.TXT`), `BLOCCO.TXT` (and `BLOCCO-PRIMA.TXT`), `USB-LOG.TXT`. BMC64 has its own log, switched on from the main menu and from the configuration file.
+- **Files on the card**: `BMC64-DIAG.TXT`, `PASSI.TXT` (and `PASSI-PRIMA.TXT`), `BLOCCO.TXT` (and `BLOCCO-PRIMA.TXT`), `USB-LOG.TXT`, `NET-LOG.TXT`. BMC64 has its own log, switched on from the main menu and from the configuration file.
 
 ---
 
@@ -119,6 +124,7 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 - **Main screen**: in BMC64-NG Video > Main HDMI Output chooses HDMI 0 or 1 for all machines. In BMX the firmware decides.
 - **C128 on two monitors**: BMC64-NG yes (Two HDMI, with swapping). BMX shows the two screens on one monitor only.
 - **VGA**: BMC64-NG has 1024x768 profiles at 50 and 60 Hz. BMX does not.
+- **VGA and HDMI monitors together**: in BMC64-NG Video > VGA Monitor On moves the screen between the HDMI monitor and the VGA one, on the other port, with the Switch entry alone. BMX does not: the firmware picks the port.
 - **Composite output**: BMC64-NG has **PAL Composite 576p@50Hz** and **NTSC Composite 480p@60Hz** in the Pi 4 B Switch menu, with the borders kept apart from the HDMI ones, and you go back to HDMI with an HDMI entry of Switch or with C= + F7 held for 5 seconds. BMX has two composite modes (576p and 480p) marked as experimental.
 - **Video mode confirmation**: 15 seconds to confirm, then it goes back to what it was (Safety timer (15s) removes it). BMX does not have it.
 - **Video modes**: BMC64-NG has 720p at 50 and 60 Hz (1080p for the PET) and VGA 1024x768. BMX has 480p and 576p over HDMI, 720p, 1080p and its own exact-frequency modes.
@@ -129,7 +135,7 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 - **Outputs**: BMC64-NG HDMI, USB DAC and the 3.5 mm jack of the Pi 4. BMX HDMI and USB DAC.
 - **SID Card on PET and Plus/4**: BMC64-NG only ($8F00 or $E900 on the PET, $FD40 or $FE80 on the Plus/4).
 - **.SID file player** (ALT + S) up to eight SIDs: BMC64-NG only. BMX does not open `.SID` files.
-- **ReSIDfp** as a third SID engine (Sound > SID Engine), with Background Noise: BMC64-NG. BMX does not: in its menu the engine has only FastSID and reSID.
+- **ReSIDfp** as a third SID engine (Sound > SID Engine), with Background Noise and the 6581 composer profiles: BMC64-NG. BMX does not: in its menu the engine has only FastSID and reSID.
 - **reSID filters**: BMC64-NG has the reSID Filter Settings folder, valid for all SIDs. BMX shows the values on screen and adjusts the second SID on its own.
 - **SIDs on more cores**: BMC64-NG with core 2 and, when the screen leaves it free, with core 3, with 2 or 3 SIDs and in the player up to 8; BMX only the second SID on core 2, with two SIDs.
 - **Stereo or mono** (Sound > Channels): BMC64-NG. In BMX stereo goes with the second SID.
@@ -139,6 +145,7 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 - **Real Commodore drive** (XUM1541, ZoomFloppy, ALT + 7): BMC64-NG only.
 - **USB floppy drives** (FLP1 and FLP2) and the CMD FD-2000 and FD-4000 drives: BMC64-NG.
 - **Search in the file list** with wildcards (the question mark and the asterisk): BMC64-NG.
+- **Long names in the menu**: in BMC64-NG they scroll under the cursor. BMX cuts them.
 - **.REU images**: BMC64-NG with **ALT + 0** from the `/REU` folder and from the menu. BMX only from the REU menu.
 - **.prg programs**: in BMC64-NG they start even without a drive. BMX uses a temporary disk and needs a drive.
 - **.SID files**: BMC64-NG only.
@@ -148,21 +155,23 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 **Network**
 
 - **Network**: BMC64-NG has Wi-Fi or Ethernet on all machines, also on the Pi 5 and 500; WiFi from the menu with a list of networks; automatic or fixed address; daylight saving time; date and time taken from the network, at the top of the menu. BMX has Wi-Fi or Ethernet with a fixed address and network search; its menu shows no time.
-- **SD Card Sharing...**: the microSD seen from the PC over SMB (`\\BMC64-NG`), with the Raspberry Pi in the Windows Network folder. BMX does not have it.
+- **SD Card Sharing...**: the microSD seen from the PC over SMB (`\\BMC64-NG-400`, with the name of the model), with the Raspberry Pi in the Windows Network folder. BMX does not have it.
 - **NAS like the MiSTer**: BMC64-NG only. BMX does not have it.
-- **Modem like the Ultimate II+** (SwiftLink, dials and receives): BMC64-NG, C64 and C128 only. BMX has a Hayes modem with a phone book and sounds, RS-232 over the network, UP9600 and SwiftLink.
+- **Modem like the Ultimate II+** (SwiftLink, dials and receives): BMC64-NG, on the C64, C128, Plus/4 and VIC-20. BMX has a Hayes modem with a phone book and sounds, RS-232 over the network, UP9600 and SwiftLink.
 - **Web commands and update from the Internet**: BMX only. In BMC64-NG there is no web control, by choice.
 
 **Controls**
 
+- **The user port joystick adapter** (Joyports > Userport Joystick Adapter): in BMC64-NG the types you can choose are the ones VICE 3.10 has for the machine, Synergy and WOJ on the Plus/4. BMX keeps the VICE 3.3 list: on the Plus/4 only types that 3.10 refuses are left, and the adapter never turns on; on the C64 the Hummer is left, which in 3.10 belongs to the C64DTV only.
 - **Spinner as a paddle** (Joyports > USB Spinner (Paddle)): BMC64-NG on C64, C128 and VIC-20. BMX has nothing about the spinner (searched in its sources).
+- **The menu by blocks with ALT**: in the menu **ALT** + **↑** and **↓** jump up and down by blocks like **PgUp** and **PgDn** (held down, they keep going), with any keyboard, the 500+ too. In BMX **ALT** does nothing in the menu, and **↑** and **↓** move one row.
 - **Tape controls with no tape**: BMC64-NG shows **NO TAPE** and does nothing. In BMX the tape controls reach VICE unchecked.
 - **Tape sound** (Tape sound emulation) does not wipe out the SID music in BMC64-NG; in the VICE file of BMX the defect is still there (our comparison of 19 September).
-- **VICE fixes after 3.10**: BMC64-NG has all of BMX's and, since 4 October 2026, the other fidelity fixes of the development VICE: the CIA serial register, the extra RTS read, the PET's original 80-column editor, the $FFF0 register of the PET 8096/8296, the C128 VDC lock-up with R0=0, the C128's custom C64 kernal (no longer replaced by the stock one), the C128 $01 bits, two TED registers, the VIC-20 joystick and keyboard column 7, the POT glitch only when a connected POT changes, the drive ROM changed from the menu reaching the running drive at once, the virtual drive's T-W commands, SFX Sound Expander, DigiMAX, tapecart and the PET HRE board.
+- **VICE fixes after 3.10**: BMC64-NG has all of BMX's and, since 4 October 2026, the other fidelity fixes of the development VICE: the CIA serial register, the extra RTS read, the PET's original 80-column editor, the $FFF0 register of the PET 8096/8296, the C128 VDC lock-up with R0=0, the C128's custom C64 kernal (no longer replaced by the stock one), the C128 $01 bits, two TED registers, the VIC-20 joystick and keyboard column 7, the POT glitch only when a connected POT changes, the drive ROM changed from the menu reaching the running drive at once, the virtual drive's T-W commands, SFX Sound Expander, DigiMAX, tapecart and the PET HRE board. Since 10 October 2026 also the keyboard clear that forgets the key queue (r46275 of 28 September).
 
 **When something goes wrong**
 
-- **BMC64-NG** writes `BMC64-DIAG.TXT`, `PASSI.TXT`, `BLOCCO.TXT` and `USB-LOG.TXT` to the card, and has the **watchdog** with the black BMC64-NG HAS STOPPED box. BMX has an on-screen diagnostics panel, with no files and no watchdog.
+- **BMC64-NG** writes `BMC64-DIAG.TXT`, `PASSI.TXT`, `BLOCCO.TXT`, `USB-LOG.TXT` and `NET-LOG.TXT` to the card, and has the **watchdog** with the black BMC64-NG HAS STOPPED box. BMX has an on-screen diagnostics panel, with no files and no watchdog.
 
 ---
 

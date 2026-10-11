@@ -452,6 +452,29 @@ void circle_yield(void) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 extern volatile unsigned bmc_mouse_presi;
 extern volatile unsigned bmc_mouse_scartati;
 extern volatile unsigned bmc_mouse_lunghezza;
@@ -461,6 +484,7 @@ extern volatile int bmc_mouse_rotella;
 void circle_usb_nota_menu(void) {
   static unsigned presi = ~0u, scartati = ~0u;
   usblog_circle("all'apertura del menu");
+  netlog_circle("all'apertura del menu");
   const unsigned p = bmc_mouse_presi, s = bmc_mouse_scartati;
   if (p == presi && s == scartati) {
     return;

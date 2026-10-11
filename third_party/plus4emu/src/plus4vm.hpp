@@ -238,6 +238,13 @@ namespace Plus4 {
      * Set if the 6551 ACIA should be emulated.
      */
     virtual void setEnableACIAEmulation(bool isEnabled);
+
+
+
+    void setACIASerialLine(ACIA6551::SerialLine *line)
+    {
+      acia_.setSerialLine(line);
+    }
     /*!
      * Set SID emulation parameters. 'outputVolume' should be specified in
      * decibels (-8 to +2). 'sidFlags_' can be the sum of:

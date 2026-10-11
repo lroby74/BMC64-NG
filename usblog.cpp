@@ -29,6 +29,9 @@
 
 #define USBLOG_FILE "/USB-LOG.TXT"
 
+#define NETLOG_FILE "/NET-LOG.TXT"
+#define NETLOG_TIENI 8192
+
 
 
 
@@ -56,18 +59,18 @@ private:
 
 
 
-static FILE *apri_in_coda(void) {
-  static char tieni[USBLOG_TIENI + 1];
+
+static FILE *apri_tagliato(const char *nome, char *tieni, unsigned quanto) {
   unsigned tenuti = 0;
-  FILE *vecchio = fopen(USBLOG_FILE, "r");
+  FILE *vecchio = fopen(nome, "r");
   if (vecchio != NULL) {
     long dim = 0;
     if (fseek(vecchio, 0, SEEK_END) == 0) {
       dim = ftell(vecchio);
     }
-    long da = dim > USBLOG_TIENI ? dim - USBLOG_TIENI : 0;
+    long da = dim > (long)quanto ? dim - (long)quanto : 0;
     if (fseek(vecchio, da, SEEK_SET) == 0) {
-      tenuti = (unsigned)fread(tieni, 1, USBLOG_TIENI, vecchio);
+      tenuti = (unsigned)fread(tieni, 1, quanto, vecchio);
     }
     fclose(vecchio);
     tieni[tenuti] = '\0';
@@ -82,7 +85,7 @@ static FILE *apri_in_coda(void) {
     }
   }
 
-  FILE *fp = fopen(USBLOG_FILE, "w");
+  FILE *fp = fopen(nome, "w");
   if (fp == NULL) {
     return NULL;
   }
@@ -90,6 +93,12 @@ static FILE *apri_in_coda(void) {
     fwrite(tieni, 1, tenuti, fp);
   }
   return fp;
+}
+
+
+static FILE *apri_in_coda(void) {
+  static char tieni[USBLOG_TIENI + 1];
+  return apri_tagliato(USBLOG_FILE, tieni, USBLOG_TIENI);
 }
 
 
@@ -117,7 +126,11 @@ static int riga_usb(const char *r, unsigned n) {
 
 
 
-static int copia_righe_circle(FILE *fp, const char *motivo) {
+
+
+static int copia_righe(FILE *fp, const char *motivo,
+                       int (*filtro)(const char *, unsigned), char *ultima,
+                       unsigned dim_ultima, const char *titolo) {
   static char reg[LOGGER_BUFSIZE + 1];
   CLogger *log = CLogger::Get();
   if (log == 0) {
@@ -144,8 +157,8 @@ static int copia_righe_circle(FILE *fp, const char *motivo) {
   reg[w] = '\0';
 
   char *p = reg;
-  if (s_ultima_riga[0] != '\0') {
-    char *q = strstr(reg, s_ultima_riga);
+  if (ultima[0] != '\0') {
+    char *q = strstr(reg, ultima);
     if (q != NULL) {
       char *a_capo = strchr(q, '\n');
       p = a_capo != NULL ? a_capo + 1 : reg + w;
@@ -155,10 +168,10 @@ static int copia_righe_circle(FILE *fp, const char *motivo) {
   while (*p != '\0') {
     char *a_capo = strchr(p, '\n');
     unsigned n = a_capo != NULL ? (unsigned)(a_capo - p) : (unsigned)strlen(p);
-    if (n > 0 && riga_usb(p, n)) {
+    if (n > 0 && filtro(p, n)) {
       if (fp != NULL) {
         if (scritte == 0) {
-          fprintf(fp, "\n-- i messaggi USB di Circle (%s) --\n", motivo);
+          fprintf(fp, "\n-- %s (%s) --\n", titolo, motivo);
         }
         fwrite(p, 1, n, fp);
         fputc('\n', fp);
@@ -166,13 +179,19 @@ static int copia_righe_circle(FILE *fp, const char *motivo) {
       scritte++;
     }
     if (n > 0 && fp != NULL) {
-      unsigned k = n < sizeof(s_ultima_riga) - 1 ? n : sizeof(s_ultima_riga) - 1;
-      memcpy(s_ultima_riga, p, k);
-      s_ultima_riga[k] = '\0';
+      unsigned k = n < dim_ultima - 1 ? n : dim_ultima - 1;
+      memcpy(ultima, p, k);
+      ultima[k] = '\0';
     }
     p = a_capo != NULL ? a_capo + 1 : p + n;
   }
   return scritte;
+}
+
+
+static int copia_righe_circle(FILE *fp, const char *motivo) {
+  return copia_righe(fp, motivo, riga_usb, s_ultima_riga, sizeof(s_ultima_riga),
+                     "i messaggi USB di Circle");
 }
 
 extern "C" void usblog_circle(const char *motivo) {
@@ -246,5 +265,77 @@ extern "C" void usblog_riga(const char *formato, ...) {
   vfprintf(fp, formato, ap);
   va_end(ap);
   fputc('\n', fp);
+  fclose(fp);
+}
+
+
+
+
+
+
+
+
+
+
+extern "C" const char *circle_nome_in_rete(void);
+
+static char s_ultima_rete[200];
+static int s_rete_aperto = 0;
+
+
+static int ha_sorgente(const char *r, unsigned n, const char *s) {
+  const unsigned k = (unsigned)strlen(s);
+  for (unsigned i = 0; i + k + 2 <= n; i++) {
+    if ((i == 0 || r[i - 1] == ' ') && strncmp(r + i, s, k) == 0 &&
+        r[i + k] == ':' && r[i + k + 1] == ' ') {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int contiene(const char *r, unsigned n, const char *s) {
+  const unsigned k = (unsigned)strlen(s);
+  for (unsigned i = 0; i + k <= n; i++) {
+    if (strncmp(r + i, s, k) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int riga_rete(const char *r, unsigned n) {
+  return ha_sorgente(r, n, "genet") || ha_sorgente(r, n, "macb") ||
+         ha_sorgente(r, n, "dhcp") || ha_sorgente(r, n, "wlan") ||
+         contiene(r, n, "Ethernet") || contiene(r, n, "Wi-Fi") ||
+         contiene(r, n, "WLAN") || contiene(r, n, "WPA ") ||
+         contiene(r, n, "static IP");
+}
+
+extern "C" void netlog_circle(const char *motivo) {
+  if (copia_righe(NULL, "", riga_rete, s_ultima_rete, sizeof(s_ultima_rete),
+                  "") == 0) {
+    return;
+  }
+  FILE *fp;
+  if (!s_rete_aperto) {
+    static char tieni[NETLOG_TIENI + 1];
+    fp = apri_tagliato(NETLOG_FILE, tieni, NETLOG_TIENI);
+    if (fp == NULL) {
+      return;
+    }
+    s_rete_aperto = 1;
+    CMachineInfo *info = CMachineInfo::Get();
+    fprintf(fp, "\n==== avvio di %s (%s, revisione %06x) ====\n",
+            circle_nome_in_rete(), info != 0 ? info->GetMachineName() : "?",
+            info != 0 ? (unsigned)info->GetRevisionRaw() : 0u);
+  } else {
+    fp = fopen(NETLOG_FILE, "a");
+    if (fp == NULL) {
+      return;
+    }
+  }
+  copia_righe(fp, motivo != NULL ? motivo : "adesso", riga_rete, s_ultima_rete,
+              sizeof(s_ultima_rete), "la rete");
   fclose(fp);
 }

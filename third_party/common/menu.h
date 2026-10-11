@@ -712,7 +712,14 @@ typedef enum {
    MENU_SID_RESIDFP_NOISE,
 
    MENU_GPUCLOCK,
-   MENU_GPUCLOCK_MENU
+   MENU_GPUCLOCK_MENU,
+
+   MENU_SID_RESIDFP_6581_PROFILE,
+   MENU_SID_RESIDFP_PROFILE_SELECT,
+
+   MENU_PORTA_VGA,
+
+   MENU_NETWORK_MODEM_BAUD
 } MenuID;
 
 typedef enum {
@@ -922,6 +929,13 @@ void menu_banco_cursore_su_voce(int quale);
 
 void menu_banco_cursore_su_id(int id);
 
+
+void menu_banco_cursore_su_modello(void);
+void menu_banco_batti_modem(void);
+void menu_banco_avvia_modem(void);
+
+void menu_banco_porta_utente(void);
+
 void menu_banco_cycle_display(void);
 
 void menu_banco_spinner(void);
@@ -934,6 +948,10 @@ void menu_banco_timer_switch(int valore);
 void menu_banco_cartelle(void);
 void menu_banco_apri_autostart(void);
 void menu_banco_avviavoce(char *percorso);
+
+void menu_banco_sfoglia_altrove(void);
+void menu_banco_flush_condivisione(void);
+void menu_banco_riavvia(void);
 
 void menu_banco_rom_a_caldo(void);
 
@@ -965,6 +983,10 @@ void menu_pagina_tasti_rapidi(void);
 void menu_pagina_tasti_rapidi_2(void);
 
 void menu_reboot_key(void);
+
+void menu_modo_sicuro(void);
+
+void menu_modem_aggiorna(void);
 
 void menu_banco_domanda_spegni(void);
 

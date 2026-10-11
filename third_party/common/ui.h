@@ -68,6 +68,10 @@ struct menu_item {
   // For all
   char name[MAX_MENU_STR];
 
+
+
+  char *nome_lungo;
+
   // Symbol on left edge
   int symbol;
 

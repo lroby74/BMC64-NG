@@ -12,6 +12,9 @@ All the combinations use the **ALT** key. SHIFT, where present, activates the se
 | arrow keys, ENTER | inside the menu: move and choose |
 | letters, ENTER | in a file list: search by name (BACKSPACE deletes) |
 | a letter | inside the menu: jumps to the next entry that starts with that letter (S for Sound) |
+| **ALT** + **↑** and **↓** | inside the menu: up and down by blocks, like **PgUp** and **PgDn** (held down, they keep going). With any keyboard, the 500+ too, where FN does not reach the computer. With the menu closed they are the tape PLAY and STOP |
+| **PgUp** and **PgDn**, **F3** and **F5** | inside the menu: up and down by blocks. On the 400 and the 500 they are **FN** + **↑** and **↓** |
+| **Home** and **End**, **F1** and **F7** | inside the menu: top and bottom. On the 400 and the 500 **Home** and **End** are **FN** + **←** and **→** |
 
 ## The tape (recorder)
 

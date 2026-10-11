@@ -48,6 +48,10 @@ int audio_out_apply(int scelta);
 int cmdline_opzione(const char *chiave, const char *valore);
 
 int tvout_applica(int acceso);
+
+
+int porta_vga_leggi(void);
+int porta_vga_scrivi(int porta);
 #define KEY_LEN 32
 #define VALUE_LEN 96
 #define DESC_LEN 64
@@ -92,6 +96,9 @@ struct machine_entry {
 int load_machines(struct machine_entry** head);
 void free_machines(struct machine_entry* head);
 int switch_apply_files(struct machine_entry* ptr);
+
+
+int switch_porta_principale(const struct machine_entry *e, int porta_vga);
 int overclock_apply(int level, int pi_model);
 int overclock_current(void);
 int overclock_stock_mhz(void);

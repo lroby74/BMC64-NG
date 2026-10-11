@@ -648,6 +648,9 @@ void emu_pause_trap(uint16_t addr, void *data);
 
 void emux_flush_disks_now(fullpath_func f_fullpath);
 
+
+void emux_dischetti_prima_di_uscire(void);
+
 extern volatile int emu_sid_in_pausa;
 void emu_sid_pausa_trap(uint16_t addr, void *data);
 

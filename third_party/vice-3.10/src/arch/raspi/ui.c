@@ -162,10 +162,14 @@ void ui_init_with_args(int *argc, char **argv)
 
 
 
-static void bmc_vic20_kernal_dello_standard(void)
+
+
+
+static void bmc_kernal_dello_standard(void)
 {
-    const char *pal = "kernal.901486-07.bin";   /* vic20rom.h, REV7 */
-    const char *ntsc = "kernal.901486-06.bin";  /* vic20rom.h, REV6 */
+    const char *pal;
+    const char *ntsc;
+    const char *chi;
     const char *adesso = NULL;
     const char *nome;
     const char *voluto;
@@ -173,8 +177,18 @@ static void bmc_vic20_kernal_dello_standard(void)
     int standard = 0;
     int e_ntsc;
 
-    if (machine_class != VICE_MACHINE_VIC20 ||
-        resources_get_int("MachineVideoStandard", &standard) < 0 ||
+    if (machine_class == VICE_MACHINE_VIC20) {
+        pal = "kernal.901486-07.bin";   /* vic20rom.h, REV7 */
+        ntsc = "kernal.901486-06.bin";  /* vic20rom.h, REV6 */
+        chi = "VIC-20";
+    } else if (machine_class == VICE_MACHINE_PLUS4) {
+        pal = "kernal-318004-05.bin";   /* plus4rom.h, PAL_REV5 */
+        ntsc = "kernal-318005-05.bin";  /* plus4rom.h, NTSC_REV5 */
+        chi = "Plus/4";
+    } else {
+        return;
+    }
+    if (resources_get_int("MachineVideoStandard", &standard) < 0 ||
         resources_get_string("KernalName", &adesso) < 0 || adesso == NULL) {
         return;
     }
@@ -189,21 +203,21 @@ static void bmc_vic20_kernal_dello_standard(void)
         return;
     }
     if (sysfile_locate(voluto, machine_name, &trovato) < 0) {
-        log_warning(LOG_DEFAULT, "BMC64: VIC-20 %s, ma %s non c'e': resta %s",
-                    e_ntsc ? "NTSC" : "PAL", voluto, adesso);
+        log_warning(LOG_DEFAULT, "BMC64: %s %s, ma %s non c'e': resta %s",
+                    chi, e_ntsc ? "NTSC" : "PAL", voluto, adesso);
         return;
     }
     lib_free(trovato);
 
-    log_message(LOG_DEFAULT, "BMC64: VIC-20 %s, KERNAL %s al posto di %s",
-                e_ntsc ? "NTSC" : "PAL", voluto, adesso);
+    log_message(LOG_DEFAULT, "BMC64: %s %s, KERNAL %s al posto di %s",
+                chi, e_ntsc ? "NTSC" : "PAL", voluto, adesso);
     resources_set_string("KernalName", voluto);
 }
 
 int ui_init(void)
 {
     log_verbose(LOG_DEFAULT, "Initialising headless ui");
-    bmc_vic20_kernal_dello_standard();
+    bmc_kernal_dello_standard();
 
     return 0;
 }

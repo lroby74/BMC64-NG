@@ -140,6 +140,9 @@
 
 
 
+
+
+
 extern int circle_file_aperti(int stampa);
 
 #define COLOR16(r,g,b) (((r)>>3)<<11 | ((g)>>2)<<5 | (b)>>3)
@@ -277,6 +280,9 @@ int (*ui_tasto_nella_lista)(struct menu_item *cur, char ch) = NULL;
 #define ACTION_MiniLeft 8
 #define ACTION_MiniRight 9
 
+#define ACTION_BloccoSu 10
+#define ACTION_BloccoGiu 11
+
 #define INITIAL_ACTION_DELAY 24
 #define INITIAL_ACTION_REPEAT_DELAY 8
 
@@ -333,6 +339,22 @@ int ui_value_before_return(void) {
 }
 
 static int keyboard_shift = 0;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int ui_alt = 0;
 
 static uint8_t* ui_fb;
 static int ui_fb_pitch;
@@ -623,6 +645,19 @@ static void ui_stato_normale(void) {
   ui_render_current_item_only = 0;
 }
 
+
+
+
+static void ui_action_tasto(long action) {
+  if (action == ACTION_BloccoSu) {
+    ui_page_up();
+  } else if (action == ACTION_BloccoGiu) {
+    ui_page_down();
+  } else {
+    ui_action(action);
+  }
+}
+
 // Happens on main loop.
 static void ui_key_pressed(long key) {
   // Anything other than left/right will reset transparency
@@ -668,9 +703,9 @@ static void ui_key_pressed(long key) {
   case KEYCODE_Period:
     switch (key) {
       case KEYCODE_Up:
-        ui_key_action = ACTION_Up; break;
+        ui_key_action = ui_alt ? ACTION_BloccoSu : ACTION_Up; break;
       case KEYCODE_Down:
-        ui_key_action = ACTION_Down; break;
+        ui_key_action = ui_alt ? ACTION_BloccoGiu : ACTION_Down; break;
       case KEYCODE_Left:
         ui_key_action = ACTION_Left; break;
       case KEYCODE_Right:
@@ -686,7 +721,7 @@ static void ui_key_pressed(long key) {
     ui_key_ticks_next = INITIAL_ACTION_REPEAT_DELAY;
     ui_key_ticks_repeats = 0;
     ui_key_ticks_repeats_next = 8;
-    ui_action(ui_key_action);
+    ui_action_tasto(ui_key_action);
     return;
   case KEYCODE_Escape:
     return;
@@ -695,6 +730,12 @@ static void ui_key_pressed(long key) {
     return;
   case KEYCODE_RightShift:
     keyboard_shift |= 2;
+    return;
+  case KEYCODE_LeftAlt:
+    ui_alt |= 1;
+    return;
+  case KEYCODE_RightAlt:
+    ui_alt |= 2;
     return;
   }
 
@@ -773,6 +814,12 @@ static void ui_key_released(long key) {
   case KEYCODE_RightShift:
     keyboard_shift &= ~2;
     return;
+  case KEYCODE_LeftAlt:
+    ui_alt &= ~1;
+    return;
+  case KEYCODE_RightAlt:
+    ui_alt &= ~2;
+    return;
   }
 }
 
@@ -782,7 +829,7 @@ static void ui_action_frame() {
     ui_key_ticks--;
     // When key ticks hits zero, repeat the action.
     if (ui_key_ticks == 0) {
-      ui_action(ui_key_action);
+      ui_action_tasto(ui_key_action);
       // Set new ticks
       ui_key_ticks = ui_key_ticks_next;
       // Keep track of how many repeats
@@ -1848,6 +1895,7 @@ static void ui_toggle(void) {
 
 
     ui_stato_normale();
+    ui_alt = 0;
     emux_trap_main_loop_ui();
   }
 }
@@ -2192,6 +2240,226 @@ void emu_ui_key_interrupt(long key, int pressed) {
   }
   circle_lock_release();
 }
+
+
+
+
+
+
+
+#define SCORRI_FERMO_US 800000UL
+#define SCORRI_PASSO_US 100000UL
+#define SCORRI_FINE_US 1200000UL
+
+static int lettere_utf8(const char *s) {
+  int n = 0;
+  for (; *s != '\0'; s++) {
+    if (((unsigned char)*s & 0xC0) != 0x80) {
+      n++;
+    }
+  }
+  return n;
+}
+
+static const char *salta_lettere_utf8(const char *s, int quante) {
+  while (*s != '\0' && quante > 0) {
+    s++;
+    while (((unsigned char)*s & 0xC0) == 0x80) {
+      s++;
+    }
+    quante--;
+  }
+  return s;
+}
+
+
+
+static void nome_che_scorre(const char *nome, unsigned long trascorso,
+                            char *buf, size_t n) {
+  int finestra = MAX_MENU_STR - 1;
+  int oltre = lettere_utf8(nome) - finestra;
+  int passo = 0;
+  if (oltre > 0) {
+    unsigned long giro = SCORRI_FERMO_US +
+                         (unsigned long)oltre * SCORRI_PASSO_US + SCORRI_FINE_US;
+    unsigned long t = trascorso % giro;
+    if (t >= SCORRI_FERMO_US) {
+      passo = (int)((t - SCORRI_FERMO_US) / SCORRI_PASSO_US);
+      if (passo > oltre) {
+        passo = oltre;
+      }
+    }
+  }
+  const char *da = salta_lettere_utf8(nome, passo);
+  const char *a = salta_lettere_utf8(da, finestra);
+  size_t quanti = (size_t)(a - da);
+  if (quanti > n - 1) {
+    quanti = n - 1;
+  }
+  memcpy(buf, da, quanti);
+  buf[quanti] = '\0';
+}
+
+static struct menu_item *scorre_voce;
+static int scorre_cursore = -1;
+static unsigned long scorre_da;
+
+
+
+static const char *testo_della_voce(struct menu_item *node,
+                                    int sotto_il_cursore, char *buf,
+                                    size_t n) {
+  if (!sotto_il_cursore || node->nome_lungo == NULL ||
+      strncmp(node->nome_lungo, node->name, strlen(node->name)) != 0) {
+    return node->name;
+  }
+  unsigned long ora = circle_get_ticks();
+  if (node != scorre_voce || menu_cursor[current_menu] != scorre_cursore) {
+    scorre_voce = node;
+    scorre_cursore = menu_cursor[current_menu];
+    scorre_da = ora;
+  }
+  nome_che_scorre(node->nome_lungo, ora - scorre_da, buf, n);
+  return buf;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3164,7 +3432,23 @@ void ui_check_key(void) {
   ui_action_frame();
 }
 
+
+
+
+
+
+static volatile int modo_sicuro_chiesto = 0;
+
+void emu_modo_sicuro_interrupt(void) {
+  modo_sicuro_chiesto = 1;
+}
+
 void ui_handle_toggle_or_quick_func() {
+  if (modo_sicuro_chiesto) {
+    modo_sicuro_chiesto = 0;
+    menu_modo_sicuro();
+    return;
+  }
   // This ensures we transition from emulator to ui only after we've
   // submitted key events and let the emulator process them. Otherwise,
   // we can leave keys in a down state unintentionally. Needs to be set
@@ -3279,6 +3563,13 @@ static struct menu_item *ui_new_item(struct menu_item *parent, const char *name,
 
 
   if (strlen(name) > MAX_MENU_STR - 1) {
+
+
+    size_t lungo = strlen(name) + 1;
+    new_item->nome_lungo = (char *)malloc(lungo);
+    if (new_item->nome_lungo != NULL) {
+      memcpy(new_item->nome_lungo, name, lungo);
+    }
     int k = MAX_MENU_STR - 1;
     int inizio = k;
     while (inizio > 0 &&
@@ -3569,7 +3860,11 @@ static void ui_render_children(struct menu_item *node,
       if (!ui_render_current_item_only ||
           *index == menu_cursor[stack_index]) {
 
-        ui_draw_text(node->name,
+        char scorre[(MAX_MENU_STR - 1) * 4 + 1];
+        ui_draw_text(testo_della_voce(node,
+                                      *index == menu_cursor[stack_index] &&
+                                          stack_index == current_menu,
+                                      scorre, sizeof(scorre)),
            node->menu_left + (indent + 1) * 8, y, colour);
 
         if (node->type == READ_ONLY_HEADING &&
@@ -3842,6 +4137,7 @@ static void ui_clear_child_menu(struct menu_item *node) {
 
   while (node != NULL) {
     struct menu_item *next = node->next;
+    free(node->nome_lungo);
     free(node);
     node = next;
   }
@@ -4248,6 +4544,10 @@ void ui_find_first(char letter) {
 // the cursor to a known location. Also useful after a call to
 // ui_to_top() to do the same.
 void ui_set_cur_pos(int pos) {
+
+
+
+  ui_traverse();
   while(menu_cursor[current_menu] < pos &&
         menu_cursor[current_menu] < max_index[current_menu] - 1) {
     int prima = menu_cursor[current_menu];
@@ -4286,6 +4586,7 @@ void ui_enable_osd(void) {
   emux_alza_la_tastiera();
   osd_active = 1;
   ui_enabled = 1;
+  ui_alt = 0;
 
 
   ui_stato_normale();

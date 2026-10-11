@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <ctype.h>
 #include "plus4lib/plus4emu.h"
+#include "plus4lib/acia_modem.h"
 #include "../common/circle.h"
 #include "../common/emux_api.h"
 #include "../common/keycodes.h"
@@ -638,6 +639,22 @@ static int apply_settings() {
   Plus4VM_SetTapeFeedbackLevel(vm, tape_feedback);
   Plus4VM_SetRAMConfiguration(vm, ram_size, 0x99999999UL);
   return apply_rom_config();
+}
+
+
+
+
+
+
+
+
+
+static int modem_attaccato = 0;
+
+static void acia_secondo_la_memoria(int ram) {
+  if (modem_attaccato) {
+    Plus4VM_SetEnableACIAEmulation(vm, ram >= 64 ? 1 : 0);
+  }
 }
 
 // This is only used for the latch func for row/col which
@@ -1741,6 +1758,12 @@ int main_program(int argc, char **argv)
      return -1;
   }
 
+  if (circle_get_network_status() != CIRCLE_NETWORK_DISABLED) {
+    acia_modem_attach(vm);
+    modem_attaccato = 1;
+    acia_secondo_la_memoria(ram_size);
+  }
+
   set_video_font();
 
   printf ("Enter emulation loop\n");
@@ -1807,6 +1830,10 @@ int emux_handle_ide64_image_change(int device, const char *path) {
 
 void emux_flush_disks_now(fullpath_func f_fullpath) {
   (void)f_fullpath;
+}
+
+
+void emux_dischetti_prima_di_uscire(void) {
 }
 
 void emux_trap_main_loop_ui(void) {
@@ -2369,6 +2396,40 @@ const char *emux_sid_modello(int chip) { (void)chip; return NULL; }
 
 unsigned long emux_cicli_al_secondo(void) { return 0; }
 const char *emux_sid_velocita(void) { return ""; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2999,6 +3060,8 @@ int emux_handle_menu_change(struct menu_item* item) {
       Plus4VM_SetRAMConfiguration(vm,
          ram_size_item->choice_ints[ram_size_item->value], 0x99999999UL);
       apply_rom_config();
+      acia_secondo_la_memoria(
+         ram_size_item->choice_ints[ram_size_item->value]);
       return 1;
     case MENU_DRIVE_TYPE_8:
 

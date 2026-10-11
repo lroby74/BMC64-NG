@@ -2,7 +2,7 @@
 
 ### Le differenze, una per una
 
-Aggiornata al 6 ottobre 2026. Per il BMC64 vale la versione 5.1.1 (la guida e i sorgenti che abbiamo), con le novità del 5.2 dove sono citate. Per BMX vale la versione 2026.08.19, l'ultima del suo registro delle modifiche.
+Aggiornata all'11 ottobre 2026. Per il BMC64 vale la versione 5.1.1 (la guida e i sorgenti che abbiamo), con le novità del 5.2 dove sono citate. Per BMX vale la versione 2026.08.19, l'ultima del suo registro delle modifiche.
 
 ---
 
@@ -40,16 +40,18 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 - **C128 su due monitor**: Video > Active Display su Two HDMI manda il VIC-II su un monitor e il VDC sull'altro. Il BMC64 no: VIC-II e VDC vanno su una sola uscita, con Active Display e PIP.
 - **Uscita composita**: BMC64-NG ha **PAL Composite 576p@50Hz** e **NTSC Composite 480p@60Hz** nel menu Switch di ogni macchina, solo sul Pi 4 B (jack da 3,5 mm, cavo AV a 4 poli), coi bordi tenuti a parte da quelli della HDMI. Il BMC64 ha gli stessi due modi compositi per i suoi Raspberry.
 - **VGA**: BMC64-NG ha i modi VGA 1024x768 a 50 e 60 Hz per ogni macchina (HDMI con adattatore VGA). Il BMC64 ha un'altra strada (DPI con VGA666, o 1920x1080 con `raster_skip`).
+- **Monitor VGA e HDMI insieme**: Video > VGA Monitor On dice su quale HDMI sta il monitor VGA, e lo Switch manda lo schermo sul VGA con le voci VGA e sull'altro monitor con le altre, con un solo riavvio. Il BMC64 no: ha un solo schermo.
 - **Shader CRT**: BMC64-NG ha lo shader di BMX, con geometria, scanline, maschera dei fosfori, bagliore, riflessi e i preset `.crt`. Il BMC64 ha il filtro CRT di davej.
 - **Conferma del modo video**: dopo un cambio di macchina o di modo ci sono 15 secondi per confermare con un tasto, altrimenti torna com'era (Safety timer (15s) in fondo al menu Switch). Il BMC64 no: chiede conferma solo per i reset, e per tornare indietro ha il CTRL + F7 tenuto 5 secondi.
 
 **Suono**
 
-- **Motori del SID**: oltre a ReSid c'è **ReSIDfp** (Sound > SID Engine), con le sue regolazioni e il fruscio di fondo (Background Noise). Il BMC64 no: il suo SID Engine ha solo Fast e ReSid.
+- **Motori del SID**: oltre a ReSid c'è **ReSIDfp** (Sound > SID Engine), con le sue regolazioni, i profili del 6581 per compositore (Composer Profile) e il fruscio di fondo (Background Noise). Il BMC64 no: il suo SID Engine ha solo Fast e ReSid.
 - **Campionamento**: SID Resampling di fabbrica su Resampling, il più fedele. Nel BMC64 sul Pi 3 si sceglie fra Fast, Interpolation e Fast Resampling e sul Pi Zero e 2 c'è solo Fast.
 - **Filtri del reSID**: nel menu Sound la cartella reSID Filter Settings (Passband %, Gain %, Filter Bias) per il 6581 e per l'8580. Nella guida del BMC64 Passband e Gain devono restare quelli di fabbrica.
 - **Stereo o mono** (Sound > Channels) con più SID.
 - **SID Card su PET e Plus/4**, spenta di fabbrica. Il BMC64 no: il secondo SID c'è solo sul C64 e sul C128.
+- **Autostart sul PET**, solo coi `.prg`. Il BMC64 no: sul PET l'Autostart non c'è.
 - **Lettore di file .SID**: ALT + S apre la cartella `/sids`; suona anche i file a due, tre, quattro e fino a otto SID (PSID v4E; coi brani a otto SID, come The Tuneful Eight, 24 barre e il reSID per partire; S passa fra reSID e reSIDfp dal vivo), con VU meter, tempo del brano, salti di 10 secondi (all'indietro subito, da una fotografia della macchina in memoria), voci una per una e il lato di ogni SID (F1-F4, F1-F8 coi brani a otto SID). Nel BMC64 non c'è.
 - **I SID su più core**: con 2 o 3 SID, e nel lettore fino a 8, quelli oltre il primo li calcolano il core 2 e, quando lo schermo lo lascia libero, il core 3. Il BMC64 no: i suoi core in più calcolano solo le tabelle dei filtri all'avvio, poi restano fermi.
 - **DAC USB**: Sound > Audio out sceglie fra Auto, Jack, HDMI e USB DAC dal menu. Il DAC si può collegare e scollegare a macchina accesa, e vanno anche i DAC a 48 kHz. Il BMC64 no: l'uscita audio (HDMI, jack o automatica) si sceglie solo in `machines.txt`, senza DAC USB.
@@ -64,6 +66,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 - **Drive Commodore vero**: un 1541, 1571 o 1581 su adattatore XUM1541 o ZoomFloppy (ALT + 7). Il BMC64 no.
 - **Floppy USB da PC** letti come FLP1 e FLP2. Il BMC64 no.
 - **Ricerca nell'elenco dei file**: si scrivono le prime lettere, con i jolly (il punto interrogativo e l'asterisco), e se non trova cerca dentro il nome. Il BMC64 salta solo alla prima lettera scritta.
+- **Nomi lunghi nel menu**: un nome che non sta nella riga scorre quando ci passa sopra il cursore, così si legge tutto (fermo un attimo, poi scorre, poi ricomincia). Il BMC64 lo taglia.
 - **Immagini .REU**: **ALT + 0** carica un file dalla cartella `/REU`, **ALT + SHIFT + 0** lo stacca.
 - **Le cartucce EasyFlash salvano** (Cartridge > Save EasyFlash Now, e da sole quando si stacca la cartuccia). Il BMC64 ha Save EasyFlash Now, ma non salva da solo quando si stacca la cartuccia.
 - **Drive senza dischetto in Plus4Emu**: ALT + 2 e ALT + 3 mettono il 1541 o il 1551 e aprono l'elenco dei `.D64`.
@@ -76,20 +79,22 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 - **Indirizzo fisso**: IP Address Mode su DHCP o Static (Static IP, Netmask, Gateway, DNS). Il Raspberry si presenta al router come BMC64-NG. Il BMC64 no: solo l'indirizzo automatico (DHCP).
 - **Ora legale**: Daylight Saving (Off, On, Auto (EU)) sotto Timezone. Il BMC64 prende l'ora dalla rete e ha un fuso orario in minuti nel file delle impostazioni (`timezone_offset_minutes`); senza ora legale.
 - **Data e ora**: in cima al menu principale, prese dalla rete col fuso e l'ora legale del menu Network; con la stessa ora si vedono i file da SD Card Sharing. Il BMC64 prende l'ora dalla rete ma non la mostra.
-- **SD Card Sharing...**: la microSD vista dal PC (`\\BMC64-NG` o `\\indirizzo`, utente bmc64, password bmc64, cambiabile con Sharing Password). Il BMC64 no.
+- **SD Card Sharing...**: la microSD vista dal PC (`\\BMC64-NG-400`, col nome del modello, o `\\indirizzo`, utente bmc64, password bmc64, cambiabile con Sharing Password). Il BMC64 no.
 - **NAS**: la voce NAS (NAS IP Address, NAS User Name, NAS Password, SMB Protocol, NAS Path, Test NAS Connection) apre un NAS come sul MiSTer; NAS Path è la condivisione e la cartella da cui parte il navigatore, una per macchina, vuoto di fabbrica come gli altri campi; la password si scrive in chiaro e dopo il riavvio si vede con gli asterischi. Il BMC64 no.
-- **Il modem come la Ultimate II+** (solo C64 e C128): Modem (SwiftLink) spento di fabbrica, Modem Address di fabbrica `DE00`. Riceve anche chiamate, sulla porta 3000 (RING, **ATA**, **ATS0=1**). Il modem del BMC64 chiama soltanto; il suo indirizzo di fabbrica è `DE00` nel 5.1.1 e `D700` dal 5.2.
+- **Il modem come la Ultimate II+** (C64, C128, Plus/4 e VIC-20): Modem (SwiftLink) spento di fabbrica, Modem Address di fabbrica `DE00`. Riceve anche chiamate, sulla porta 3000 (RING, **ATA**, **ATS0=1**). Il modem del BMC64 chiama soltanto; il suo indirizzo di fabbrica è `DE00` nel 5.1.1 e `D700` dal 5.2. Il modem sul Plus/4 (l'ACIA di serie, `$FD00`) e sul VIC-20 (la porta utente) c'è anche nel BMC64, dal 5.2.6. Sul C64 e sul C128 la linea sta sul DSR, come sulla Ultimate II+; nel BMC64 sta sul DCD.
 
 **Comandi e controlli**
 
+- **L'adattatore dei joystick sulla porta utente**: in BMC64-NG lo Starbyte si sceglie (nel BMC64 è nell'elenco ma il menu non ci arriva) e dopo un'istantanea il menu ritrova il tipo giusto (il BMC64 guarda solo il primo).
 - **Spinner come paddle** (Joyports > USB Spinner (Paddle), con Spinner Sensitivity) su C64, C128 e VIC-20. Il BMC64 no: come paddle usa solo gli assi analogici dei gamepad.
+- **Il menu a blocchi con ALT**: nel menu **ALT** + **↑** e **↓** saltano su e giú a blocchi come **PgUp** e **PgDn** (tenuti premuti, continuano), con ogni tastiera: anche sul 500+, dove FN non arriva al computer. Nel BMC64 **ALT** nel menu non fa niente, e **↑** e **↓** vanno di una riga.
 - **Il nastro senza nastro**: senza un nastro montato i comandi del registratore non fanno niente e in basso compare **NO TAPE**.
 - **Barra di stato**: le spie vere di ogni modello di drive, la traccia (anche le mezze tracce), il contanastro, e temperatura e frequenza sulla seconda riga (**ALT + SHIFT + O**).
 
 **Quando qualcosa va storto**
 
 - **Il guardiano**: se l'emulatore resta fermo dieci secondi compare un riquadro nero grande, in inglese (BMC64-NG HAS STOPPED), con l'indirizzo per segnalare il difetto su GitHub.
-- **File sulla scheda**: `BMC64-DIAG.TXT`, `PASSI.TXT` (e `PASSI-PRIMA.TXT`), `BLOCCO.TXT` (e `BLOCCO-PRIMA.TXT`), `USB-LOG.TXT`. Il BMC64 ha il suo registro, acceso dal menu principale e dal file di configurazione.
+- **File sulla scheda**: `BMC64-DIAG.TXT`, `PASSI.TXT` (e `PASSI-PRIMA.TXT`), `BLOCCO.TXT` (e `BLOCCO-PRIMA.TXT`), `USB-LOG.TXT`, `NET-LOG.TXT`. Il BMC64 ha il suo registro, acceso dal menu principale e dal file di configurazione.
 
 ---
 
@@ -119,6 +124,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 - **Schermo principale**: in BMC64-NG Video > Main HDMI Output sceglie l'HDMI 0 o 1 per tutte le macchine. In BMX lo decide il firmware.
 - **C128 su due monitor**: BMC64-NG sì (Two HDMI, con scambio). BMX mostra i due schermi su un monitor solo.
 - **VGA**: BMC64-NG ha i profili 1024x768 a 50 e 60 Hz. BMX no.
+- **Monitor VGA e HDMI insieme**: in BMC64-NG Video > VGA Monitor On fa passare lo schermo dal monitor HDMI a quello VGA, sull'altra porta, con la sola voce dello Switch. BMX no: la porta la decide il firmware.
 - **Uscita composita**: BMC64-NG ha **PAL Composite 576p@50Hz** e **NTSC Composite 480p@60Hz** nel menu Switch del Pi 4 B, coi bordi tenuti a parte da quelli della HDMI, e si torna alla HDMI con una voce HDMI dello Switch o con C= + F7 tenuti 5 secondi. BMX ha due modi compositi (576p e 480p) segnati come sperimentali.
 - **Conferma del modo video**: 15 secondi per confermare, poi torna com'era (Safety timer (15s) la toglie). BMX non ce l'ha.
 - **Modi video**: BMC64-NG ha 720p a 50 e 60 Hz (1080p per il PET) e VGA 1024x768. BMX ha 480p e 576p in HDMI, 720p, 1080p e i suoi modi a frequenza esatta.
@@ -129,7 +135,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 - **Uscite**: BMC64-NG HDMI, DAC USB e jack da 3,5 mm del Pi 4. BMX HDMI e DAC USB.
 - **SID Card su PET e Plus/4**: solo BMC64-NG ($8F00 o $E900 sul PET, $FD40 o $FE80 sul Plus/4).
 - **Lettore di file .SID** (ALT + S) fino a otto SID: solo BMC64-NG. BMX non apre i `.SID`.
-- **ReSIDfp** come terzo motore del SID (Sound > SID Engine), con Background Noise: BMC64-NG. BMX no: nel suo menu il motore ha solo FastSID e reSID.
+- **ReSIDfp** come terzo motore del SID (Sound > SID Engine), con Background Noise e i profili del 6581 per compositore: BMC64-NG. BMX no: nel suo menu il motore ha solo FastSID e reSID.
 - **Filtri del reSID**: BMC64-NG la cartella reSID Filter Settings valida per tutti i SID. BMX mostra i valori a schermo e regola il secondo SID per conto suo.
 - **I SID su più core**: BMC64-NG col core 2 e, quando lo schermo lo lascia libero, col core 3, con 2 o 3 SID e nel lettore fino a 8; BMX solo il secondo SID sul core 2, con due SID.
 - **Stereo o mono** (Sound > Channels): BMC64-NG. In BMX lo stereo va col secondo SID.
@@ -139,6 +145,7 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 - **Drive Commodore vero** (XUM1541, ZoomFloppy, ALT + 7): solo BMC64-NG.
 - **Floppy USB** (FLP1 e FLP2) e i drive CMD FD-2000 e FD-4000: BMC64-NG.
 - **Ricerca nell'elenco dei file** con i jolly (il punto interrogativo e l'asterisco): BMC64-NG.
+- **Nomi lunghi nel menu**: in BMC64-NG scorrono sotto il cursore. BMX li taglia.
 - **Immagini .REU**: BMC64-NG con **ALT + 0** dalla cartella `/REU` e dal menu. BMX solo dal menu della REU.
 - **Programmi .prg**: in BMC64-NG partono anche senza drive. BMX usa un dischetto temporaneo e vuole un drive.
 - **File .SID**: solo BMC64-NG.
@@ -148,21 +155,23 @@ Con il BMC64 BMC64-NG ha in comune il menu, il formato del file `machines.txt`, 
 **Rete**
 
 - **Rete**: BMC64-NG ha Wi-Fi o Ethernet su tutte le macchine, anche sul Pi 5 e 500; WiFi dal menu con elenco delle reti; indirizzo automatico o fisso; ora legale; data e ora prese dalla rete, in cima al menu. BMX ha Wi-Fi o Ethernet con indirizzo fisso e ricerca delle reti; l'ora nel suo menu non c'è.
-- **SD Card Sharing...**: la microSD vista dal PC via SMB (`\\BMC64-NG`), con il Raspberry nella cartella Rete di Windows. BMX no.
+- **SD Card Sharing...**: la microSD vista dal PC via SMB (`\\BMC64-NG-400`, col nome del modello), con il Raspberry nella cartella Rete di Windows. BMX no.
 - **NAS come sul MiSTer**: solo BMC64-NG. BMX no.
-- **Modem come la Ultimate II+** (SwiftLink, chiama e riceve): BMC64-NG, solo C64 e C128. BMX ha un modem Hayes con rubrica e suoni, RS-232 via rete, UP9600 e SwiftLink.
+- **Modem come la Ultimate II+** (SwiftLink, chiama e riceve): BMC64-NG, su C64, C128, Plus/4 e VIC-20. BMX ha un modem Hayes con rubrica e suoni, RS-232 via rete, UP9600 e SwiftLink.
 - **Comandi via web e aggiornamento da Internet**: solo BMX. In BMC64-NG niente controllo via web, per scelta.
 
 **Comandi e controlli**
 
+- **L'adattatore dei joystick sulla porta utente** (Joyports > Userport Joystick Adapter): in BMC64-NG i tipi che si scelgono sono quelli che il VICE 3.10 ha per la macchina, sul Plus/4 Synergy e WOJ. BMX tiene l'elenco del VICE 3.3: sul Plus/4 restano solo tipi che il 3.10 rifiuta, e l'adattatore non si accende; sul C64 resta lo Hummer, che nel 3.10 è solo del C64DTV.
 - **Spinner come paddle** (Joyports > USB Spinner (Paddle)): BMC64-NG su C64, C128 e VIC-20. BMX non ha niente sullo spinner (cercato nei suoi sorgenti).
+- **Il menu a blocchi con ALT**: nel menu **ALT** + **↑** e **↓** saltano su e giú a blocchi come **PgUp** e **PgDn** (tenuti premuti, continuano), con ogni tastiera, anche sul 500+. In BMX **ALT** nel menu non fa niente, e **↑** e **↓** vanno di una riga.
 - **Il nastro senza nastro**: BMC64-NG mostra **NO TAPE** e non fa niente. In BMX i comandi del nastro arrivano al VICE senza controllo.
 - **Il suono del nastro** (Tape sound emulation) non cancella la musica del SID in BMC64-NG; nel file del VICE di BMX il difetto c'è ancora (nostro confronto del 19 settembre).
-- **Correzioni del VICE posteriori alla 3.10**: BMC64-NG ha tutte quelle di BMX e, dal 4 ottobre 2026, le altre correzioni di fedeltà del VICE di sviluppo: il registro seriale delle CIA, la lettura in più di RTS, l'editor 80 colonne originale del PET, il registro $FFF0 dei PET 8096/8296, il blocco del VDC del C128 con R0=0, il kernal C64 personalizzato del C128 (non viene più rimesso quello di serie), i bit di $01 del C128, due registri del TED, il joystick e la colonna 7 del VIC-20, il glitch del POT solo quando cambia un POT collegato, la ROM del drive cambiata dal menu che arriva subito al drive acceso, i comandi T-W del drive virtuale, SFX Sound Expander, DigiMAX, tapecart e la scheda HRE del PET.
+- **Correzioni del VICE posteriori alla 3.10**: BMC64-NG ha tutte quelle di BMX e, dal 4 ottobre 2026, le altre correzioni di fedeltà del VICE di sviluppo: il registro seriale delle CIA, la lettura in più di RTS, l'editor 80 colonne originale del PET, il registro $FFF0 dei PET 8096/8296, il blocco del VDC del C128 con R0=0, il kernal C64 personalizzato del C128 (non viene più rimesso quello di serie), i bit di $01 del C128, due registri del TED, il joystick e la colonna 7 del VIC-20, il glitch del POT solo quando cambia un POT collegato, la ROM del drive cambiata dal menu che arriva subito al drive acceso, i comandi T-W del drive virtuale, SFX Sound Expander, DigiMAX, tapecart e la scheda HRE del PET. Dal 10 ottobre 2026 anche la pulizia della tastiera che dimentica la coda dei tasti (r46275 del 28 settembre).
 
 **Quando qualcosa va storto**
 
-- **BMC64-NG** scrive sulla scheda `BMC64-DIAG.TXT`, `PASSI.TXT`, `BLOCCO.TXT` e `USB-LOG.TXT`, e ha il **guardiano** con il riquadro nero BMC64-NG HAS STOPPED. BMX ha un pannello di diagnostica a schermo, senza file e senza guardiano.
+- **BMC64-NG** scrive sulla scheda `BMC64-DIAG.TXT`, `PASSI.TXT`, `BLOCCO.TXT`, `USB-LOG.TXT` e `NET-LOG.TXT`, e ha il **guardiano** con il riquadro nero BMC64-NG HAS STOPPED. BMX ha un pannello di diagnostica a schermo, senza file e senza guardiano.
 
 ---
 

@@ -19,6 +19,7 @@
 #include <circle/timer.h>
 #include <circle/memory.h>
 #include <circle/logger.h>
+#include <circle/bmc_link_nota.h>
 #include <circle/util.h>
 #include <assert.h>
 
@@ -1182,9 +1183,27 @@ boolean CMACBDevice::UpdatePHY (void)
 		phy_setup ();
 	}
 
-	if (status == 1)
+
+
+
+	static int s_nLinkDetto = -1;
+	static unsigned long long s_nGiuDa = 0;
+	unsigned nGiuSecondi = 0;
+	switch (bmc_link_nota (m_link, &s_nLinkDetto, &s_nGiuDa, CTimer::GetClockTicks64 (),
+			       &nGiuSecondi))
 	{
-		LOGDBG ("Link is %s", m_link ? "up" : "down");
+	case BMC_LINK_GIU:
+		LOGNOTE ("Link is down");
+		break;
+
+	case BMC_LINK_SU:
+		LOGNOTE ("Link is up, %d Mbps %s-duplex", m_speed, m_duplex ? "full" : "half");
+		break;
+
+	case BMC_LINK_TORNATO:
+		LOGNOTE ("Link is up again after %u s, %d Mbps %s-duplex",
+			 nGiuSecondi, m_speed, m_duplex ? "full" : "half");
+		break;
 	}
 
 	return TRUE;

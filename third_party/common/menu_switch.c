@@ -1295,6 +1295,75 @@ int cmdline_opzione(const char *chiave, const char *valore) {
   return 0;
 }
 
+
+
+
+
+
+
+
+
+
+
+
+int porta_vga_leggi(void) {
+  FILE *fp = fopen("/cmdline.txt", "r");
+  if (fp == NULL) {
+    return -1;
+  }
+  char riga[CMDLINE_LINE_LEN];
+  int porta = -1;
+  if (fgets(riga, CMDLINE_LINE_LEN, fp)) {
+    char *p = riga;
+    while (*p) {
+      while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+      if (!*p) break;
+      char *fine = p;
+      while (*fine && *fine != ' ' && *fine != '\t' && *fine != '\r' &&
+             *fine != '\n') fine++;
+      if (fine - p == 11 && strncmp(p, "porta_vga=", 10) == 0 &&
+          (p[10] == '0' || p[10] == '1')) {
+        porta = p[10] - '0';
+      }
+      p = fine;
+    }
+  }
+  fclose(fp);
+  return porta;
+}
+
+int porta_vga_scrivi(int porta) {
+  return cmdline_opzione("porta_vga",
+                         porta == 0 ? "0" : (porta == 1 ? "1" : NULL));
+}
+
+
+static int voce_vga(const struct machine_entry *e) {
+  const char *d;
+  for (d = e->desc; *d; d++) {
+    if (toupper((unsigned char) d[0]) == 'V' &&
+        toupper((unsigned char) d[1]) == 'G' &&
+        toupper((unsigned char) d[2]) == 'A') {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+
+
+int switch_porta_principale(const struct machine_entry *e, int porta_vga) {
+  if (porta_vga != 0 && porta_vga != 1) {
+    return -1;
+  }
+  if (e->video_out != BMC64_VIDEO_OUT_HDMI ||
+      find_option("fb_display", e->options) != NULL) {
+    return -1;
+  }
+  return voce_vga(e) ? porta_vga : 1 - porta_vga;
+}
+
 static int apply_cmdline(struct machine_entry* head, struct s_cfg_flags *cfg_flags) {
   FILE* fp = fopen("/cmdline.txt","r");
   if (fp == NULL) {
@@ -1595,6 +1664,10 @@ static int apply_config(struct machine_entry* head, int pi_model, struct s_cfg_f
 #define OC_BEGIN "# BMC64-OVERCLOCK-BEGIN"
 #define OC_END   "# BMC64-OVERCLOCK-END"
 
+
+#define GPU_BEGIN "# BMC64-GPUCLOCK-BEGIN"
+#define GPU_END   "# BMC64-GPUCLOCK-END"
+
 static const char *oc_keys[] = {
    "arm_freq", "arm_freq_min", "over_voltage", "over_voltage_delta",
    "force_turbo", "arm_boost", NULL
@@ -1812,12 +1885,21 @@ int overclock_apply(int level, int pi_model) {
    static char blocco[OC_RIGHE_BLOCCO][CONFIG_TXT_LINE_LEN];
    int righe = 0;
    int in_block = 0;
+   int in_gpu = 0;
    struct oc_blocco b;
    char line[CONFIG_TXT_LINE_LEN];
 
    memset(&b, 0, sizeof(b));
    while (fgets(line, CONFIG_TXT_LINE_LEN - 1, fp)) {
       char *p = ltrim(line);
+
+
+      if (in_gpu || (!in_block && strncmp(p, GPU_BEGIN, strlen(GPU_BEGIN)) == 0)) {
+         in_gpu = strncmp(p, GPU_END, strlen(GPU_END)) != 0;
+         fprintf(fp2, "%s", line);
+         chiudi_ultima_riga(fp, fp2, line);
+         continue;
+      }
       if (!in_block && strncmp(p, OC_BEGIN, strlen(OC_BEGIN)) == 0) {
          oc_leggi_testa(p, &b);
          in_block = 1;
@@ -1874,11 +1956,15 @@ int overclock_apply(int level, int pi_model) {
       fprintf(fp2, "arm_freq=%u\n", mhz);
       if (level > 0) {
          fprintf(fp2, "%s=%d\n", volt_key, volt[level]);
-      } else {
-
-
-         fprintf(fp2, "arm_freq_min=%u\n", mhz);
       }
+
+
+
+
+
+
+
+
       fprintf(fp2, "force_turbo=1\n");
 
 
@@ -1922,8 +2008,15 @@ int overclock_apply(int level, int pi_model) {
 
 
 
-#define GPU_BEGIN "# BMC64-GPUCLOCK-BEGIN"
-#define GPU_END   "# BMC64-GPUCLOCK-END"
+
+
+
+
+
+
+
+
+
 
 static int is_gpu_line(const char *line) {
    static const char *chiavi[] = { "core_freq", "v3d_freq", "gpu_freq", NULL };
@@ -2080,6 +2173,8 @@ int gpuclock_apply(int level, int pi_model) {
       fprintf(fp2, "core_freq=%u\n", core_mhz);
       fprintf(fp2, "v3d_freq=%u\n", v3d_mhz);
 
+      fprintf(fp2, "force_turbo=1\n");
+
       fprintf(fp2, "[all]\n");
       fprintf(fp2, "%s\n", GPU_END);
    }
@@ -2189,6 +2284,18 @@ int switch_apply_files(struct machine_entry* head) {
     status |= tvout_applica(1);
   } else {
     status |= cmdline_opzione("composito", NULL);
+  }
+
+
+
+
+  const int porta_vga = porta_vga_leggi();
+  const int porta = switch_porta_principale(head, porta_vga);
+  if (porta >= 0) {
+    status |= cmdline_opzione("fb_display", porta == 1 ? "1" : NULL);
+    printf("[VID] Switch: monitor VGA sulla HDMI %d, voce %s: schermo "
+           "principale sulla HDMI %d\n", porta_vga,
+           voce_vga(head) ? "VGA" : "HDMI", porta);
   }
   printf("[VID] Switch: %s\n", composito ? "composito del Pi 4 B" : "HDMI");
   return status;

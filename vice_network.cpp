@@ -87,7 +87,10 @@ static bool HasWifiFirmwareFile(const char *firmware_path,
   return has_contents;
 }
 
-static bool HasWifiFirmware(const char *firmware_path) {
+
+
+
+static const char *MissingWifiFirmware(const char *firmware_path) {
   const char *firmware_files[] = {
 #if RASPPI >= 5
       "brcmfmac43455-sdio.raspberrypi,5-model-b.bin",
@@ -111,7 +114,7 @@ static bool HasWifiFirmware(const char *firmware_path) {
   for (unsigned int index = 0;
        index < sizeof(firmware_files) / sizeof(firmware_files[0]); index++) {
     if (!HasWifiFirmwareFile(firmware_path, firmware_files[index])) {
-      return false;
+      return firmware_files[index];
     }
   }
 #if RASPPI < 5
@@ -127,12 +130,19 @@ static bool HasWifiFirmware(const char *firmware_path) {
     for (unsigned int index = 0;
          index < sizeof(firmware_43456) / sizeof(firmware_43456[0]); index++) {
       if (!HasWifiFirmwareFile(firmware_path, firmware_43456[index])) {
-        return false;
+        return firmware_43456[index];
       }
     }
   }
 #endif
-  return true;
+  return nullptr;
+}
+
+static const char *wifi_firmware_mancante = nullptr;
+
+static bool HasWifiFirmware(const char *firmware_path) {
+  wifi_firmware_mancante = MissingWifiFirmware(firmware_path);
+  return wifi_firmware_mancante == nullptr;
 }
 
 struct wifi_bss_info {
@@ -262,6 +272,7 @@ static unsigned int CollectWifiScanResults(
 }
 
 
+
 #if defined(RASPI_C64) || defined(RASPI_C128)
 extern "C" {
 #include "third_party/vice-3.3/src/resources.h"
@@ -295,6 +306,33 @@ extern "C" int circle_set_acia_network_enabled(int enabled) {
   }
   return resources_set_int("Acia1Enable", enabled) == 0;
 }
+#elif defined(RASPI_VIC20)
+extern "C" {
+#include "third_party/vice-3.3/src/resources.h"
+
+int emux_modem_porta_utente_acceso(void);
+int emux_modem_porta_utente(int accendi);
+}
+
+
+
+
+extern "C" int circle_get_acia_network_enabled(void) {
+  return emux_modem_porta_utente_acceso();
+}
+
+extern "C" int circle_get_acia_network_address(void) {
+  return 0;
+}
+
+extern "C" int circle_set_acia_network_address(int address) {
+  (void) address;
+  return 0;
+}
+
+extern "C" int circle_set_acia_network_enabled(int enabled) {
+  return emux_modem_porta_utente(enabled);
+}
 #else
 extern "C" int circle_get_acia_network_enabled(void) {
   return 0;
@@ -311,6 +349,31 @@ extern "C" int circle_set_acia_network_address(int address) {
 
 extern "C" int circle_set_acia_network_enabled(int enabled) {
   (void) enabled;
+  return 0;
+}
+#endif
+
+
+
+
+
+#if defined(RASPI_VIC20)
+extern "C" int circle_get_network_modem_baud(void) {
+  int baud = 0;
+  resources_get_int("RsUserBaud", &baud);
+  return baud;
+}
+
+extern "C" int circle_set_network_modem_baud(int baud) {
+  return resources_set_int("RsUserBaud", baud) == 0;
+}
+#else
+extern "C" int circle_get_network_modem_baud(void) {
+  return 0;
+}
+
+extern "C" int circle_set_network_modem_baud(int baud) {
+  (void) baud;
   return 0;
 }
 #endif
@@ -376,6 +439,10 @@ extern "C" int circle_scan_wifi_access_points(
     return 0;
   }
   return stdio_app->ScanWifiAccessPoints(access_points, max_access_points);
+}
+
+extern "C" const char *circle_missing_wifi_firmware(void) {
+  return wifi_firmware_mancante;
 }
 
 extern "C" int circle_has_onboard_wifi(void) {

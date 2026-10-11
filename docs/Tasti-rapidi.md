@@ -12,6 +12,9 @@ Tutte le combinazioni usano il tasto **ALT**. Lo SHIFT, ove presente é per atti
 | frecce, INVIO | dentro il menu: muoversi e scegliere |
 | lettere, INVIO | in una lista di file: la ricerca per nome (DEL cancella) |
 | una lettera | dentro il menu: porta alla voce successiva che comincia con quella lettera (S per Sound) |
+| **ALT** + **↑** e **↓** | dentro il menu: su e giú a blocchi, come **PgUp** e **PgDn** (tenuti premuti, continuano). Con ogni tastiera, anche sul 500+, dove FN non arriva al computer. A menu chiuso sono PLAY e STOP del nastro |
+| **PgUp** e **PgDn**, **F3** e **F5** | dentro il menu: su e giú a blocchi. Sul 400 e sul 500 sono **FN** + **↑** e **↓** |
+| **Home** e **End**, **F1** e **F7** | dentro il menu: in cima e in fondo. Sul 400 e sul 500 **Home** e **End** sono **FN** + **←** e **→** |
 
 ## Il nastro (registratore)
 

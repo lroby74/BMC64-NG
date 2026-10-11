@@ -123,6 +123,8 @@ private:
 
 	CUSBConfigurationParser *m_pConfigParser;
 
+	boolean m_bIdle;
+
 	CUSBFunction *m_pFunction[USBDEV_MAX_FUNCTIONS];
 
 #if RASPPI >= 4

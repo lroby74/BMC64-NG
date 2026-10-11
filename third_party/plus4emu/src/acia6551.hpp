@@ -25,6 +25,25 @@
 namespace Plus4 {
 
   class ACIA6551 {
+   public:
+
+
+    class SerialLine {
+     public:
+      virtual ~SerialLine() {}
+
+      virtual void open() = 0;
+      virtual void close() = 0;
+
+      virtual void setLines(bool dtr, bool rts) = 0;
+
+      virtual void noteDataWrite(uint8_t value) = 0;
+
+      virtual void put(uint8_t value) = 0;
+
+      virtual bool get(uint8_t& value) = 0;
+      virtual bool hasCarrier() = 0;
+    };
    private:
     uint8_t     transmitDataRegister;
     uint8_t     receiveDataRegister;
@@ -42,8 +61,17 @@ namespace Plus4 {
     int         receiveState;
     bool        transmitContinuousMark;
     bool        halfBitFlag;
+    SerialLine  *serialLine;
+    bool        serialLineOpen;
+    bool        serialCarrier;
+    uint8_t     receiveShiftRegister;
+    int         receivePollDelay;
     // --------
     void runHalfBit();
+    bool receiveFromLine();
+    void receiveComplete();
+    void updateSerialLines();
+    uint8_t modemStatusBits() const;
    public:
     ACIA6551();
     virtual ~ACIA6551();
@@ -67,6 +95,8 @@ namespace Plus4 {
     uint8_t readRegisterDebug(uint16_t addr) const;
     void writeRegister(uint16_t addr, uint8_t value);
     void reset();
+
+    void setSerialLine(SerialLine *line);
     static inline size_t getSnapshotSize()
     {
       return 11;

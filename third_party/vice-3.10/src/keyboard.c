@@ -325,9 +325,12 @@ static void kbd_retrigger_alarm(void)
 
 /* push one (host) key to the processing queue.
    returns 0 on error (queue full) or 1 on success */
+
+
+static int last_key = -1, last_mod = -1, last_pressed = -1;
+
 static int kbd_queue_pushkey(int key, int mod, int pressed)
 {
-    static int last_key = -1, last_mod =-1, last_pressed = -1;
     if ((key != last_key) ||
         (mod != last_mod) ||
         (pressed != last_pressed)) {
@@ -1147,6 +1150,26 @@ void keyboard_key_clear(void)
 {
     if (event_playback_active()) {
         return;
+    }
+
+
+
+
+
+
+
+
+
+
+    memset(kbd_queue, 0, sizeof(kbd_queue));
+    kbd_queue_read = 0;
+    kbd_queue_write = 0;
+    last_key = -1;
+    last_mod = -1;
+    last_pressed = -1;
+    keyboard_latch_timestamp = maincpu_clk;
+    if (keyboard_alarm != NULL) {
+        alarm_unset(keyboard_alarm);
     }
 
     if (network_connected()) {

@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 
 // VICE includes
 #include "raspi_machine.h"
@@ -172,6 +173,61 @@ static int userport_tipo_scelto(void) {
     return adapter_type_item->choice_ints[adapter_type_item->value];
   }
   return USERPORT_DEVICE_JOYSTICK_CGA;
+}
+
+
+
+
+
+
+
+
+static void userport_menu_dal_vice(void) {
+  int dev = USERPORT_DEVICE_NONE;
+  int i;
+  resources_get_int("UserportDevice", &dev);
+  if (enable_item != NULL) {
+    enable_item->value = userport_e_joystick(dev);
+  }
+  if (adapter_type_item == NULL || !userport_e_joystick(dev)) {
+    return;
+  }
+  for (i = 0; i < adapter_type_item->num_choices; i++) {
+    if (adapter_type_item->choice_ints[i] == dev) {
+      adapter_type_item->value = i;
+      return;
+    }
+  }
+}
+
+
+
+
+
+
+int emux_modem_porta_utente_acceso(void) {
+  int dev = USERPORT_DEVICE_NONE;
+  resources_get_int("UserportDevice", &dev);
+  return dev == USERPORT_DEVICE_RS232_MODEM;
+}
+
+int emux_modem_porta_utente(int accendi) {
+  int dev = USERPORT_DEVICE_NONE;
+  resources_get_int("UserportDevice", &dev);
+  if (accendi) {
+    if (resources_set_int("UserportDevice", USERPORT_DEVICE_RS232_MODEM) < 0) {
+      return 0;
+    }
+  } else if (dev == USERPORT_DEVICE_RS232_MODEM) {
+    if (resources_set_int("UserportDevice", USERPORT_DEVICE_NONE) < 0) {
+      return 0;
+    }
+  }
+  if (enable_item != NULL) {
+    resources_get_int("UserportDevice", &dev);
+    enable_item->value = userport_e_joystick(dev);
+  }
+  return 1;
 }
 
 static void check_sid_options() {
@@ -491,17 +547,9 @@ int emux_load_state(char *filename) {
   check_sid_options();
 
   int tmp;
-  tmp = 0;
-  resources_get_int("UserportDevice", &tmp);
-  enable_item->value = userport_e_joystick(tmp);
 
-  resources_get_int("UserportDevice", &tmp);
-  for (int i=0;i<adapter_type_item->num_choices;i++) {
-     if (adapter_type_item->choice_ints[0] == tmp) {
-         adapter_type_item->value = i;
-         break;
-     }
-  }
+
+  userport_menu_dal_vice();
 
 
 
@@ -928,6 +976,18 @@ void emux_drive_change_model(int unit) {
 int emux_get_shiftlock(void) {
   return keyboard_get_shiftlock();
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2375,6 +2435,173 @@ void emux_add_keyboard_options(struct menu_item* parent) {
 
 
 
+
+
+
+
+
+typedef struct {
+  const char *nome;
+  double valore;
+} residfp_profilo_t;
+
+static const residfp_profilo_t residfp_profili[] = {
+    { "Anthony Lees",                        1.3 },
+    { "Antony Crowther (Ratt)",              1.1 },
+    { "Barry Leitch (The Jackal)",           0.3 },
+    { "Ben Daglish",                         0.6 },
+    { "Carsten Berggreen (Scarzix)",         0.7 },
+    { "Charles Deenen",                      0.2 },
+    { "Chris Huelsbeck",                     0.9 },
+    { "David Dunn",                          0.1 },
+    { "David Dunn & Aidan Bell",             0.1 },
+    { "David Whittaker",                     0.15 },
+    { "Edwin van Santen",                    0.5 },
+    { "Edwin van Santen & Falco Paul",       0.4 },
+    { "Edwin van Santen & Venom",            0.4 },
+    { "Falco Paul",                          0.15 },
+    { "Falco Paul & Edwin van Santen",       0.4 },
+    { "Figge Wasberger (Fegolhuzz)",         0.25 },
+    { "Fred Gray",                           0.4 },
+    { "Geir Tjelta",                         0.5 },
+    { "Geoff Follin",                        0.85 },
+    { "Georg Feil",                          0.2 },
+    { "Glenn Rune Gallefoss",                1.3 },
+    { "Graham Jarvis & Rob Hartshorne",      0.25 },
+    { "Jason Page",                          0.35 },
+    { "Jeroen Tel",                          0.35 },
+    { "Johannes Bjerregaard",                0.35 },
+    { "Jonathan Dunn",                       0.25 },
+    { "Jouni Ikonen (Mixer)",                0.25 },
+    { "Jori Olkkonen",                       0.15 },
+    { "Jori Olkkonen (Yip)",                 0.35 },
+    { "Kim Christensen (Future Freak)",      0.35 },
+    { "Linus Akesson (lft)",                 0.3 },
+    { "Mark Cooksey",                        0.4 },
+    { "Mark Wilson",                         0.2 },
+    { "Markus Mueller (Superbrain)",         0.5 },
+    { "Martin Galway",                       0.65 },
+    { "Martin Walker",                       0.15 },
+    { "Matt Gray",                           0.3 },
+    { "Michael Hendriks",                    0.35 },
+    { "Mitch & Dane",                        0.85 },
+    { "M. Nilsson-Vonderburgh (Mic)",        0.3 },
+    { "M. Nilsson-Vonderburgh (Mitch)",      0.3 },
+    { "M. Nilsson-Vonderburgh (Yankee)",     0.3 },
+    { "NM156",                               0.7 },
+    { "Neil Brennan",                        0.25 },
+    { "Peter Clarke",                        0.2 },
+    { "Pex Tufvesson (Mahoney)",             0.35 },
+    { "Pex Tufvesson (Zax)",                 0.35 },
+    { "Renato Brosowski (Zoci-Joe)",         0.3 },
+    { "Reyn Ouwehand",                       0.8 },
+    { "Richard Joseph",                      0.3 },
+    { "Rob Hubbard",                         0.35 },
+    { "Russell Lieblich",                    0.25 },
+    { "Stellan Andersson (Dane)",            0.85 },
+    { "Steve Turner",                        0.6 },
+    { "Tim Follin",                          0.5 },
+    { "Thomas E. Petersen (Laxity)",         0.3 },
+    { "Thomas E. Petersen (TSS)",            0.3 },
+    { "Thomas Mogensen (DRAX)",              0.3 },
+};
+
+#define RESIDFP_PROFILI \
+  ((int)(sizeof(residfp_profili) / sizeof(residfp_profili[0])))
+
+
+static int residfp_profilo = -1;
+
+
+
+static int residfp_range_del_profilo(int k) {
+  double value;
+  if (k < 0 || k >= RESIDFP_PROFILI) {
+    return RESIDFP_6581_FILTER_RANGE_DEFAULT;
+  }
+  value = ((residfp_profili[k].valore * 20.0f) - 1.0f) / 39.0f;
+  return (int)round(value * 1000.0f);
+}
+
+
+static int residfp_profilo_vale(int k) {
+  int curva = -1, range = -1, forme = -1;
+  resources_get_int("SidResid6581FilterCurve", &curva);
+  resources_get_int("SidResid6581FilterRange", &range);
+  resources_get_int("SidResidCombinedWaveformStrength", &forme);
+  return curva == RESIDFP_6581_FILTER_CURVE_DEFAULT &&
+         forme == RESIDFP_COMBINED_WAVEFORM_STRENGTH_DEFAULT &&
+         range == residfp_range_del_profilo(k);
+}
+
+
+static void residfp_scegli_profilo(void) {
+  struct menu_item *root;
+  struct menu_item *item;
+  int larghezza = (int)strlen("None");
+  int riga = 0;
+  int k;
+
+  for (k = 0; k < RESIDFP_PROFILI; k++) {
+    int n = (int)strlen(residfp_profili[k].nome);
+    if (n > larghezza) {
+      larghezza = n;
+    }
+  }
+  larghezza += (int)strlen(" (*)") + 2;
+  root = ui_push_menu(larghezza, 22);
+  item = ui_menu_add_button(MENU_SID_RESIDFP_PROFILE_SELECT, root, "None");
+  item->value = -1;
+  if (residfp_profilo_vale(-1)) {
+    strcat(item->displayed_value, " (*)");
+  }
+  for (k = 0; k < RESIDFP_PROFILI; k++) {
+    item = ui_menu_add_button(MENU_SID_RESIDFP_PROFILE_SELECT, root,
+                              residfp_profili[k].nome);
+    item->value = k;
+    if (k == residfp_profilo && residfp_profilo_vale(k)) {
+      strcat(item->displayed_value, " (*)");
+      riga = k + 1;
+    }
+  }
+  ui_set_cur_pos(riga);
+}
+
+
+
+static void residfp_metti_profilo(int k) {
+  int v;
+  if (k < -1 || k >= RESIDFP_PROFILI) {
+    return;
+  }
+  resources_set_int("SidResid6581FilterCurve",
+                    RESIDFP_6581_FILTER_CURVE_DEFAULT);
+  resources_set_int("SidResidCombinedWaveformStrength",
+                    RESIDFP_COMBINED_WAVEFORM_STRENGTH_DEFAULT);
+  resources_set_int("SidResid6581FilterRange", residfp_range_del_profilo(k));
+  residfp_profilo = k;
+  if (residfp_item[0] != NULL &&
+      resources_get_int("SidResidCombinedWaveformStrength", &v) == 0 &&
+      v >= 0 && v <= 2) {
+    residfp_item[0]->value = v;
+  }
+  if (residfp_item[1] != NULL) {
+    resources_get_int("SidResid6581FilterCurve", &residfp_item[1]->value);
+  }
+  if (residfp_item[2] != NULL) {
+    resources_get_int("SidResid6581FilterRange", &residfp_item[2]->value);
+  }
+}
+
+
+
+
+
+
+
+
+
+
 static void residfp_regolazioni(struct menu_item *parent) {
   struct menu_item *fp = ui_menu_add_folder(parent, "reSIDfp Settings");
   struct menu_item *fp6581 = ui_menu_add_folder(fp, "6581");
@@ -2411,6 +2638,11 @@ static void residfp_regolazioni(struct menu_item *parent) {
     c->choice_ints[k] = k * 10;
   }
   c->value = (v >= 0 && v <= 100) ? (v + 5) / 10 : 0;
+
+
+
+  ui_menu_add_button(MENU_SID_RESIDFP_6581_PROFILE, fp6581,
+                     "Composer Profile...");
 
   v = RESIDFP_6581_FILTER_CURVE_DEFAULT;
   resources_get_int("SidResid6581FilterCurve", &v);
@@ -3261,6 +3493,30 @@ int emux_prepare_shutdown(void) {
   return esito;
 }
 
+
+
+
+
+
+
+
+
+
+
+void emux_dischetti_prima_di_uscire(void) {
+  unsigned int unita, d;
+  for (unita = 8; unita < 12; unita++) {
+    for (d = 0; d < 2; d++) {
+      if (file_system_get_disk_name(unita, d) != NULL) {
+        file_system_detach_disk(unita, d);
+      }
+    }
+  }
+  if (emux_tape_presente() == 1) {
+    tape_image_detach(1);
+  }
+}
+
 int emux_handle_menu_change(struct menu_item* item) {
   switch (item->id) {
     case MENU_SID2_ADDRESS:
@@ -3362,6 +3618,14 @@ int emux_handle_menu_change(struct menu_item* item) {
 
       resources_set_int("SidResidBackgroundNoise",
                         item->choice_ints[item->value]);
+      return 1;
+    case MENU_SID_RESIDFP_6581_PROFILE:
+
+      residfp_scegli_profilo();
+      return 1;
+    case MENU_SID_RESIDFP_PROFILE_SELECT:
+      residfp_metti_profilo(item->value);
+      ui_pop_menu();
       return 1;
 #endif
     case MENU_SIDCART_ENABLE:
@@ -3476,8 +3740,39 @@ int emux_handle_menu_change(struct menu_item* item) {
   return 0;
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+static void riattacca_i_dischetti(void) {
+  unsigned int unita, d;
+  for (unita = 8; unita < 12; unita++) {
+    for (d = 0; d < 2; d++) {
+      char nome[1024];
+      const char *attaccato = file_system_get_disk_name(unita, d);
+      if (attaccato == NULL || attaccato[0] == '\0') {
+        continue;
+      }
+      snprintf(nome, sizeof(nome), "%s", attaccato);
+      file_system_detach_disk(unita, d);
+      if (file_system_attach_disk(unita, d, nome) < 0) {
+        log_error(LOG_DEFAULT, "BMC64: %s non si riattacca all'unita' %u:%u",
+                  nome, unita, d);
+      }
+    }
+  }
+}
+
 int emux_handle_quick_func(int button_func, fullpath_func f_fullpath) {
-  int drive;
   struct menu_item *root;
   struct menu_item *child;
   switch (button_func) {
@@ -3490,15 +3785,8 @@ int emux_handle_quick_func(int button_func, fullpath_func f_fullpath) {
          return 1;
        }
 
-       for (drive=0;drive<4;drive++) {
 
-
-          file_system_detach_disk(drive+8, 0);
-          if (strlen(attached_disk_name[drive]) > 0) {
-             file_system_attach_disk(drive+8, 0,
-                f_fullpath(DIR_DISKS, attached_disk_name[drive]));
-          }
-       }
+       riattacca_i_dischetti();
 
        root = ui_push_menu(18, 3);
        root->on_popped_off = glob_osd_popped;
@@ -3538,6 +3826,12 @@ void emux_save_additional_settings(FILE *fp) {
   if (sid_mono_item != NULL) {
     fprintf(fp, "sound_mono=%d\n", uscita_mono);
   }
+#ifdef HAVE_RESIDFP
+
+  if (residfp_profilo >= 0) {
+    fprintf(fp, "residfp_profile=%d\n", residfp_profilo);
+  }
+#endif
 }
 
 void emux_get_default_color_setting(int *brightness, int *contrast,
@@ -3559,6 +3853,14 @@ int emux_handle_loaded_setting(char *name, char* value_str, int value) {
     }
     return 1;
   }
+#ifdef HAVE_RESIDFP
+
+
+  if (strcmp(name, "residfp_profile") == 0) {
+    residfp_profilo = (value >= 0 && value < RESIDFP_PROFILI) ? value : -1;
+    return 1;
+  }
+#endif
   return 0;
 }
 
@@ -3566,6 +3868,10 @@ int emux_handle_loaded_setting(char *name, char* value_str, int value) {
 
 void emux_menu_about_to_activate(void) {
   aggiorna_riga_restore();
+
+
+
+  userport_menu_dal_vice();
 }
 
 void emux_load_settings_done(void) {
@@ -3586,9 +3892,18 @@ static void swap_userport_joysticks() {
 static void menu_value_changed(struct menu_item *item) {
    switch (item->id) {
       case MENU_USERPORT_JOYSTICKS:
-         resources_set_int("UserportDevice",
-             item->value ? userport_tipo_scelto()
-                         : USERPORT_DEVICE_NONE);
+         {
+
+
+           int dev = USERPORT_DEVICE_NONE;
+           resources_get_int("UserportDevice", &dev);
+           if (item->value) {
+             resources_set_int("UserportDevice", userport_tipo_scelto());
+           } else if (userport_e_joystick(dev)) {
+             resources_set_int("UserportDevice", USERPORT_DEVICE_NONE);
+           }
+         }
+         menu_modem_aggiorna();
          break;
       case MENU_SWAP_USERPORT_JOYSTICKS:
          swap_userport_joysticks();
@@ -3598,6 +3913,7 @@ static void menu_value_changed(struct menu_item *item) {
             resources_set_int("UserportDevice",
                 item->choice_ints[item->value]);
          }
+         menu_modem_aggiorna();
          break;
       default:
          break;
@@ -3625,15 +3941,7 @@ void emux_add_userport_joys(struct menu_item* parent) {
 
   adapter_type_item =
       ui_menu_add_multiple_choice(MENU_USERPORT_TYPE, parent2, "Adapter Type");
-  adapter_type_item->num_choices = 6;
-  resources_get_int("UserportDevice", &value);
-  adapter_type_item->value = 0;
-  for (int i = 0; i < adapter_type_item->num_choices; i++) {
-     if (adapter_type_item->choice_ints[i] == value) {
-        adapter_type_item->value = i;
-        break;
-     }
-  }
+  adapter_type_item->num_choices = 9;
   strcpy(adapter_type_item->choices[0], "CGA");
   strcpy(adapter_type_item->choices[1], "PET");
   strcpy(adapter_type_item->choices[2], "Hummer");
@@ -3641,6 +3949,8 @@ void emux_add_userport_joys(struct menu_item* parent) {
   strcpy(adapter_type_item->choices[4], "HIT");
   strcpy(adapter_type_item->choices[5], "Kingsoft");
   strcpy(adapter_type_item->choices[6], "Starbyte");
+  strcpy(adapter_type_item->choices[7], "Synergy");
+  strcpy(adapter_type_item->choices[8], "WOJ");
   adapter_type_item->choice_ints[0] = USERPORT_DEVICE_JOYSTICK_CGA;
   adapter_type_item->choice_ints[1] = USERPORT_DEVICE_JOYSTICK_PET;
   adapter_type_item->choice_ints[2] = USERPORT_DEVICE_JOYSTICK_HUMMER;
@@ -3648,24 +3958,37 @@ void emux_add_userport_joys(struct menu_item* parent) {
   adapter_type_item->choice_ints[4] = USERPORT_DEVICE_JOYSTICK_HIT;
   adapter_type_item->choice_ints[5] = USERPORT_DEVICE_JOYSTICK_KINGSOFT;
   adapter_type_item->choice_ints[6] = USERPORT_DEVICE_JOYSTICK_STARBYTE;
+  adapter_type_item->choice_ints[7] = USERPORT_DEVICE_JOYSTICK_SYNERGY;
+  adapter_type_item->choice_ints[8] = USERPORT_DEVICE_JOYSTICK_WOJ;
   adapter_type_item->on_value_changed = menu_value_changed;
 
-  switch (machine_class) {
-    case VICE_MACHINE_VIC20:
-    case VICE_MACHINE_PET:
-       adapter_type_item->choice_disabled[4] = 1;
-       adapter_type_item->choice_disabled[5] = 1;
-       adapter_type_item->choice_disabled[6] = 1;
-       break;
-    case VICE_MACHINE_PLUS4:
-       adapter_type_item->choice_disabled[0] = 1;
-       adapter_type_item->choice_disabled[4] = 1;
-       adapter_type_item->choice_disabled[5] = 1;
-       adapter_type_item->choice_disabled[6] = 1;
-       break;
-    default:
-       break;
+
+
+
+
+
+
+
+  {
+    userport_desc_t *validi = userport_get_valid_devices(0);
+    int i, j, primo = -1;
+    for (i = 0; i < adapter_type_item->num_choices; i++) {
+      int c = 0;
+      for (j = 0; validi != NULL && validi[j].name != NULL; j++) {
+        if (validi[j].id == adapter_type_item->choice_ints[i]) {
+          c = 1;
+          break;
+        }
+      }
+      adapter_type_item->choice_disabled[i] = !c;
+      if (c && primo < 0) {
+        primo = i;
+      }
+    }
+    lib_free(validi);
+    adapter_type_item->value = primo < 0 ? 0 : primo;
   }
+  userport_menu_dal_vice();
 }
 
 uint8_t circle_get_userport_ddr(void) {
@@ -3775,15 +4098,10 @@ void raspi_keymap_changed(int row, int col, signed long sym) {
 
 
 
+
 void emux_flush_disks_now(fullpath_func f_fullpath) {
-  int drive;
-  for (drive = 0; drive < 4; drive++) {
-    file_system_detach_disk(drive + 8, 0);
-    if (strlen(attached_disk_name[drive]) > 0) {
-      file_system_attach_disk(drive + 8, 0,
-         f_fullpath(DIR_DISKS, attached_disk_name[drive]));
-    }
-  }
+  (void)f_fullpath;
+  riattacca_i_dischetti();
 }
 
 

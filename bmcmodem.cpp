@@ -488,6 +488,28 @@ private:
       return;
     }
 
+
+
+
+
+
+
+    if (commandLength_ == 0 && Upper(byte) != 'A') {
+      CLogger::Get()->Write(FromBmcModem, LogNotice,
+                            "ignored byte 0x%02x before AT", byte);
+      return;
+    }
+    if (commandLength_ == 1 && Upper(byte) != 'T') {
+      CLogger::Get()->Write(FromBmcModem, LogNotice,
+                            "ignored 0x%02x 0x%02x before AT",
+                            static_cast<uint8_t>(command_[0]), byte);
+      commandLength_ = 0;
+      if (Upper(byte) == 'A') {
+        command_[commandLength_++] = static_cast<char>(byte);
+      }
+      return;
+    }
+
     if (commandLength_ + 1 < kCommandSize) {
       if (!commandInputActive_) {
         CLogger::Get()->Write(FromBmcModem, LogNotice,

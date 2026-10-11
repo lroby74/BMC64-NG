@@ -28,7 +28,7 @@ There's no Linux underneath: the Pi boots straight into the Commodore.
 - **A two-line status bar.** The second line shows temperature, CPU and GPU clocks and emulation speed (ALT + SHIFT + O).
 - **About 60 ALT shortcuts** for the things you do every day: the full list is in [Shortcut Keys](docs/Shortcut-Keys.md).
 - **4:3 / 16:9 with one key** (ALT + \\).
-- **Network on every machine.** Wi-Fi chosen from the menu, a static address if you want one, the card opened to your PC as `\\BMC64-NG\sdcard`, your games from a NAS as on the MiSTer, and a SwiftLink modem for BBSes on the C64 and C128.
+- **Network on every machine.** Wi-Fi chosen from the menu, a static address if you want one, the card opened to your PC under a name that tells the model, such as `\\BMC64-NG-400\sdcard`, your games from a NAS as on the MiSTer, and a modem for BBSes on the C64, C128, Plus/4 and VIC-20.
 
 ## Machines
 
@@ -45,10 +45,10 @@ There's no Linux underneath: the Pi boots straight into the Commodore.
 
 - **Raspberry Pi 4, 400, 5 and 500.**
 - **Keyboards.**
-  - The built-in keyboards of the Pi 400 and Pi 500 work, and so do ordinary USB PC keyboards.
+  - The built-in keyboards of the Pi 400 and Pi 500 work, and so do ordinary USB PC keyboards, Logitech keyboards with the Bolt receiver included.
   - Keyboard > Layout offers US, Italian, British and German (with Mapping set to Symbolic).
   - On the C128, the PC numeric keypad is the C128 keypad.
-- **Monitors.** HDMI, or a PC VGA monitor through an HDMI-to-VGA adapter. Every machine has 1024x768 modes at 50 and 60 Hz.
+- **Monitors.** HDMI, or a PC VGA monitor through an HDMI-to-VGA adapter, on either HDMI port (Video > VGA Monitor On). Every machine has 1024x768 modes at 50 and 60 Hz.
 - **Two USB floppy drives.** They appear in the file browser as FLP1 and FLP2. Put files or disk images on a floppy with your PC and use them from BMC64-NG.
 - **Real Commodore drives** through an XUM1541 adapter. Use your own 1541, 1571 or 1581 with your own 5.25" and 3.5" disks (ALT + 7 for drive 8, ALT + SHIFT + 7 for drive 9).
 
@@ -58,7 +58,7 @@ There's no Linux underneath: the Pi boots straight into the Commodore.
 2. Format it as **FAT32** with a normal cluster (allocation unit) size: **32 KB**, as the SD Association's SD Card Formatter does, or the Windows default.
    - **Do not use 512-byte clusters.** The Raspberry Pi then reads its own start-up files and the kernel in tiny pieces: a Pi 4 or 400 waits 9-10 seconds before BMC64-NG even begins, and with a 32 GB card it took 45 seconds. With normal clusters, power-on to the BASIC prompt takes about 11 seconds. Changing machine restarts the Pi, so it gets the same benefit.
    - For cards bigger than 32 GB use a tool such as FAT32Format.
-3. Download the full archive of the latest release, such as `BMC64-NG V1.2.7z`, from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
+3. Download the full archive of the latest release, such as `BMC64-NG V1.3.7z`, from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
 4. Copy the Commodore ROMs into the machine folders of the card: see [ROM files](#rom-files) below.
 5. Put the card in the Pi and switch it on. It starts as a PAL Commodore 64 (cycle exact) on HDMI, 720p at 50 Hz; Machine > Switch changes machine and video mode.
 
@@ -124,8 +124,8 @@ In any file list, type the first letters of a name and press ENTER. The ? and * 
 ## Updating
 
 Every release has two archives:
-- the full one, such as `BMC64-NG V1.2.7z`, for a new card;
-- the update, such as `BMC64-NG Update V1.2.7z`, with only the files that changed since the previous release. Copy its whole content onto your card and replace the files that are already there. If you skipped a release, apply its update first, or start again from the full archive.
+- the full one, such as `BMC64-NG V1.3.7z`, for a new card;
+- the update, such as `BMC64-NG Update V1.3.7z`, with only the files that changed since the previous release. Copy its whole content onto your card and replace the files that are already there. If you skipped a release, apply its update first, or start again from the full archive.
 
 The update never contains `config.txt`, `cmdline.txt`, `machines.txt`, `wpa_supplicant.conf` or the `settings*.txt` files: they hold your own settings. Replace one of them only when the release notes say so. Neither archive contains ROMs, and the ones already on your card stay where they are.
 
@@ -152,7 +152,8 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 - **C64 with SuperCPU.** It emulates the CMD accelerator at 20 MHz, with the free ROM that comes with VICE.
 - **C128 with both screens.** It has the 40-column VIC-II screen and the 80-column VDC screen, on one monitor or two.
 - **Plus/4 with two engines.** Choose the VICE Plus/4 or Plus4Emu, which is considered more faithful.
-- **The right VIC-20 KERNAL.** The VIC-20 NTSC modes start the American KERNAL (901486-06), which centres the screen as on a real NTSC VIC-20, and the PAL modes start the European one (901486-07). If you choose a different ROM in the menu, it stays.
+- **The right NTSC KERNAL.** The VIC-20 NTSC modes start the American KERNAL (901486-06), which centres the screen as on a real NTSC VIC-20, and the PAL modes start the European one (901486-07). The Plus/4 and the C16 in NTSC start the NTSC KERNAL (318005-05) too. If you choose a different ROM in the menu, it stays.
+- **The model you are running.** On the PET and the Plus/4 the model entry of the menu says what is running, for example Model: 8032 or Model: Plus/4 (PAL).
 - **The later VICE fixes.** Besides VICE 3.10, BMC64-NG has the fidelity fixes the VICE developers made after it: among them the CIA serial register, the C128 VDC and its custom C64 KERNAL, two TED registers, the VIC-20 joystick and keyboard, the PET's original 80-column editor, and a drive ROM chosen from the menu that reaches the running drive at once.
 
 ### Video and screens
@@ -164,6 +165,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 - **C128 40/80 columns.** The VIC-II and VDC screens are two separate outputs, each with its own adjustments. ALT + PRTSCN switches between them like the little switch on the monitors, and ALT + SHIFT + PRTSCN or ALT + F7 is the 40/80 DISPLAY key of the real keyboard.
 - **C128 on two monitors.** Set Second Display Present to On before choosing Video > Active Display > Two HDMI; the first time, the menu asks to restart. Each screen then fills its own TV in 4:3 or 16:9, and ALT + SHIFT + \\ switches the shape of the other screen.
 - **Main HDMI Output.** The HDMI audio follows the main screen to the port you choose in Video > Main HDMI Output; the menu asks to restart, and the choice holds from then on. On the C128 with two monitors it swaps the two screens.
+- **VGA Monitor On.** Video > VGA Monitor On tells which port the VGA monitor and its adapter are on: None (the default), HDMI 0 or HDMI 1. From then on the Switch entries with VGA in their name send the picture to the VGA monitor and the others to the HDMI monitor, in one step and one restart, and C= + F7 held for 5 seconds goes back to the HDMI monitor. With None the Switch leaves the port alone. On the C128 with two monitors the Switch entry decides where the VIC-II goes, and the VDC goes on the other.
 - **Screenshots to the card.** BMC64-NG saves screenshots on the microSD card.
 - **Composite video on the Pi 4 B.** Every machine's Switch menu also has PAL Composite 576p@50Hz and NTSC Composite 480p@60Hz: video and sound come out of the 3.5 mm jack (4-pole AV cable) with the real machine's signal, 50 or 60 Hz, and the GPU's scaler composes the picture in hardware, interpolation included. The status bars are drawn for the composite lines, and C= + F7 held for 5 seconds goes back to HDMI.
 
@@ -171,6 +173,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 
 - **reSID and reSIDfp.** Sound > SID Engine offers ReSIDfp next to ReSid, which stays the default, and both emulate the 6581 of the first C64s and the 8580 of the later ones. ReSIDfp is VICE's newest and most faithful SID engine: its combined waveforms come from measurements of real chips, its 6581 filter has the chip's distortion, and it needs a little more computing power.
 - **reSIDfp settings.** The reSIDfp Settings folder sets Combined Waveforms (Weak, Average, Strong), Filter Curve, Filter Range and Old Caps (2200pF) for the 6581, and Filter Curve for the 8580. The sound changes when you close the menu, and Save settings keeps it all.
+- **6581 profiles by composer.** reSIDfp Settings > 6581 > Composer Profile... gives the 6581 filter the Filter Range of the chip a composer wrote on: Rob Hubbard, Martin Galway, Jeroen Tel and others. The profile in use has (*) next to it, None puts back the default values, and Save settings keeps it.
 - **Optional background hiss.** reSIDfp Settings > Background Noise adds the faint hiss heard in recordings of real C64s, from OFF (the default) to 100% in steps of 10%. You hear it mostly when nothing is playing, for example at the BASIC prompt. Each SID has its own hiss, independent of the others, so with two, three or four SIDs they add up as they would with that many real chips.
 - **reSID filter settings.** Sound > reSID Filter Settings has Passband % (default 90), Gain % (default 97) and Filter Bias (mV) for the 6581 and for the 8580, applied to every SID of that model. Passband and Gain count only when SID Resampling is set to Resampling or Fast Resampling.
 - **SID resampling.** Sound > SID Resampling defaults to Resampling, the most faithful mode, without the noise the other modes add to high notes. Fast Resampling sounds the same but uses more memory and takes longer to get ready; Interpolation and Fast cost the Pi less and are less faithful.
@@ -205,7 +208,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 - **Tapes with recorder controls.** `.tap` and `.t64` tapes come with a tape counter and recorder keys: ALT + ↑ is PLAY, ALT + ↓ is STOP, ALT + → fast-forwards and ALT + ← rewinds, twice as fast with SHIFT. ALT + DEL resets the counter.
 - **Cartridges at power-on too.** Insert `.crt` and `.bin` cartridges with ALT + C and remove them with ALT + SHIFT + C. On the C64 and C128, Cartridge > Set current cart default makes the inserted cartridge start at every power-on and saves by itself; choose it again after removing the cartridge to undo it.
 - **EasyFlash saves.** What a game writes into the flash goes back into its `.crt` file, with Cartridge > Save EasyFlash Now or by itself when you remove or change the cartridge. It also saves when you power off, restart or switch machine, if the game wrote to it.
-- **Programs and autostart.** Load `.prg` programs directly, or pick a PRG or disk file with ALT + A and it starts by itself. With true drive emulation, VICE puts the `.prg` on a disk it writes in the card's root, such as `autostart-PLUS4.d64`; you can delete it, and it comes back next time.
+- **Programs and autostart.** Load `.prg` programs directly, or pick a PRG or disk file with ALT + A and it starts by itself. With true drive emulation, VICE puts the `.prg` on a disk it writes in the card's root, such as `autostart-PLUS4.d64`; you can delete it, and it comes back next time. On the PET, Autostart Prg... starts `.prg` files.
 - **Long file names.** Disks, tapes, cartridges and programs with names up to 255 characters, the most the card allows, attach and start from the menu like any other file.
 - **Search in file lists.** Type the first letters and press ENTER: case doesn't matter, ? stands for any single character, and `*lair` finds names that contain "lair". If no name starts that way, the search looks inside the names, so `12` finds `DrL-12-850.reu`.
 - **REU memory expansion.** The REU goes from 512 KB to 16 MB: ALT + E turns it on and off and ALT + SHIFT + E changes its size. Games and demos that use it load their .REU image from the `/REU` folder with ALT + 0, and ALT + SHIFT + 0 detaches the file while the REU stays on.
@@ -215,6 +218,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 
 - **Real Commodore drives.** An XUM1541 adapter connects a real 1541, 1571 or 1581 so you can read your original disks (ALT + 7 for drive 8, ALT + SHIFT + 7 for drive 9). Several drives can be daisy-chained on different device numbers, and a Pi1541, which emulates a 1541 and a 1581, works too.
 - **USB and GPIO joysticks.** USB joysticks and gamepads work on up to four ports, and so do vintage joysticks through an adapter on the Pi's pins. ALT + J swaps the two joystick ports.
+- **Userport joystick adapters.** Joyports > Userport Joystick Adapter adds joystick ports on the userport, with the adapter types VICE 3.10 has for each machine: CGA, PET, OEM, HIT, Kingsoft, Starbyte and WOJ on the C64 and C128; CGA, PET, OEM and WOJ on the VIC-20 and the PET; Synergy and WOJ on the Plus/4 with VICE. The type you save comes back at the next start.
 - **1351 mouse.** A mouse works as the Commodore 1351.
 - **Spinner as a paddle.** On the C64, C128 and VIC-20, Joyports > Port 1 or Port 2 > USB Spinner (Paddle) turns the wheel of a USB mouse into a paddle, as the MiSTer does. A spinner that the Pi sees as a mouse with a wheel works too, such as the one on the TAITO EGRET II mini: each click moves the paddle one step, from 0 to 255, and any mouse button is the paddle button. Spinner Sensitivity, in the same menu, sets how far each click moves it, from 25% to 400%.
 
@@ -227,7 +231,8 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 
 ### Menu and usability
 
-- **One-key menu.** F12 opens and closes the menu; the arrow keys move, ENTER chooses, and a letter jumps to the next entry that starts with it (S for Sound). Save settings keeps your setup for the next start.
+- **One-key menu.** F12 opens and closes the menu; the arrow keys move, ENTER chooses, and a letter jumps to the next entry that starts with it (S for Sound). ALT + ↑ and ALT + ↓ jump by blocks, like PgUp and PgDn, on the Pi 400, 500 and 500+ keyboards and on USB keyboards. Save settings keeps your setup for the next start.
+- **Long names scroll.** A name too long for its line scrolls while the cursor is on it, in the menus and in the file lists.
 - **Shortcut list in the menu.** The Shortcut Keys entry shows the list of shortcuts, always up to date.
 - **Status bar.** It shows drives 8 and 9 with a green power LED and a red activity LED, the current track including half tracks, and the tape counter; ALT + O hides it and brings it back. The CPU temperature and the CPU and GPU clocks show at the top of the menu as well as on the second line (ALT + SHIFT + O).
 - **Date and time.** The top of the main menu shows the date and time from the network (NTP), with the time zone and daylight saving of the Network menu; files seen through SD Card Sharing get the same time.
@@ -243,11 +248,13 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 
 - **Every machine, from the Pi 4 on.** Cable or Wi-Fi on all machines, on the Pi 4, 400, 5 and 500 (Network > Network Device). On the Pi 5 and 500 the Wi-Fi uses the three `brcmfmac43455-sdio.raspberrypi,5-model-b` files in `/firmware`, already on the card. The Pi 400 has a different Wi-Fi chip and uses the three `brcmfmac43456-sdio` files, also in `/firmware`; if the chip cannot start, the WiFi SSID window says why and the machine keeps running.
 - **Wi-Fi from the menu.** Network > WiFi Settings > WiFi SSID scans without restarting and lists the networks with band (MHz), channel (CH) and signal (RSSI). Set WiFi Country Code to your country (IT for Italy), then Enter Password & Reboot: Save & Reboot saves, switches to Wi-Fi and restarts.
-- **DHCP or a static address.** IP Address Mode (reboot) is DHCP by default, and the Static IP, Netmask, Gateway and DNS fields show what the router gave; set it to Static to type your own. The Pi shows up on the router as BMC64-NG.
+- **DHCP or a static address.** IP Address Mode (reboot) is DHCP by default, and the Static IP, Netmask, Gateway and DNS fields show what the router gave; set it to Static to type your own. The Pi shows up on the router with a name that tells the model: BMC64-NG-4, BMC64-NG-400, BMC64-NG-5, BMC64-NG-500, BMC64-NG-500P (Pi 500+), BMC64-NG-CM4 or BMC64-NG-CM5, so two of them on the same network each have their own.
 - **Daylight saving time.** Daylight Saving (reboot), under Timezone (reboot), is Off, On or Auto (EU), which follows the European rules by itself.
-- **The card from your PC.** SD Card Sharing... in the main menu opens the microSD to your home PC without taking it out of the Pi. In Windows File Explorer type `\\BMC64-NG\sdcard`, or `\\` and the address shown in the box; the user is bmc64 and the password bmc64 (Network > Sharing Password changes it). The emulation pauses while the card is shared, attached disks are saved first, and the files the machine is using can't be deleted or overwritten. While sharing is on, the Pi also shows up as BMC64-NG in the Network folder of File Explorer. Stop Sharing ends it.
-- **A modem like the Ultimate II+.** On the C64 and C128, Network > Modem (SwiftLink), off by default because it takes `$DE00` (leave it off with an EasyFlash), is a SwiftLink at `DE00`, where CCGMS expects it. Dial a BBS with `ATDT` and the address with its port, for example `ATDT bbs.retrocampus.com:6510`; without a port, port 80 is called. Incoming calls arrive on port 3000: the modem rings every 3 seconds, up to 10 times, ATA answers, and ATS0=1 answers by itself. Commands, responses and registers are those of the Ultimate II+.
+- **The card from your PC.** SD Card Sharing... in the main menu opens the microSD to your home PC without taking it out of the Pi. In Windows File Explorer type `\\BMC64-NG-400\sdcard`, with the name of your Pi, or `\\` and the address shown in the box; the user is bmc64 and the password bmc64 (Network > Sharing Password changes it). The emulation pauses while the card is shared, attached disks are saved first, and the files the machine is using can't be deleted or overwritten. While sharing is on, the Pi also shows up with its name in the Network folder of File Explorer. If a read or a write from the PC fails, the exact reason goes into SMB-LOG.TXT on the card. Stop Sharing ends it.
+- **A modem like the Ultimate II+.** On the C64 and C128, Network > Modem (SwiftLink), off by default because it takes `$DE00` (leave it off with an EasyFlash), is a SwiftLink at `DE00`, where CCGMS expects it. Dial a BBS with `ATDT` and the address with its port, for example `ATDT bbs.retrocampus.com:6510`; without a port, port 80 is called. Incoming calls arrive on port 3000: the modem rings every 3 seconds, up to 10 times, ATA answers, and ATS0=1 answers by itself. Commands, responses and registers are those of the Ultimate II+, and so is the line: DSR is on while a call is connected, and DCD is always on.
+- **A modem on the Plus/4 and the VIC-20.** On the Plus/4 the modem is the built-in ACIA at `$FD00`, as in the original BMC64: always there with VICE, and with Plus4Emu when Network is chosen, only on the models that have the ACIA (Plus/4 and V364). On the VIC-20 it sits on the userport, as device 2 of the KERNAL: Network > Modem (Userport), off by default, and Modem Baud (300, 1200 or 2400; 300 by default), the same as in the terminal program. The userport holds one device, as on the real machine: switching the modem on switches the userport joystick adapter off, and the other way round.
 - **Games from a NAS, as on the MiSTer.** The NAS item of the main menu takes the NAS address, user name and password (empty for a guest) and the SMB version (Auto, or 2.0 to 3.1.1). NAS Path holds the share and the folder the browser starts from, one for each machine; like the other fields it is empty until you type it, for example `Mister\games\C64` on a MiSTer NAS. In the file browser the first line chooses the volume: SD, USB or NAS. Disks, tapes, cartridges and programs work as from the card, up to 32 MB; what a game saves goes back to the NAS when the drive light goes off, or to the card's `NAS-NON-SALVATI` folder if the NAS doesn't answer.
+- **The network log.** Each time you open the menu, if something new happened, the card writes in NET-LOG.TXT what the network did: when the cable lost the link and when it came back, how many seconds it stayed down, the address from the router and its renewals, the Wi-Fi. Nothing is written while you play.
 
 ### Safety and diagnostics
 

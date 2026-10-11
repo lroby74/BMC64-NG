@@ -221,6 +221,11 @@ PLUS4EMU_EXPORT void Plus4VM_SetVideoClockFrequency(
  * Set if the 6551 ACIA should be emulated (0: no).
  */
 PLUS4EMU_EXPORT void Plus4VM_SetEnableACIAEmulation(Plus4VM *vm, int isEnabled);
+
+
+
+
+PLUS4EMU_EXPORT void Plus4VM_SetACIASerialLine(Plus4VM *vm, void *line);
 /*!
  * Set SID emulation parameters. 'outputVolume' should be specified in decibels
  * (-8 to +2). 'sidFlags' can be the sum of:

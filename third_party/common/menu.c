@@ -70,6 +70,8 @@ extern void reboot(void);
 
 
 
+
+
 static int uscita_avvisata = 0;
 
 static int salva_prima_di_uscire(void) {
@@ -93,6 +95,9 @@ static int salva_prima_di_uscire(void) {
 
 
 static void prima_del_reset(const char *cosa) {
+
+
+  emux_dischetti_prima_di_uscire();
   fflush(NULL);
   passo_nota(cosa);
   circle_sleep(500000);
@@ -116,6 +121,22 @@ static void spegni(void) {
 
 
 
+
+
+
+
+
+void menu_modo_sicuro(void) {
+  switch_safe();
+  emux_prepare_shutdown();
+  prima_del_reset("modo video sicuro (C= + F7): mezzo secondo alla scheda, poi il reset");
+  reboot();
+}
+
+
+
+
+
 #define NOME_PROGETTO "BMC64-NG"
 
 
@@ -123,7 +144,7 @@ static void spegni(void) {
 
 
 
-#define VERSIONE_BMC64_NG "1.2"
+#define VERSIONE_BMC64_NG "1.3"
 
 #ifdef RASPI_LITE
 #define VARIANT_STRING "-Lite"
@@ -425,6 +446,7 @@ struct menu_item *gpio_config_item;
 struct menu_item *active_display_item;
 struct menu_item *secondo_hdmi_item;
 struct menu_item *hdmi_principale_item;
+static struct menu_item *porta_vga_item;
 
 
 
@@ -458,6 +480,7 @@ static struct menu_item *network_static_item[4];
 static struct menu_item *timezone_dst_item;
 static struct menu_item *smb_password_item;
 static struct menu_item *network_modem_item;
+static struct menu_item *network_modem_baud_item;
 static const char *const network_static_keys[4] = {
     "network_ip", "network_netmask", "network_gateway", "network_dns"};
 static void update_network_address_items(void);
@@ -514,6 +537,31 @@ static int acia_network_address_index(int address) {
     }
   }
   return CIRCLE_ACIA_NETWORK_ADDRESS_DEFAULT;
+}
+
+
+
+static const int network_modem_bauds[] = { 300, 1200, 2400 };
+
+static int network_modem_baud_index(int baud) {
+  int index;
+  for (index = 0;
+       index < (int)(sizeof(network_modem_bauds) /
+                     sizeof(network_modem_bauds[0])); index++) {
+    if (network_modem_bauds[index] == baud) {
+      return index;
+    }
+  }
+  return 0;
+}
+
+
+
+void menu_modem_aggiorna(void) {
+  if (network_modem_item != NULL &&
+      emux_machine_class == BMC64_MACHINE_CLASS_VIC20) {
+    network_modem_item->value = circle_get_acia_network_enabled() ? 1 : 0;
+  }
 }
 
 static const char *const network_status_labels[CIRCLE_NETWORK_STATUS_COUNT] = {
@@ -761,8 +809,9 @@ static void condividi_scheda(void) {
   ui_menu_add_divider(root);
   ui_menu_add_button(MENU_ID_DO_NOTHING, root,
                      "On the PC open:")->disabled = 1;
-  ui_menu_add_button(MENU_ID_DO_NOTHING, root,
-                     "\\\\BMC64-NG\\sdcard")->disabled = 1;
+
+  snprintf(riga, sizeof(riga), "\\\\%s\\sdcard", circle_nome_in_rete());
+  ui_menu_add_button(MENU_ID_DO_NOTHING, root, riga)->disabled = 1;
   snprintf(riga, sizeof(riga), "\\\\%s\\sdcard", ip);
   ui_menu_add_button(MENU_ID_DO_NOTHING, root, riga)->disabled = 1;
   snprintf(riga, sizeof(riga), "User bmc64  Password %s", password);
@@ -1838,7 +1887,7 @@ static void list_files(struct menu_item *parent,
 
     struct menu_item *avviso =
         ui_menu_add_button(MENU_ID_DO_NOTHING, parent,
-                           "*** TROPPI FILE: ELENCO TAGLIATO ***");
+                           "*** TOO MANY FILES: LIST CUT ***");
     if (avviso != NULL) {
       avviso->disabled = 1;
     }
@@ -3270,6 +3319,10 @@ static int save_settings() {
   if (network_modem_item != NULL) {
     fprintf(fp, "network_modem=%d\n", network_modem_item->value);
   }
+  if (network_modem_baud_item != NULL) {
+    fprintf(fp, "network_modem_baud=%d\n",
+            network_modem_bauds[network_modem_baud_item->value]);
+  }
 
   nas_salva();
 
@@ -3702,6 +3755,12 @@ static int load_settings() {
                strcmp(name, "network_modem") == 0) {
       network_modem_item->value = value == 1 ? 1 : 0;
       circle_set_acia_network_enabled(network_modem_item->value);
+    } else if (network_modem_baud_item != NULL &&
+               strcmp(name, "network_modem_baud") == 0) {
+      if (circle_set_network_modem_baud(
+              network_modem_bauds[network_modem_baud_index(value)])) {
+        network_modem_baud_item->value = network_modem_baud_index(value);
+      }
     } else if (timezone_offset_item != NULL &&
                strcmp(name, "timezone_offset_minutes") == 0) {
       timezone_offset_item->value = timezone_offset_index(value);
@@ -4223,6 +4282,15 @@ static void set_current_dir_names() {
 }
 
 
+
+
+
+static FileFilter filtro_autostart(void) {
+  return emux_machine_class == BMC64_MACHINE_CLASS_PET ? FILTER_PRGS
+                                                        : FILTER_NONE;
+}
+
+
 //
 
 
@@ -4712,7 +4780,7 @@ static struct menu_item *relist_files_after_dir_change(struct menu_item *item) {
     root = show_files(DIR_ROMS, FILTER_NONE, item->id, 1);
     break;
   case MENU_AUTOSTART_FILE:
-    root = show_files(DIR_PRGS, FILTER_NONE, item->id, 1);
+    root = show_files(DIR_PRGS, filtro_autostart(), item->id, 1);
     break;
   case MENU_LOADPRG_FILE:
     root = show_files(DIR_PRGS, FILTER_PRGS, item->id, 1);
@@ -6925,7 +6993,8 @@ static void menu_value_changed(struct menu_item *item) {
   case MENU_AUTOSTART:
 
 
-    show_files(DIR_PRGS, FILTER_NONE, MENU_AUTOSTART_FILE, 0);
+
+    show_files(DIR_PRGS, filtro_autostart(), MENU_AUTOSTART_FILE, 0);
     return;
   case MENU_LOADPRG:
     show_files(DIR_PRGS, FILTER_PRGS, MENU_LOADPRG_FILE, 0);
@@ -7394,6 +7463,12 @@ static void menu_value_changed(struct menu_item *item) {
       ui_error("Cannot switch the modem");
     }
     return;
+  case MENU_NETWORK_MODEM_BAUD:
+    if (!circle_set_network_modem_baud(network_modem_bauds[item->value])) {
+      item->value = network_modem_baud_index(circle_get_network_modem_baud());
+      ui_error("Cannot set modem baud rate");
+    }
+    return;
   case MENU_WARP_MODE:
     toggle_warp(item->value);
     return;
@@ -7829,6 +7904,20 @@ static void menu_value_changed(struct menu_item *item) {
 
       item->value = 1;
       ui_confirm_wrapped("WARNING!", SWITCH_TIMER_MSG, 0, MENU_SWITCH_TIMER);
+    }
+    return;
+  case MENU_PORTA_VGA:
+
+
+
+    if (item->value - 1 == porta_vga_leggi()) {
+      return;
+    }
+    if (porta_vga_scrivi(item->value - 1) != 0) {
+      item->value = porta_vga_leggi() + 1;
+      ui_error("Cannot write the card");
+    } else {
+      printf("[VID] VGA Monitor On: %s\n", item->choices[item->value]);
     }
     return;
   case MENU_HDMI_PRINCIPALE:
@@ -9489,6 +9578,134 @@ void menu_banco_player2(int porta) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 void menu_banco_aspetto(int largo) {
   metti_aspetto(VIC_INDEX, largo);
 }
@@ -9780,6 +9997,8 @@ void build_menu(struct menu_item *root) {
     }
 
 
+
+
     if (emux_machine_class == BMC64_MACHINE_CLASS_C64 ||
         emux_machine_class == BMC64_MACHINE_CLASS_C128) {
 
@@ -9800,6 +10019,30 @@ void build_menu(struct menu_item *root) {
       strcpy(child->choices[address_index],
              acia_network_address_labels[address_index]);
     }
+    } else if (emux_machine_class == BMC64_MACHINE_CLASS_VIC20) {
+
+
+    child = network_modem_item = ui_menu_add_multiple_choice(
+      MENU_NETWORK_MODEM, parent, "Modem (Userport)");
+    child->num_choices = 2;
+    child->value = circle_get_acia_network_enabled() ? 1 : 0;
+    strcpy(child->choices[0], "Off");
+    strcpy(child->choices[1], "On");
+
+
+
+    circle_set_network_modem_baud(network_modem_bauds[0]);
+    child = network_modem_baud_item = ui_menu_add_multiple_choice(
+      MENU_NETWORK_MODEM_BAUD, parent, "Modem Baud");
+    child->num_choices = sizeof(network_modem_bauds) /
+               sizeof(network_modem_bauds[0]);
+    for (int baud_index = 0; baud_index < child->num_choices;
+         baud_index++) {
+      child->choice_ints[baud_index] = network_modem_bauds[baud_index];
+      sprintf(child->choices[baud_index], "%d",
+              network_modem_bauds[baud_index]);
+    }
+    child->value = network_modem_baud_index(circle_get_network_modem_baud());
     }
 
     timezone_offset_item = ui_menu_add_multiple_choice(
@@ -9883,6 +10126,9 @@ void build_menu(struct menu_item *root) {
      ui_menu_add_button(MENU_LOADPRG, root, "Load .PRG File...");
      break;
     case BMC64_MACHINE_CLASS_PET:
+
+
+     ui_menu_add_button(MENU_AUTOSTART, root, "Autostart Prg...");
      break;
     default:
      cart_only_autostart =
@@ -10178,6 +10424,23 @@ void build_menu(struct menu_item *root) {
     strcpy(child->choices[0], "HDMI 0");
     strcpy(child->choices[1], "HDMI 1");
     child->value = hdmi_principale_adesso();
+  }
+
+
+
+
+
+
+
+
+  if (!is_composite()) {
+    porta_vga_item = child =
+       ui_menu_add_multiple_choice(MENU_PORTA_VGA, parent, "VGA Monitor On");
+    child->num_choices = 3;
+    strcpy(child->choices[0], "None");
+    strcpy(child->choices[1], "HDMI 0");
+    strcpy(child->choices[2], "HDMI 1");
+    child->value = porta_vga_leggi() + 1;
   }
 
   if (emux_machine_class != BMC64_MACHINE_CLASS_C128) {
@@ -10822,7 +11085,7 @@ void build_menu(struct menu_item *root) {
 
   statusbar_info_item =
       ui_menu_add_toggle(MENU_OVERLAY_INFO, parent,
-          "Status Bar 2nd Line (temp/MHz/speed)", 1);
+          "Status Bar 2nd Line: temp/MHz/speed", 1);
 
   vkbd_transparency_item =
       ui_menu_add_range(MENU_VKBD_TRANSPARENCY, parent, "Keyboard Transparency %",
@@ -11057,11 +11320,12 @@ int statusbar_always(void) {
 
 
 
+
 static int clock_scalabile(void) {
   static int chiesto = 0;
   static int si = 0;
   if (!chiesto) {
-    si = (overclock_current() == 0);
+    si = (overclock_current() == 0 && gpuclock_current() == 0);
     chiesto = 1;
   }
   return si;
@@ -11127,6 +11391,7 @@ void menu_about_to_activate() {
     }
   }
   emux_menu_about_to_activate();
+  menu_modem_aggiorna();
   emux_get_int(Setting_WarpMode, &warp_item->value);
   menu_update_meter();
   if (clock_scalabile()) {
@@ -11539,7 +11804,7 @@ static void menu_quick_func_dentro(int button_assignment) {
     emux_detach_tape();
     break;
   case BTN_ASSIGN_AUTOSTART_2:
-    tasto_apre_i_file(DIR_PRGS, FILTER_NONE, MENU_AUTOSTART_FILE);
+    tasto_apre_i_file(DIR_PRGS, filtro_autostart(), MENU_AUTOSTART_FILE);
     break;
   case BTN_ASSIGN_MODELLO8_NONE:
     tasto_mette_il_modello(8, 1, 0);

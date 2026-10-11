@@ -1276,9 +1276,11 @@ void emu_key_released(long key) {
     f7_down = 0;
     if (commodore_down &&
        (circle_get_ticks() - video_reset_time_down >= video_reset_time_delay)) {
-       // Reset to 'safe' video mode.
-       switch_safe();
-       reboot();
+
+
+
+
+       emu_modo_sicuro_interrupt();
     }
   }
 

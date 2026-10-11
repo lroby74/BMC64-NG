@@ -39,6 +39,8 @@
 #include <circle/bcm2711.h>
 #include <circle/synchronize.h>
 #include <circle/logger.h>
+#include <circle/timer.h>
+#include <circle/bmc_link_nota.h>
 #include <circle/string.h>
 #include <circle/util.h>
 #include <circle/macros.h>
@@ -917,6 +919,31 @@ boolean CBcm54213Device::UpdatePHY (void)
 	if (phy_read_status () == 0)
 	{
 		mii_setup ();
+	}
+
+
+
+
+	static int s_nLinkDetto = -1;
+	static unsigned long long s_nGiuDa = 0;
+	unsigned nGiuSecondi = 0;
+	switch (bmc_link_nota (m_link, &s_nLinkDetto, &s_nGiuDa, CTimer::GetClockTicks64 (),
+			       &nGiuSecondi))
+	{
+	case BMC_LINK_GIU:
+		CLogger::Get ()->Write (FromBcm54213, LogNotice, "Link is down");
+		break;
+
+	case BMC_LINK_SU:
+		CLogger::Get ()->Write (FromBcm54213, LogNotice, "Link is up, %d Mbps %s-duplex",
+					m_speed, m_duplex ? "full" : "half");
+		break;
+
+	case BMC_LINK_TORNATO:
+		CLogger::Get ()->Write (FromBcm54213, LogNotice,
+					"Link is up again after %u s, %d Mbps %s-duplex",
+					nGiuSecondi, m_speed, m_duplex ? "full" : "half");
+		break;
 	}
 
 	return TRUE;

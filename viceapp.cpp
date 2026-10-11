@@ -28,6 +28,7 @@ extern "C" void circle_diag_audio(const char *quando);
 extern "C" void bmc_righe_boot_scrivi(FILE *fp);
 extern "C" int circle_fb_display_chiesto(void);
 extern "C" int circle_composito_chiesto(void);
+extern "C" const char *circle_nome_in_rete(void);
 #include "third_party/common/circle.h"
 #include <circle/sound/hdmisoundbasedevice.h>
 
@@ -906,6 +907,8 @@ void ViceStdioApp::LoadNetworkDevice() {
 
 
 
+
+
 CNetSubSystem *ViceStdioApp::NuovaRete(TNetDeviceType tipo) {
   const u8 *ip = 0, *maschera = 0, *gateway = 0, *dns = 0;
   static const u8 maschera24[4] = {255, 255, 255, 0};
@@ -920,7 +923,8 @@ CNetSubSystem *ViceStdioApp::NuovaRete(TNetDeviceType tipo) {
     mLogger.Write(GetKernelName(), LogNotice, "Networking: static IP %u.%u.%u.%u",
                   ip[0], ip[1], ip[2], ip[3]);
   }
-  return new CNetSubSystem(ip, maschera, gateway, dns, "BMC64-NG", tipo);
+  return new CNetSubSystem(ip, maschera, gateway, dns, circle_nome_in_rete(),
+                           tipo);
 }
 
 void ViceStdioApp::InitializeNetwork() {

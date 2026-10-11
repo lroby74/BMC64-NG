@@ -44,6 +44,11 @@ void usblog_elenco(const char *motivo);
 
 void usblog_circle(const char *motivo);
 
+
+
+
+void netlog_circle(const char *motivo);
+
 #ifdef __cplusplus
 }
 #endif

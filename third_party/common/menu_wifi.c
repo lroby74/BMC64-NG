@@ -38,6 +38,31 @@ static void wifi_access_point_selected(struct menu_item *item) {
   ui_pop_menu();
 }
 
+
+
+
+static void aggiungi_a_righe(struct menu_item *root, const char *testo) {
+  char riga[MAX_MENU_STR];
+  size_t resto = strlen(testo);
+  while (resto > 0) {
+    size_t n = resto;
+    if (n > MAX_MENU_STR - 1) {
+      n = MAX_MENU_STR - 1;
+      for (size_t j = n; j > MAX_MENU_STR / 2; j--) {
+        if (strchr(".,-", testo[j - 1]) != NULL) {
+          n = j;
+          break;
+        }
+      }
+    }
+    memcpy(riga, testo, n);
+    riga[n] = '\0';
+    ui_menu_add_button(MENU_ID_DO_NOTHING, root, riga)->disabled = 1;
+    testo += n;
+    resto -= n;
+  }
+}
+
 void show_wifi_access_points(struct menu_item *ssid_item,
                              struct menu_item *security_item) {
   wifi_access_point_count = circle_scan_wifi_access_points(
@@ -48,8 +73,16 @@ void show_wifi_access_points(struct menu_item *ssid_item,
   wifi_ssid_item = ssid_item;
   wifi_security_item = security_item;
   if (wifi_access_point_count == CIRCLE_WIFI_SCAN_NO_FIRMWARE) {
+
+
+    const char *manca = circle_missing_wifi_firmware();
     ui_menu_add_button(MENU_ID_DO_NOTHING, root,
-                       "WiFi firmware missing on the SD card")->disabled = 1;
+                       "Missing in the firmware folder:")->disabled = 1;
+    if (manca != NULL) {
+      aggiungi_a_righe(root, manca);
+    }
+    ui_menu_add_button(MENU_ID_DO_NOTHING, root,
+                       "Copy it from the whole-card .7z")->disabled = 1;
     return;
   }
   if (wifi_access_point_count == CIRCLE_WIFI_SCAN_NOT_STARTED) {

@@ -122,6 +122,7 @@ static uint8_t rsuser_read_ctrl(uint8_t orig);
 static void rsuser_set_tx_bit(uint8_t b);
 static int userport_rs232_enable(int value);
 static void rsuser_reset(void);
+static void rsuser_setup(void);
 
 static userport_device_t rs232_device = {
     "Userport RS232/Modem",     /* device name */
@@ -203,6 +204,16 @@ static int userport_rs232_enable(int value)
     ));
 
     calculate_baudrate();
+
+#ifdef HAVE_RS232BMC
+
+
+
+
+    if (rsuser_enabled && fd < 0 && rsuser_alarm != NULL) {
+        rsuser_setup();
+    }
+#endif
 
     return 0;
 }
@@ -448,6 +459,16 @@ static void rsuser_reset(void)
     }
 
     alarm_unset(rsuser_alarm);
+
+#ifdef HAVE_RS232BMC
+
+
+
+
+    if (rsuser_enabled) {
+        rsuser_setup();
+    }
+#endif
 }
 
 static void rsuser_setup(void)

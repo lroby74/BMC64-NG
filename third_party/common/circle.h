@@ -230,6 +230,10 @@ int circle_get_acia_network_enabled(void);
 int circle_get_acia_network_address(void);
 int circle_set_acia_network_address(int address);
 int circle_set_acia_network_enabled(int enabled);
+
+
+int circle_get_network_modem_baud(void);
+int circle_set_network_modem_baud(int baud);
 int circle_has_onboard_ethernet(void);
 int circle_has_onboard_wifi(void);
 int circle_wifi_is_running(void);
@@ -246,6 +250,8 @@ struct wifi_access_point {
 
 int circle_get_network_config(int which, char *out, unsigned int size);
 
+
+const char *circle_nome_in_rete(void);
 extern volatile int bmc_condivisione_attiva;
 int circle_smb_start(const char *user, const char *password);
 void circle_smb_stop(void);
@@ -261,6 +267,8 @@ const char *circle_smb_fase(void);
 #define CIRCLE_WIFI_SCAN_NOT_STARTED (-2)
 int circle_scan_wifi_access_points(struct wifi_access_point *access_points,
                                    unsigned int max_access_points);
+
+const char *circle_missing_wifi_firmware(void);
 
 // More just for usb buttons
 #define BTN_ASSIGN_RUN_STOP_BACK 17
@@ -735,6 +743,8 @@ extern void emu_spinner_alza(int j);
 
 // Queue a quick function request for the main loop. Interrupt safe.
 extern void emu_quick_func_interrupt(int button_assignment);
+
+extern void emu_modo_sicuro_interrupt(void);
 
 // Ask emulator what the current gpio config index is.
 extern int emu_get_gpio_config(void);

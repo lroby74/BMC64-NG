@@ -1259,13 +1259,26 @@ static void int_acia_rx(CLOCK offset, void *data)
 
 #ifdef HAVE_RS232BMC
     {
-        uint8_t old_dcd = acia.status & ACIA_SR_BITS_DCD;
+
+
+
+
+
+
+        int come_la_u2 = (machine_class == VICE_MACHINE_C64 ||
+                          machine_class == VICE_MACHINE_C64SC ||
+                          machine_class == VICE_MACHINE_SCPU64 ||
+                          machine_class == VICE_MACHINE_C128);
+        uint8_t linee = come_la_u2 ? (ACIA_SR_BITS_DCD | ACIA_SR_BITS_DSR)
+                                   : ACIA_SR_BITS_DCD;
+        uint8_t old_dcd = acia.status & linee;
 
         /* TCP close has no receive byte to wake C64 OS. Poll DCD on the RX
            cadence and turn a carrier edge into the normal ACIA status NMI. */
         acia_get_status();
-        if ((acia.status & ACIA_SR_BITS_DCD) != old_dcd
-            && !(acia.cmd & ACIA_CMD_BITS_IRQ_DISABLED)) {
+        if ((acia.status & linee) != old_dcd
+            && (come_la_u2 ? (acia.cmd & ACIA_CMD_BITS_DTR_ENABLE_RECV_AND_IRQ)
+                           : !(acia.cmd & ACIA_CMD_BITS_IRQ_DISABLED))) {
             acia_set_int(acia.irq_type, acia.int_num, acia.irq_type);
             acia.irq = 1;
         }
