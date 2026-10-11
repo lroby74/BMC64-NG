@@ -4,6 +4,8 @@
 
 There's no Linux underneath: the Pi boots straight into the Commodore.
 
+**Community:** BMC64-NG has its own section on the [BMC64 Discord server](https://discord.gg/hKvxqMj9J6), for discussion and help.
+
 > **Learn the shortcut keys: they make a huge difference.** About 60 ALT key combinations handle tapes, disks, cartridges, resets, video, sound and the SID player without opening the menu. **[Read them all here](docs/Shortcut-Keys.md)** ([in italiano](docs/Tasti-rapidi.md)).
 
 ## Highlights
@@ -132,6 +134,12 @@ The first line of About tells which version is on the card.
 ## Guides
 
 The PDF guides in [docs/](docs/) describe every menu and every shortcut, in English and Italian. Reading them is highly recommended. The shortcuts alone are also in [Shortcut Keys](docs/Shortcut-Keys.md) and [Tasti rapidi](docs/Tasti-rapidi.md).
+
+## Community
+
+BMC64-NG has its own section on the BMC64 Discord server, for discussion and help: [join it here](https://discord.gg/hKvxqMj9J6).
+
+Report bugs and request features on the [issues page](https://github.com/lroby74/BMC64-NG/issues) of this repository, not on the tracker of the original BMC64.
 
 ## All features
 
