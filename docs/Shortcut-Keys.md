@@ -91,6 +91,7 @@ With 8-SID tunes also **ALT + 5**, **ALT + 6**, **ALT + 7** and **ALT + 8**: fro
 | **ALT + SHIFT + R** | **soft** reset (does not clear the memory, ideal for changing or analyzing code in memory) |
 | **ALT + ESC** | restarts the Raspberry — asks for confirmation, press it a second time |
 | **ALT + SHIFT + ESC** | shuts down the Raspberry — same confirmation, on the Raspberry Pi 500 and 500+ you can use the dedicated button) |
+| **Fn + F10** (Pi 400) | shuts down the Raspberry, with the same confirmation: press it a second time |
 | **C= + F7**, held for 5 seconds | safe video mode, for when the screen cannot be seen: back to the C64 PAL on HDMI 720p, saves as a restart does and restarts (C= is the left CTRL) |
 | **ESC** alone | cancels the confirmation |
 

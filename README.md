@@ -282,7 +282,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 - **Warp speed.** ALT + W runs the machine as fast as the Pi allows, to skip long loading times.
 - **Machine snapshots.** Save the exact state of the machine and pick it up later.
 - **Hard and soft reset.** ALT + R is a hard reset that clears memory, the one that restarts a game; ALT + SHIFT + R is a soft reset that keeps memory, handy for changing or studying code in memory.
-- **Pi restart and shutdown.** ALT + ESC restarts the Pi and ALT + SHIFT + ESC shuts it down, each after a second press to confirm; ESC alone cancels. On the Pi 500 and 500+ the power button works too.
+- **Pi restart and shutdown.** ALT + ESC restarts the Pi and ALT + SHIFT + ESC shuts it down, each after a second press to confirm; ESC alone cancels. On the Pi 500 and 500+ the power button works too, and on the Pi 400 Fn + F10.
 - **Overclock and underclock.** CPU Clock... sets the CPU from -20% to +20% of the stock frequency of that Raspberry, and GPU Clock... raises the GPU by 10% or 20%, with frequencies that have already been tested. The choice belongs to the Pi it was made on: the same card in another Pi starts at that Pi's frequencies.
 - **Overclocking...** For those who want to go beyond CPU Clock and GPU Clock, this item of the main menu has Voltage Offset, Temperature Limit, Core Clock and V3D Clock. Apply & Reboot writes them to config.txt and restarts, and Restore Defaults sets Auto again. `force_turbo` is never written from here.
 - **The warranty bit.** The firmware sets it for good when it finds `force_turbo=1` together with a raised voltage, and BMC64-NG never writes the two together.

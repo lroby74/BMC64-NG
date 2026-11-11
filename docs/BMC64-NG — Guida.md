@@ -120,6 +120,7 @@ Serve una microSD e una tastiera USB (solo per il 4 e il 5). Il resto è opziona
 - **Due lettori di floppy USB**: nell'elenco dei file compaiono come **FLP1** e **FLP2**. I file e le immagini dei dischi si mettono sul floppy dal PC (dischetti FAT), e da BMC64-NG si usano come quelli della scheda.
 - **Nastri** `.tap` e `.t64`, con il contanastro, i comandi del registratore e
   l'avanzamento veloce.
+- **Il suono del nastro**: in **Prefs**, **Tape sound emulation** (spento di fabbrica) fa sentire il nastro che carica, come col registratore vero, e **Tape sound emulation volume** ne regola il volume. Si sente anche insieme alla musica del SID.
 - **Cartucce** `.crt` e `.bin`.
 - **La cartuccia a ogni accensione**: sul C64 e sul C128, per ritrovare una cartuccia a ogni accensione bisogna renderla predefinita dal menu **Cartridge** con la voce **Set current cart default**, che salva da sola. Vale anche al contrario: se la stacchi e non la vuoi piú all'accensione, dopo averla staccata scegli di nuovo **Set current cart default**.
 - **Le cartucce EasyFlash salvano**: quello che il gioco scrive nella flash torna nel suo file .crt con la voce **Save EasyFlash Now** del menu **Cartridge**, da solo quando si stacca la cartuccia o se ne mette un'altra, e anche quando si spegne, si riavvia o si cambia macchina, se il gioco ci ha scritto.
@@ -427,6 +428,7 @@ Coi brani a 8 SID anche **ALT + 5**, **ALT + 6**, **ALT + 7** e **ALT + 8**: dal
 | **ALT + SHIFT + R** | reset **dolce** (non cancella la memoria, ideale per modificare o analizzare un codice in memoria) |
 | **ALT + ESC** | riavvia il Raspberry — chiede conferma, si preme una seconda volta |
 | **ALT + SHIFT + ESC** | spegne il Raspberry — stessa conferma, sui Raspberry PI 500 e 500+ é possibile usare il pulsante apposito) |
+| **Fn + F10** (PI 400) | spegne il Raspberry, con la stessa conferma: si preme una seconda volta |
 | **C= + F7**, tenuti 5 secondi | modo video sicuro, per quando lo schermo non si vede: torna al C64 PAL in HDMI 720p, salva come il riavvio e riavvia (C= è il CTRL di sinistra) |
 | **ESC** da solo | annulla la conferma |
 

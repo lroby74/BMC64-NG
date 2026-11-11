@@ -120,6 +120,7 @@ You need a microSD card and a USB keyboard (only for the 4 and the 5). Everythin
 - **Two USB floppy drives**: they appear in the file list as **FLP1** and **FLP2**. You put files and disk images on the floppy with your PC (FAT disks), and BMC64-NG uses them like the ones on the card.
 - **Tapes** `.tap` and `.t64`, with the tape counter, the recorder controls and
   fast forward.
+- **The tape sound**: in **Prefs**, **Tape sound emulation** (off by default) lets you hear the tape loading, as with the real recorder, and **Tape sound emulation volume** sets its volume. It plays together with the SID music too.
 - **Cartridges** `.crt` and `.bin`.
 - **The cartridge at every power-on**: on the C64 and the C128, to find a cartridge again at every power-on you must make it the default from the **Cartridge** menu with the **Set current cart default** entry, which saves by itself. It also works the other way round: if you remove it and no longer want it at power-on, after removing it choose **Set current cart default** again.
 - **EasyFlash cartridges save**: what the game writes into the flash goes back into its .crt file with the **Save EasyFlash Now** entry of the **Cartridge** menu, by itself when the cartridge is removed or another one is inserted, and also when you power off, restart or switch machine, if the game wrote to it.
@@ -427,6 +428,7 @@ With 8-SID tunes also **ALT + 5**, **ALT + 6**, **ALT + 7** and **ALT + 8**: fro
 | **ALT + SHIFT + R** | **soft** reset (does not clear the memory, ideal for changing or analyzing code in memory) |
 | **ALT + ESC** | restarts the Raspberry — asks for confirmation, press it a second time |
 | **ALT + SHIFT + ESC** | shuts down the Raspberry — same confirmation, on the Raspberry Pi 500 and 500+ you can use the dedicated button) |
+| **Fn + F10** (Pi 400) | shuts down the Raspberry, with the same confirmation: press it a second time |
 | **C= + F7**, held for 5 seconds | safe video mode, for when the screen cannot be seen: back to the C64 PAL on HDMI 720p, saves as a restart does and restarts (C= is the left CTRL) |
 | **ESC** alone | cancels the confirmation |
 

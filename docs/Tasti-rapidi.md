@@ -91,6 +91,7 @@ Coi brani a 8 SID anche **ALT + 5**, **ALT + 6**, **ALT + 7** e **ALT + 8**: dal
 | **ALT + SHIFT + R** | reset **dolce** (non cancella la memoria, ideale per modificare o analizzare un codice in memoria) |
 | **ALT + ESC** | riavvia il Raspberry — chiede conferma, si preme una seconda volta |
 | **ALT + SHIFT + ESC** | spegne il Raspberry — stessa conferma, sui Raspberry PI 500 e 500+ é possibile usare il pulsante apposito) |
+| **Fn + F10** (PI 400) | spegne il Raspberry, con la stessa conferma: si preme una seconda volta |
 | **C= + F7**, tenuti 5 secondi | modo video sicuro, per quando lo schermo non si vede: torna al C64 PAL in HDMI 720p, salva come il riavvio e riavvia (C= è il CTRL di sinistra) |
 | **ESC** da solo | annulla la conferma |
 
