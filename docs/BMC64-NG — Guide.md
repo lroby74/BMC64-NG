@@ -20,11 +20,11 @@ and the Raspberry Pi will shut down comfortably without pulling the plug.
 
 The original project, **BMC64**, is by Randy Rossi, who had the idea and
 made it work, but unfortunately it has some limits:
-1) It was not designed to go beyond the Raspberry Pi 3 and its variants, which will be harder and harder to find on the market and in any case
-offer limited performance compared to the models released later.
+1) It was born for the Raspberry Pi up to the Pi 3 and its variants, which will be harder and harder to find on the market and in any case
+offer limited performance compared to the models released later. Only since version 5.4 (October 2026) does it also run on the Pi 4 and Pi 5, still in testing (beta).
 2) Because of what was said in point 1, it cannot be updated to the most recent version of Vice, 3.10, and it is still tied to 3.3 from 2018.
-3) And for the same reason, it cannot run the C64 in Cycle Exact mode, which gives the emulation greater fidelity but requires hardware
-power that the Pi 3 (let alone the models with even more limited hardware) cannot offer.
+3) It runs the C64 in Cycle Exact mode, which gives the emulation greater fidelity, only on the Pi 4 and Pi 5, since 5.4: the Pi 3 (let alone the models with even
+more limited hardware) does not have the power to run it.
 4) There are lots of features and conveniences missing from the original BMC64 that it was possible to add here, making
 the user experience much more pleasant and immersive.
 
@@ -116,6 +116,7 @@ You need a microSD card and a USB keyboard (only for the 4 and the 5). Everythin
 - **Real Drive: Try the fast loader**: in the **Drives** menu it loads the first file of the disk in the drive on the XUM1541 adapter twice, with the BMC64-NG fast loader and the usual way, and says how fast each one is and whether the bytes are the same. It works only with a 1541 alone on the cable: with another drive switched on, or with a 1570, a 1571 or a 1581, the page says so. If the drive does not answer, the page says **Drive 8 does not answer.** (with the unit number) and suggests **Reset Drive on XUM1541** or switching the drive off and on.
 - **Creation of blank floppy disks** from the menu.
 - **The disk at every power-on**: in the **Drives** menu, **Default disk**: **Disk image** chooses an image and **Drive** the unit (8, 9, 10 or 11; with **None** it is not used). At every power-on that image is attached by itself, if the unit is empty, and if the unit is off it is switched on by itself. By default there is no image and nothing happens. It is kept with **Save settings**. With **PRG loading** set to **Via disk image**, a `.prg` started with autostart puts its disk on unit 8 in place of this one; with **Direct to RAM** it does not.
+- **Written disks reach the card by themselves**: in **Prefs**, **Flush disk writes** chooses when what is written to a disk ends up in the file on the card: **On write** (the default) shortly after the drive stops writing, **On detach** only when the disk is detached or the drive moves to another track, **On write (log)** like On write, and it writes it in the log. If a game stutters right after a save, try **On detach**. With Plus4Emu the entry is not there. Among the hotkey choices there is also **Flush Disks**, which does it at once.
 - **Two USB floppy drives**: they appear in the file list as **FLP1** and **FLP2**. You put files and disk images on the floppy with your PC (FAT disks), and BMC64-NG uses them like the ones on the card.
 - **Tapes** `.tap` and `.t64`, with the tape counter, the recorder controls and
   fast forward.

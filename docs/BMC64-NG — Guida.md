@@ -20,11 +20,11 @@ e il Raspberry PI si spegnerá comodamente senza staccare la spina.
 
 Il progetto originale, **BMC64**, è di Randy Rossi, che ha avuto l'idea e l'ha
 fatta funzionare ma purtroppo ha dei limiti:
-1) Non é stata concepita per andare oltre il Raspberry PI 3 e varianti, che si troveranno con sempre maggiore difficoltá sul mercato e comunque
-offrono prestazioni limitate rispetto ai modelli usciti in seguito.
+1) È nato per i Raspberry fino al PI 3 e varianti, che si troveranno con sempre maggiore difficoltá sul mercato e comunque
+offrono prestazioni limitate rispetto ai modelli usciti in seguito. Solo dalla versione 5.4 (ottobre 2026) gira anche su PI 4 e PI 5, ancora in prova (beta).
 2) A causa di quanto detto al punto 1, non puó essere aggiornato alla versione piú recente del Vice 3.10, ed é tutt'ora legato alla 3.3 del 2018.
-3) E sempre per lo stesso motivo, non puó far funzionare il C64 nella modalitá Cycle Exact che dona maggiore fedeltá all'emulazione ma richiede potenza 
-hardware che il PI 3 (tanto meno quelli piú limitati come hardware) puó offire.
+3) Il C64 in modalità Cycle Exact, che dona maggiore fedeltà all'emulazione, lo fa solo su PI 4 e PI 5 dalla 5.4: sul PI 3 (e sui modelli ancora più 
+limitati) non c'è la potenza per farlo girare.
 4) Ci sono un sacco di feature e di comoditá che mancano sul BMC64 originale e che qui é stato possibile inserire, rendendo di fatto 
 l'esperienza utente molto piú piacevole e immersiva.
 
@@ -116,6 +116,7 @@ Serve una microSD e una tastiera USB (solo per il 4 e il 5). Il resto è opziona
 - **Real Drive: Try the fast loader**: nel menu **Drives** carica due volte il primo file del dischetto nel drive sull'adattatore XUM1541, col caricatore veloce di BMC64-NG e nel modo di sempre, e dice quanto va ciascuno e se i byte sono gli stessi. Va solo con un 1541 da solo sul cavo: con un altro drive acceso, o con un 1570, un 1571 o un 1581, la pagina lo dice. Se il drive non risponde, la pagina dice **Drive 8 does not answer.** (col numero dell'unità) e consiglia **Reset Drive on XUM1541** o di spegnere e riaccendere il drive.
 - **Creazione di dischetti vuoti** dal menu.
 - **Il dischetto a ogni accensione**: nel menu **Drives**, **Default disk**: **Disk image** sceglie un'immagine e **Drive** l'unità (8, 9, 10 o 11; con **None** non si usa). A ogni accensione quell'immagine si attacca da sola, se l'unità è vuota, e se l'unità è spenta si accende da sola. Di serie non c'è nessuna immagine e non succede niente. Si salva con **Save settings**. Con **PRG loading** su **Via disk image**, un `.prg` lanciato con l'autostart mette il suo dischetto sull'unità 8 al posto di questo; con **Direct to RAM** no.
+- **I dischetti scritti arrivano da soli sulla scheda**: in **Prefs**, **Flush disk writes** sceglie quando quello che si scrive su un dischetto finisce nel file sulla scheda: **On write** (di fabbrica) poco dopo che il drive ha smesso di scrivere, **On detach** solo quando si stacca il dischetto o il drive passa a un'altra traccia, **On write (log)** come On write, e lo scrive nel registro. Se un gioco scatta subito dopo un salvataggio, prova **On detach**. Con Plus4Emu la voce non c'è. Fra le scelte dei tasti rapidi c'è anche **Flush Disks**, che lo fa subito.
 - **Due lettori di floppy USB**: nell'elenco dei file compaiono come **FLP1** e **FLP2**. I file e le immagini dei dischi si mettono sul floppy dal PC (dischetti FAT), e da BMC64-NG si usano come quelli della scheda.
 - **Nastri** `.tap` e `.t64`, con il contanastro, i comandi del registratore e
   l'avanzamento veloce.
