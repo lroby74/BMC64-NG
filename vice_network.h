@@ -21,4 +21,6 @@ CNetSubSystem *ViceNetworkGetSubsystem(void);
 void ViceNetworkSetStdioApp(ViceStdioApp *app);
 void ViceNetworkNotifyStatusChanged(void);
 
+extern "C" void bmc_wic64_avvia(void);
+
 #endif

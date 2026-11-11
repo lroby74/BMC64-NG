@@ -11,21 +11,17 @@
  * example of good general usage.
  */
 
-#if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
-#else
-#include MBEDTLS_CONFIG_FILE
-#endif
 
+#include "mbedtls/build_info.h"
+
+#include <stdlib.h>
 #if defined(MBEDTLS_PLATFORM_C)
 #include "mbedtls/platform.h"
 #else
 #include <stdio.h>
-#include <stdlib.h>
 #if defined(MBEDTLS_HAVE_TIME)
 #include <time.h>
 #define mbedtls_time            time
-#define mbedtls_time_t          time_t
 #endif
 #define mbedtls_printf          printf
 #define mbedtls_calloc          calloc
@@ -34,8 +30,6 @@
 #define MBEDTLS_EXIT_SUCCESS    EXIT_SUCCESS
 #define MBEDTLS_EXIT_FAILURE    EXIT_FAILURE
 #endif /* MBEDTLS_PLATFORM_C */
-
-#include <limits.h>
 
 #if !defined(MBEDTLS_NET_C)
 int main(void)
@@ -55,6 +49,11 @@ int main(void)
 /* For select() */
 #if (defined(_WIN32) || defined(_WIN32_WCE)) && !defined(EFIX64) && \
     !defined(EFI32)
+
+#if defined(_MSC_VER)
+#pragma warning(disable : 5105) // warning inside winbase.h in C11 mode
+#endif
+
 #include <winsock2.h>
 #include <windows.h>
 #if defined(_MSC_VER)
@@ -65,9 +64,10 @@ int main(void)
 #endif
 #endif /* _MSC_VER */
 #else /* ( _WIN32 || _WIN32_WCE ) && !EFIX64 && !EFI32 */
-#if defined(MBEDTLS_HAVE_TIME)
+#if defined(MBEDTLS_HAVE_TIME) || (defined(MBEDTLS_TIMING_C) && !defined(MBEDTLS_TIMING_ALT))
 #include <sys/time.h>
 #endif
+#include <sys/select.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif /* ( _WIN32 || _WIN32_WCE ) && !EFIX64 && !EFI32 */
@@ -108,6 +108,12 @@ int main(void)
     "                        May be used multiple times, even for the same\n" \
     "                        message, in which case the respective message\n" \
     "                        gets delayed multiple times.\n"                 \
+    "    delay_encrypted_hs_cli=%%d default: 0 (don't delay)\n"             \
+    "                        delay the Nth encrypted handshake message from\n" \
+    "                        client to server.\n"                           \
+    "    delay_encrypted_hs_srv=%%d default: 0 (don't delay)\n"             \
+    "                        delay the Nth encrypted handshake message from\n" \
+    "                        server to client.\n"                           \
     "    delay_srv=%%s        Handshake message from server that should be\n" \
     "                        delayed. Possible values are 'HelloRequest',\n" \
     "                        'ServerHello', 'ServerHelloDone', 'Certificate'\n" \
@@ -121,6 +127,12 @@ int main(void)
     "    mtu=%%d              default: 0 (unlimited)\n"                     \
     "                        drop packets larger than N bytes\n"            \
     "    bad_ad=0/1          default: 0 (don't add bad ApplicationData)\n"  \
+    "    bad_ad_cli_once=%%d default: 0 (don't add bad ApplicationData)\n"  \
+    "                        add bad ApplicationData before the Nth\n"       \
+    "                        ApplicationData from client to server.\n"       \
+    "    bad_ad_srv_once=%%d default: 0 (don't add bad ApplicationData)\n"  \
+    "                        add bad ApplicationData before the Nth\n"       \
+    "                        ApplicationData from server to client.\n"       \
     "    bad_cid=%%d          default: 0 (don't corrupt Connection IDs)\n"   \
     "                        duplicate 1:N packets containing a CID,\n" \
     "                        modifying CID in first instance of the packet.\n" \
@@ -153,9 +165,13 @@ static struct options {
     char *delay_srv[MAX_DELAYED_HS];  /* handshake types of messages from
                                        * server that should be delayed.     */
     uint8_t delay_srv_cnt;      /* Number of entries in delay_srv.          */
+    int delay_encrypted_hs_cli;  /* Delay Nth encrypted HS from client.      */
+    int delay_encrypted_hs_srv;  /* Delay Nth encrypted HS from server.      */
     int drop;                   /* drop 1 packet in N (none if 0)           */
     int mtu;                    /* drop packets larger than this            */
     int bad_ad;                 /* inject corrupted ApplicationData record  */
+    int bad_ad_cli_once;        /* Inject corrupted Nth AD from client.     */
+    int bad_ad_srv_once;        /* Inject corrupted Nth AD from server.     */
     unsigned bad_cid;           /* inject corrupted CID record              */
     int protect_hvr;            /* never drop or delay HelloVerifyRequest   */
     int protect_len;            /* never drop/delay packet of the given size*/
@@ -224,6 +240,16 @@ static void get_options(int argc, char *argv[])
             if (opt.delay_ccs < 0 || opt.delay_ccs > 1) {
                 exit_usage(p, q);
             }
+        } else if (strcmp(p, "delay_encrypted_hs_cli") == 0) {
+            opt.delay_encrypted_hs_cli = atoi(q);
+            if (opt.delay_encrypted_hs_cli < 0) {
+                exit_usage(p, q);
+            }
+        } else if (strcmp(p, "delay_encrypted_hs_srv") == 0) {
+            opt.delay_encrypted_hs_srv = atoi(q);
+            if (opt.delay_encrypted_hs_srv < 0) {
+                exit_usage(p, q);
+            }
         } else if (strcmp(p, "delay_cli") == 0 ||
                    strcmp(p, "delay_srv") == 0) {
             uint8_t *delay_cnt;
@@ -274,6 +300,16 @@ static void get_options(int argc, char *argv[])
         } else if (strcmp(p, "bad_ad") == 0) {
             opt.bad_ad = atoi(q);
             if (opt.bad_ad < 0 || opt.bad_ad > 1) {
+                exit_usage(p, q);
+            }
+        } else if (strcmp(p, "bad_ad_cli_once") == 0) {
+            opt.bad_ad_cli_once = atoi(q);
+            if (opt.bad_ad_cli_once < 0) {
+                exit_usage(p, q);
+            }
+        } else if (strcmp(p, "bad_ad_srv_once") == 0) {
+            opt.bad_ad_srv_once = atoi(q);
+            if (opt.bad_ad_srv_once < 0) {
                 exit_usage(p, q);
             }
         }
@@ -487,7 +523,7 @@ typedef struct {
 } packet;
 
 /* Print packet. Outgoing packets come with a reason (forward, dupl, etc.) */
-void print_packet(const packet *p, const char *why)
+static void print_packet(const packet *p, const char *why)
 {
 #if defined(MBEDTLS_TIMING_C)
     if (why == NULL) {
@@ -531,7 +567,36 @@ typedef enum {
 static inject_clihlo_state_t inject_clihlo_state;
 static packet initial_clihlo;
 
-int send_packet(const packet *p, const char *why)
+static unsigned bad_ad_cli_seen;
+static unsigned bad_ad_srv_seen;
+
+static int bad_ad_once(const packet *p)
+{
+    unsigned *seen;
+    int bad_ad_at;
+
+    if (strcmp(p->type, "ApplicationData") != 0) {
+        return 0;
+    }
+
+    if (strcmp(p->way, "S <- C") == 0) {
+        seen = &bad_ad_cli_seen;
+        bad_ad_at = opt.bad_ad_cli_once;
+    } else {
+        seen = &bad_ad_srv_seen;
+        bad_ad_at = opt.bad_ad_srv_once;
+    }
+
+    if (bad_ad_at <= 0) {
+        return 0;
+    }
+
+    ++*seen;
+
+    return *seen == (unsigned) bad_ad_at;
+}
+
+static int send_packet(const packet *p, const char *why)
 {
     int ret;
     mbedtls_net_context *dst = p->dst;
@@ -562,7 +627,7 @@ int send_packet(const packet *p, const char *why)
     }
 
     /* insert corrupted ApplicationData record? */
-    if (opt.bad_ad &&
+    if ((bad_ad_once(p) || opt.bad_ad) &&
         strcmp(p->type, "ApplicationData") == 0) {
         unsigned char buf[MAX_MSG_SIZE];
         memcpy(buf, p->buf, p->len);
@@ -620,13 +685,13 @@ int send_packet(const packet *p, const char *why)
 static size_t prev_len;
 static packet prev[MAX_DELAYED_MSG];
 
-void clear_pending(void)
+static void clear_pending(void)
 {
     memset(&prev, 0, sizeof(prev));
     prev_len = 0;
 }
 
-void delay_packet(packet *delay)
+static void delay_packet(packet *delay)
 {
     if (prev_len == MAX_DELAYED_MSG) {
         return;
@@ -635,7 +700,7 @@ void delay_packet(packet *delay)
     memcpy(&prev[prev_len++], delay, sizeof(packet));
 }
 
-int send_delayed(void)
+static int send_delayed(void)
 {
     uint8_t offset;
     int ret;
@@ -667,9 +732,34 @@ int send_delayed(void)
 static unsigned char held[2048] = { 0 };
 #define HOLD_MAX 2
 
-int handle_message(const char *way,
-                   mbedtls_net_context *dst,
-                   mbedtls_net_context *src)
+static unsigned encrypted_hs_cli_seen;
+static unsigned encrypted_hs_srv_seen;
+
+static int delay_encrypted_hs(const packet *p)
+{
+    unsigned *seen;
+    int delay_at;
+
+    if (strcmp(p->type, "Encrypted handshake") != 0) {
+        return 0;
+    }
+
+    if (strcmp(p->way, "S <- C") == 0) {
+        seen = &encrypted_hs_cli_seen;
+        delay_at = opt.delay_encrypted_hs_cli;
+    } else {
+        seen = &encrypted_hs_srv_seen;
+        delay_at = opt.delay_encrypted_hs_srv;
+    }
+
+    ++*seen;
+
+    return delay_at > 0 && *seen == (unsigned) delay_at;
+}
+
+static int handle_message(const char *way,
+                          mbedtls_net_context *dst,
+                          mbedtls_net_context *src)
 {
     int ret;
     packet cur;
@@ -718,6 +808,11 @@ int handle_message(const char *way,
 
             return 0;
         }
+    }
+
+    if (delay_encrypted_hs(&cur)) {
+        delay_packet(&cur);
+        return 0;
     }
 
     /* do we want to drop, delay, or forward it? */
@@ -854,6 +949,10 @@ accept:
      */
     clear_pending();
     memset(held, 0, sizeof(held));
+    encrypted_hs_cli_seen = 0;
+    encrypted_hs_srv_seen = 0;
+    bad_ad_cli_seen = 0;
+    bad_ad_srv_seen = 0;
 
     nb_fds = client_fd.fd;
     if (nb_fds < server_fd.fd) {
@@ -942,8 +1041,6 @@ accept:
 
     }
 
-    exit_code = MBEDTLS_EXIT_SUCCESS;
-
 exit:
 
 #ifdef MBEDTLS_ERROR_C
@@ -963,11 +1060,6 @@ exit:
     mbedtls_net_free(&client_fd);
     mbedtls_net_free(&server_fd);
     mbedtls_net_free(&listen_fd);
-
-#if defined(_WIN32)
-    mbedtls_printf("  Press Enter to exit this program.\n");
-    fflush(stdout); getchar();
-#endif
 
     mbedtls_exit(exit_code);
 }

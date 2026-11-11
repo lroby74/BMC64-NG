@@ -35,8 +35,20 @@ namespace CircleMbedTLS {
 class CTLSSocket : public CNetSocket	/// SSL/TLS socket
 {
 public:
-	CTLSSocket (CNetSubSystem *pNetSubSystem, int nProtocol);
+	enum
+	{
+		DefaultReceiveTimeoutMs = 15000,
+		DefaultHandshakeTimeoutMs = 30000,
+		MaximumTimeoutMs = 60 * 60 * 1000
+	};
+
+	CTLSSocket (CNetSubSystem *pNetSubSystem, int nProtocol, boolean bExternalBIO = FALSE);
 	~CTLSSocket (void);
+
+
+
+
+	int SetTimeouts (unsigned nReceiveTimeoutMs, unsigned nHandshakeTimeoutMs);
 
 	/// \brief Setup SSL/TLS configuration prior to Connect()
 	int Setup (const CTLSConfig &rConfig);
@@ -70,11 +82,30 @@ public:
 	/// \return Length of received message (0 with MSG_DONTWAIT if no message available, < 0 on error)
 	int Receive (void *pBuffer, unsigned nLength, int nFlags);
 
+
+
+	int ReceiveWithTimeout (void *pBuffer, unsigned nLength, int nFlags,
+				unsigned nTimeoutMs);
+
 	/// \brief Get IP address of connected remote host
 	/// \return Pointer to IP address (four bytes, 0-pointer if not connected)
 	const u8 *GetForeignIP (void) const;
 
+
+
+	int SetExternalBIO (void *pContext, mbedtls_ssl_send_t *pSend,
+			    mbedtls_ssl_recv_t *pReceive);
+	int HandshakeSome (void);
+	int ReadSome (void *pBuffer, size_t nLength);
+	int WriteSome (const void *pBuffer, size_t nLength);
+
 private:
+	void BeginOperationTimeout (unsigned nTimeoutMs);
+	void EndOperationTimeout (void);
+	boolean OperationTimedOut (void) const;
+	unsigned GetRemainingOperationTimeoutMs (void) const;
+	int ReceiveTransport (u8 *pBuffer, size_t nLength, uint32_t nTimeoutMs);
+
 	static int ReceiveCallback (void *pParam, u8 *pBuffer, size_t nLength);
 	static int ReceiveTimeoutCallback (void *pParam, u8 *pBuffer, size_t nLength,
 					   uint32_t nTimeoutMs);
@@ -88,6 +119,14 @@ private:
 	CAdaptedSocket *m_pSocket;
 
 	boolean m_bConnected;
+	boolean m_bExternalBIO;
+	boolean m_bBIOReady;
+	unsigned m_nReceiveTimeoutMs;
+	unsigned m_nHandshakeTimeoutMs;
+	u64 m_nOperationStartTicks;
+	u64 m_nOperationTimeoutTicks;
+	boolean m_bOperationBlocking;
+	boolean m_bOperationTimeoutActive;
 };
 
 }

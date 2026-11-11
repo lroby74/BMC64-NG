@@ -151,6 +151,7 @@
 #include "userport_spt_joystick.h"
 #include "userport_superpad64.h"
 #include "userport_synergy_joystick.h"
+#include "userport_v8_joystick.h"
 #include "userport_wic64.h"
 #include "userport_funmp3.h"
 
@@ -180,7 +181,7 @@ static type2text_t device_type_desc[] = {
     { USERPORT_DEVICE_TYPE_AUDIO_OUTPUT, "Audio output" },
     { USERPORT_DEVICE_TYPE_SAMPLER, "Sampler" },
     { USERPORT_DEVICE_TYPE_RTC, "Real-time clock" },
-#ifdef HAVE_LIBCURL
+#if defined(HAVE_LIBCURL) || defined(HAVE_BMX_WIC64)
     { USERPORT_DEVICE_TYPE_WIFI, "WiFi modem" },
 #endif
 #ifdef USERPORT_EXPERIMENTAL_DEVICES
@@ -300,6 +301,14 @@ static int userport_set_device(int id)
         }
     }
 
+#ifdef HAVE_BMX_WIC64
+
+
+    if (id != USERPORT_DEVICE_NONE && userport_current_device != USERPORT_DEVICE_NONE &&
+        (id == USERPORT_DEVICE_WIC64 || userport_current_device == USERPORT_DEVICE_WIC64)) {
+        return -1;
+    }
+#endif
     /* all checks done, now disable the current device and enable the new device */
     if (userport_device[userport_current_device].enable) {
         userport_device[userport_current_device].enable(0);
@@ -687,6 +696,12 @@ static userport_init_t userport_devices_init[] = {
       NULL,                                     /* resources shutdown function */
       NULL                                      /* cmdline options init function */
     },
+    { USERPORT_DEVICE_JOYSTICK_V8,              /* device id */
+      UP_C64 | UP_VIC20 | UP_DTV | UP_PET,      /* emulators this device works on */
+      userport_joystick_v8_resources_init,      /* resources init function */
+      NULL,                                     /* resources shutdown function */
+      NULL                                      /* cmdline options init function */
+    },
     { USERPORT_DEVICE_JOYSTICK_WOJ,                     /* device id */
       UP_C64 | UP_VIC20 | UP_PLUS4 | UP_PET | UP_CBM2,  /* emulators this device works on */
       userport_joystick_woj_resources_init,             /* resources init function */
@@ -761,9 +776,14 @@ static userport_init_t userport_devices_init[] = {
       NULL,                                                     /* resources shutdown function */
       NULL                                                      /* cmdline options init function */
     },
-#ifdef HAVE_LIBCURL
+#if defined(HAVE_LIBCURL) || defined(HAVE_BMX_WIC64)
     { USERPORT_DEVICE_WIC64,                /* device id */
-      UP_C64 | UP_VIC20,                    /* emulators this device works on */
+#ifdef HAVE_BMX_WIC64
+      VICE_MACHINE_C64 | VICE_MACHINE_C64SC,
+#else
+      UP_C64 | UP_VIC20,
+#endif
+      /* emulators this device works on */
       userport_wic64_resources_init,        /* resources init function */
       userport_wic64_resources_shutdown,    /* resources shutdown function */
       userport_wic64_cmdline_options_init   /* cmdline options init function */
@@ -941,7 +961,7 @@ static const struct userport_opt_s id_match[] = {
 #ifdef USERPORT_EXPERIMENTAL_DEVICES
     { "wic",                USERPORT_DEVICE_WIC64 },
 #endif
-#ifdef HAVE_LIBCURL
+#if defined(HAVE_LIBCURL) || defined(HAVE_BMX_WIC64)
     { "wic64",              USERPORT_DEVICE_WIC64 },
 #endif
     { "space",              USERPORT_DEVICE_SPACEBALLS },

@@ -154,6 +154,11 @@ CXHCIEndpoint::CXHCIEndpoint (CXHCIUSBDevice *pDevice, const TUSBEndpointDescrip
 
 	if (!XHCI_CMD_SUCCESS (nResult))
 	{
+
+
+		CLogger::Get ()->Write (From, LogWarning, "Cannot configure endpoint 0x%X (%d)",
+					(unsigned) m_uchEndpointAddress, nResult);
+
 		m_bValid = FALSE;
 
 		return;
@@ -264,6 +269,13 @@ boolean CXHCIEndpoint::Transfer (CUSBRequest *pURB, unsigned nTimeoutMs)
 
 	if (!TransferAsync (pURB, USB_TIMEOUT_NONE))
 	{
+
+
+
+
+
+
+		m_bTransferCompleted = TRUE;
 		return FALSE;
 	}
 

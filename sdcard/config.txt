@@ -28,7 +28,7 @@ max_framebuffers=2
 disable_overscan=1
 sdtv_mode=18
 hdmi_group=1
-hdmi_mode=19
+hdmi_mode=31
 
 # -----------------------------------------------------
 # Optional settings follow

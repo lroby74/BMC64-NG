@@ -6,7 +6,7 @@ ifeq ($(BOARD),pi0)
 CFLAGS_FOR_TARGET += "-DRASPI_LITE"
 endif
 
-OBJ = crt_preset.o demo.o emux_api.o font.o joy.o kbd.o keycodes.o menu.o menu_text_layout.o menu_wifi.o menu_confirm_osd.o menu_reset_osd.o menu_key_binding.o menu_gpio.o menu_keyset.o menu_switch.o menu_tape_osd.o menu_timing.o menu_usb.o overlay.o raspi_util.o text.o ui.o semaphore.o usb_gamepad_defaults.o
+OBJ = crt_preset.o demo.o emux_api.o font.o gamepad_button_capture.o gamepad_menu_navigation.o joy.o kbd.o keycodes.o keymap_editor.o keyboard_matrix.o menu.o menu_text_layout.o menu_quick_access.o menu_wifi.o menu_confirm_osd.o menu_reset_osd.o menu_key_binding.o menu_gpio.o menu_keyset.o menu_switch.o menu_tape_osd.o menu_timing.o menu_usb.o overlay.o raspi_util.o text.o ui.o semaphore.o usb_gamepad_defaults.o
 
 
 

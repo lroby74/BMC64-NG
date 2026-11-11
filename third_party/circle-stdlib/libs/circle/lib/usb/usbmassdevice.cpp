@@ -573,6 +573,28 @@ int CUSBBulkOnlyMassStorageDevice::Command (void *pCmdBlk, size_t nCmdBlkLen,
 	assert (6 <= nCmdBlkLen && nCmdBlkLen <= 16);
 	assert (nBufLen == 0 || pBuffer != 0);
 
+
+
+
+
+	const size_t nTransferLimit = 0x10000;
+	size_t nChunkSize = nBufLen < nTransferLimit ? nBufLen : nTransferLimit;
+	u8 *pAllocation = 0;
+	u8 *pTransferBuffer = (u8 *) pBuffer;
+	if (nBufLen > 0
+	    && (   !IS_CACHE_ALIGNED (pBuffer, nBufLen)
+	        || nBufLen > nTransferLimit - ((uintptr) pBuffer & (nTransferLimit-1))))
+	{
+
+
+		size_t nAlignment = 64;
+		while (nAlignment < nChunkSize) nAlignment <<= 1;
+		pAllocation = new (HEAP_DMA30) u8[2*nAlignment-1];
+		if (pAllocation == 0) return -1;
+		pTransferBuffer = (u8 *) (((uintptr) pAllocation + nAlignment-1)
+					& ~(uintptr) (nAlignment-1));
+	}
+
 	DMA_BUFFER (u8, CBWBuffer, sizeof (TCBW));
 	TCBW *pCBW = (TCBW *) CBWBuffer;
 	memset (pCBW, 0, sizeof *pCBW);
@@ -589,51 +611,49 @@ int CUSBBulkOnlyMassStorageDevice::Command (void *pCmdBlk, size_t nCmdBlkLen,
 	CUSBHostController *pHost = GetHost ();
 	assert (pHost != 0);
 
-	if (pHost->Transfer (m_pEndpointOut, pCBW, sizeof *pCBW) < 0)
+	if (pHost->Transfer (m_pEndpointOut, pCBW, sizeof *pCBW) != (int) sizeof *pCBW)
 	{
 		CLogger::Get ()->Write (FromUmsd, LogError, "CBW transfer failed");
-
+		delete [] pAllocation;
 		return -1;
 	}
 
 	int nResult = 0;
-	
+
 	if (nBufLen > 0)
 	{
-		assert (pBuffer != 0);
-
-		u8 *pDMABuffer = 0;
-		if (!IS_CACHE_ALIGNED (pBuffer, nBufLen))
+		while ((size_t) nResult < nBufLen)
 		{
-			pDMABuffer = new (HEAP_DMA30) u8[nBufLen];
-			assert (pDMABuffer != 0);
-
-			if (!bIn)
+			size_t nChunk = nBufLen - nResult;
+			if (nChunk > nChunkSize) nChunk = nChunkSize;
+			u8 *pCurrent = (u8 *) pBuffer + nResult;
+			if (pAllocation != 0 && !bIn)
 			{
-				memcpy (pDMABuffer, pBuffer, nBufLen);
-			}
-		}
-
-		nResult = pHost->Transfer (bIn ? m_pEndpointIn : m_pEndpointOut,
-					   pDMABuffer != 0 ? pDMABuffer : pBuffer, nBufLen);
-		if (nResult < 0)
-		{
-			CLogger::Get ()->Write (FromUmsd, LogError, "Data transfer failed");
-
-			delete [] pDMABuffer;
-
-			return -1;
-		}
-
-		if (pDMABuffer != 0)
-		{
-			if (bIn)
-			{
-				memcpy (pBuffer, pDMABuffer, nBufLen);
+				memcpy (pTransferBuffer, pCurrent, nChunk);
 			}
 
-			delete [] pDMABuffer;
+			int nTransferred = pHost->Transfer (bIn ? m_pEndpointIn : m_pEndpointOut,
+							    pTransferBuffer, nChunk);
+			if (nTransferred < 0 || (size_t) nTransferred > nChunk)
+			{
+				CLogger::Get ()->Write (FromUmsd, LogError, "Data transfer failed");
+				delete [] pAllocation;
+				return -1;
+			}
+
+			if (pAllocation != 0 && bIn)
+			{
+				memcpy (pCurrent, pTransferBuffer, nTransferred);
+			}
+			nResult += nTransferred;
+			if ((size_t) nTransferred != nChunk)
+			{
+
+
+				break;
+			}
 		}
+		delete [] pAllocation;
 	}
 
 	DMA_BUFFER (u8, CSWBuffer, sizeof (TCSW));
@@ -690,7 +710,9 @@ int CUSBBulkOnlyMassStorageDevice::Command (void *pCmdBlk, size_t nCmdBlkLen,
 		return -1;
 	}
 
-	return nResult;
+
+
+	return (size_t) nResult == nBufLen ? nResult : -1;
 }
 
 int CUSBBulkOnlyMassStorageDevice::Reset (void)

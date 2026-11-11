@@ -75,6 +75,7 @@
 !LSHIFT 8 0
 !RSHIFT 8 5
 !VSHIFT RSHIFT
+!SHIFTL LSHIFT
 
 Return 6 5 8
 Down 1 6 8
@@ -87,6 +88,7 @@ KP_Tab 9 0 8
 Escape 9 4 8
 Control_L 9 4 8
 Shift_L 8 0 2
+CapsLock 8 0 64
 Shift_R 8 5 4
 a 4 0 8
 b 6 2 8

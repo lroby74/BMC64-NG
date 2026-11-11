@@ -1907,7 +1907,7 @@ void viacore_shutdown(via_context_t *via_context)
 
 /* The name of the modul must be defined before including this file.  */
 #define VIA_DUMP_VER_MAJOR      2
-#define VIA_DUMP_VER_MINOR      2
+#define VIA_DUMP_VER_MINOR      3
 
 /*
  * The dump data:
@@ -1942,6 +1942,10 @@ void viacore_shutdown(via_context_t *via_context)
  * UBYTE        t2_irq_allowed
  * UBYTE        t2_underflow_alarm 0 if not; 1+time delta if set.
  * UBYTE        t2_shift_alarm   0 if not; 1+time delta if set.
+
+
+
+
  */
 
 /* FIXME!!!  Error check.  */
@@ -1985,9 +1989,9 @@ int viacore_snapshot_write_module(via_context_t *via_context, snapshot_t *s)
         || SMW_B(m, (uint8_t)via_context->shift_state) < 0
         || SMW_B(m, (uint8_t)((via_context->ca2_out_state ? 0x80 : 0) |
                               (via_context->cb2_out_state ? 0x40 : 0) |
-                              (via_context->cb2_in_state ? 0x40 : 0)  |
-                              (via_context->cb1_in_state ? 0x20 : 0)  |
-                              (via_context->cb1_out_state ? 0x20 : 0))) < 0
+                              (via_context->cb2_in_state ? 0x20 : 0)  |
+                              (via_context->cb1_in_state ? 0x10 : 0)  |
+                              (via_context->cb1_out_state ? 0x08 : 0))) < 0
         || SMW_B(m, via_context->ila) < 0
         || SMW_B(m, via_context->ilb) < 0) {
         snapshot_module_close(m);
@@ -2160,10 +2164,18 @@ int viacore_snapshot_read_module(via_context_t *via_context, snapshot_t *s)
     via_context->shift_state = byte5;
 
     via_context->ca2_out_state = (byte6 & 0x80) != 0;
-    via_context->cb2_out_state = (byte6 & 0x40) != 0;
-    via_context->cb2_in_state =  (byte6 & 0x20) != 0;
-    via_context->cb1_in_state =  (byte6 & 0x10) != 0;
-    via_context->cb1_out_state = (byte6 & 0x08) != 0;
+    if (snapshot_version_is_smaller(vmajor, vminor, 2, 3)) {
+
+        via_context->cb2_out_state = (byte6 & 0x40) != 0;
+        via_context->cb2_in_state =  (byte6 & 0x40) != 0;
+        via_context->cb1_in_state =  (byte6 & 0x20) != 0;
+        via_context->cb1_out_state = (byte6 & 0x20) != 0;
+    } else {
+        via_context->cb2_out_state = (byte6 & 0x40) != 0;
+        via_context->cb2_in_state =  (byte6 & 0x20) != 0;
+        via_context->cb1_in_state =  (byte6 & 0x10) != 0;
+        via_context->cb1_out_state = (byte6 & 0x08) != 0;
+    }
 
     via_context->t2_irq_allowed = m2_t2_irq_allowed;
 

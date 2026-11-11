@@ -361,6 +361,13 @@ int CSoundBaseDevice::Write (const void *pBuffer, size_t nCount)
 			nNullBytes = (m_nHWTXChannels - m_nWriteChannels) * m_nHWSampleSize;
 		}
 
+
+		const boolean bMonoSuiDue = m_nWriteChannels == 1 && m_nHWTXChannels > 2;
+		if (bMonoSuiDue)
+		{
+			nNullBytes -= m_nHWSampleSize;
+		}
+
 		while (   nCount >= m_nWriteFrameSize
 		       && GetQueueBytesFree () >= m_nHWTXFrameSize)
 		{
@@ -373,6 +380,12 @@ int CSoundBaseDevice::Write (const void *pBuffer, size_t nCount)
 
 				pFrame += m_nHWSampleSize;
 				pBuffer8 += m_nWriteSampleSize;
+			}
+
+			if (bMonoSuiDue)
+			{
+				memcpy (pFrame, Frame, m_nHWSampleSize);
+				pFrame += m_nHWSampleSize;
 			}
 
 			if (nNullBytes != 0)

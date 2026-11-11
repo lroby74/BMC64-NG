@@ -645,7 +645,9 @@ int easyflash_bin_save(const char *filename)
         }
     }
 
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -682,7 +684,9 @@ int easyflash_crt_save(const char *filename)
             return -1;
         }
     }
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 

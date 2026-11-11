@@ -67,6 +67,14 @@
 #include "video.h"
 #include "viewport.h"
 
+#ifdef RASPI_COMPILE
+
+
+static CLOCK bmc_crtc_ultimo_quadro = 0;
+static unsigned long bmc_crtc_quadri_forzati = 0;
+static unsigned int bmc_crtc_detti = 0;
+#endif
+
 
 #define crtc_min(a, b)   (((a) < (b)) ? (a) : (b))
 
@@ -343,6 +351,46 @@ static int crtc_get_crt_type(void)
     return VIDEO_CRT_TYPE_MONO;
 }
 
+#ifdef RASPI_COMPILE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static unsigned int bmc_crtc_tela_dette = 0;
+
+static int bmc_crtc_tela_fissa(unsigned int vorrebbe, unsigned int disegnate)
+{
+    if (crtc.raster.canvas != NULL && bmc_crtc_tela_dette < 4
+        && (vorrebbe > crtc.screen_height
+            || (disegnate > vorrebbe && disegnate < crtc.screen_height))) {
+        bmc_crtc_tela_dette++;
+        log_message(crtc.log, "la tela resta alta %u righe (il VICE la porterebbe a %u): lo schermo e' fisso",
+                    crtc.screen_height, vorrebbe);
+    }
+    return 0;
+}
+#endif
+
 /* update screen window */
 void crtc_update_window(void)
 {
@@ -358,8 +406,14 @@ void crtc_update_window(void)
                                    crtc.regs[CRTC_REG_VTOTALADJ] +
                                    2 * CRTC_SCREEN_BORDERHEIGHT;
 
+#ifdef RASPI_COMPILE
+
+
+    if (bmc_crtc_tela_fissa(screen_height, max_drawn_lines)) {
+#else
     if (screen_height > crtc.screen_height ||
             (max_drawn_lines > screen_height && max_drawn_lines < crtc.screen_height)) {
+#endif
         /*
          * We only increase the screen height here, but it would also
          * work if we acted on all size changes.  However that already
@@ -766,6 +820,15 @@ static void crtc_raster_draw_alarm_handler(CLOCK offset, void *data)
         crtc.raster.current_line = 0;
         raster_canvas_handle_end_of_frame(&crtc.raster);
         vsync_do_vsync(crtc.raster.canvas);
+#ifdef RASPI_COMPILE
+        if (bmc_crtc_quadri_forzati > 0 && bmc_crtc_detti < 6) {
+            bmc_crtc_detti++;
+            log_message(crtc.log, "il CRTC chiude di nuovo i quadri da solo (%lu chiusi da noi)",
+                        bmc_crtc_quadri_forzati);
+        }
+        bmc_crtc_ultimo_quadro = maincpu_clk;
+        bmc_crtc_quadri_forzati = 0;
+#endif
 
         if (crtc.delayed_resize) {
             /* expected number of active rasterlines for next frame */
@@ -773,6 +836,53 @@ static void crtc_raster_draw_alarm_handler(CLOCK offset, void *data)
             crtc_update_window();
         }
     }
+
+#ifdef RASPI_COMPILE
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    {
+        CLOCK bmc_nominale = (CLOCK)machine_get_cycles_per_frame();
+
+
+
+
+
+        if (maincpu_clk < bmc_crtc_ultimo_quadro) {
+            bmc_crtc_ultimo_quadro = maincpu_clk;
+        }
+        if (bmc_nominale > 0 &&
+            maincpu_clk - bmc_crtc_ultimo_quadro >=
+                (bmc_crtc_quadri_forzati > 0 ? bmc_nominale : 3 * bmc_nominale)) {
+            if (bmc_crtc_quadri_forzati == 0 && bmc_crtc_detti < 6) {
+                bmc_crtc_detti++;
+                log_message(crtc.log, "nessun quadro da %lu cicli: li chiudo io, uno ogni %lu (il monitor vero gira libero)",
+                            (unsigned long)(maincpu_clk - bmc_crtc_ultimo_quadro),
+                            (unsigned long)bmc_nominale);
+            }
+            bmc_crtc_quadri_forzati++;
+            bmc_crtc_ultimo_quadro = maincpu_clk;
+            crtc.raster.current_line = 0;
+            raster_canvas_handle_end_of_frame(&crtc.raster);
+            vsync_do_vsync(crtc.raster.canvas);
+        }
+    }
+#endif
 
     /* FIXME: charheight */
     /*

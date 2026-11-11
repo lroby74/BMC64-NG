@@ -155,7 +155,7 @@
  *                     when set to a 1, permits the Alarm Flag (AF) bit in register 12
  *                     to assert IRQ. An alarm interrupt occurs for each second that
  *                     the 3 time bytes equal the 3 alarm bytes including a
- *                     “don’t care” alarm code of binary 11XXXXXX. When the AIE bit is
+ *                     ï¿½donï¿½t careï¿½ alarm code of binary 11XXXXXX. When the AIE bit is
  *                     set to 0, the AF bit does not initiate the IRQ signal. The
  *                     internal functions of the DS12C887 not affect the AIE bit.
  *               bit 4 The Update Ended Interrupt Enable (UIE) bit is a read/write bit
@@ -718,7 +718,7 @@ void ds12c887_store_data(rtc_ds12c887_t *context, uint8_t data)
     }
 }
 
-uint8_t ds12c887_read(rtc_ds12c887_t *context)
+uint8_t ds12c887_read(rtc_ds12c887_t *context, bool peek)
 {
     uint8_t retval;
     time_t latch;
@@ -754,12 +754,16 @@ uint8_t ds12c887_read(rtc_ds12c887_t *context)
             retval = context->ctrl_regs[1];
             break;
         case DS12C887_REG_CTRL_C:
-            ds12c887_update_flags(context);
+            if (!peek) {
+                ds12c887_update_flags(context);
+            }
             retval = (context->alarm_flag || context->end_of_update_flag) ? 0x80 : 0;
             retval |= (context->alarm_flag) ? 0x20 : 0;
             retval |= (context->end_of_update_flag) ? 0x10 : 0;
-            context->alarm_flag = 0;
-            context->end_of_update_flag = 0;
+            if (!peek) {
+                context->alarm_flag = 0;
+                context->end_of_update_flag = 0;
+            }
             break;
         case DS12C887_REG_CTRL_D:
             retval = 0x80;
@@ -886,7 +890,7 @@ int ds12c887_write_snapshot(rtc_ds12c887_t *context, snapshot_t *s)
     snapshot_module_t *m;
 
     /* time_t can be either 32bit or 64bit, so we save as 64bit */
-#if (SIZE_OF_TIME_T == 8)
+#if (SIZEOF_TIME_T == 8)
     clock_halt_latch_hi = (uint32_t)(context->clock_halt_latch >> 32);
     clock_halt_latch_lo = (uint32_t)(context->clock_halt_latch & 0xffffffff);
     set_latch_hi = (uint32_t)(context->set_latch >> 32);
@@ -992,7 +996,7 @@ int ds12c887_read_snapshot(rtc_ds12c887_t *context, snapshot_t *s)
 
     snapshot_module_close(m);
 
-#if (SIZE_OF_TIME_T == 8)
+#if (SIZEOF_TIME_T == 8)
     context->clock_halt_latch = (time_t)(clock_halt_latch_hi) << 32;
     context->clock_halt_latch |= clock_halt_latch_lo;
     context->set_latch = (time_t)(set_latch_hi) << 32;

@@ -308,6 +308,12 @@ boolean CXHCIDevice::UpdatePlugAndPlay (void)
 	return bResult;
 }
 
+unsigned CXHCIDevice::PowerOffUSB3Ports (void)
+{
+
+	return m_pRootHub != 0 ? m_pRootHub->PowerOffUSB3Ports () : 0;
+}
+
 void CXHCIDevice::ReScanDevices (void)
 {
 	assert (m_pRootHub != 0);

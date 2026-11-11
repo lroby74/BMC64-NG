@@ -18,7 +18,7 @@
 #
 # The tests focus on functionality and do not consider performance.
 #
-# Note the tests self-adapt due to configurations in include/mbedtls/config.h
+# Note the tests self-adapt due to configurations in include/mbedtls/mbedtls_config.h
 # which can lead to some tests being skipped, and can cause the number of
 # available tests to fluctuate.
 #
@@ -36,7 +36,6 @@ if [ -d library -a -d include -a -d tests ]; then :; else
 fi
 
 : ${OPENSSL:="openssl"}
-: ${OPENSSL_LEGACY:="$OPENSSL"}
 : ${GNUTLS_CLI:="gnutls-cli"}
 : ${GNUTLS_SERV:="gnutls-serv"}
 
@@ -59,15 +58,14 @@ export OPENSSL="$OPENSSL"
 export GNUTLS_CLI="$GNUTLS_CLI"
 export GNUTLS_SERV="$GNUTLS_SERV"
 
-CONFIG_H='include/mbedtls/config.h'
+CONFIG_H='include/mbedtls/mbedtls_config.h'
 CONFIG_BAK="$CONFIG_H.bak"
 
 # Step 0 - print build environment info
 OPENSSL="$OPENSSL"                           \
-    OPENSSL_LEGACY="$OPENSSL_LEGACY"         \
     GNUTLS_CLI="$GNUTLS_CLI"                 \
     GNUTLS_SERV="$GNUTLS_SERV"               \
-    scripts/output_env.sh
+    framework/scripts/output_env.sh
 echo
 
 # Step 1 - Make and instrumented build for code coverage
@@ -104,20 +102,12 @@ echo
 # Step 2c - Compatibility tests (keep going even if some tests fail)
 echo '################ compat.sh ################'
 {
-    echo '#### compat.sh: all except legacy/next'
-    sh compat.sh -e '^DES-CBC-\|-DES-CBC-\|ARIA\|CHACHA' \
-        -m 'ssl3 tls1 tls1_1 tls12 dtls1 dtls12'
+    echo '#### compat.sh: Default versions'
+    sh compat.sh -e 'ARIA\|CHACHA'
     echo
 
-    echo '#### compat.sh: legacy (single-DES)'
-    OPENSSL="$OPENSSL_LEGACY" sh compat.sh -e '^$' -f '^DES-CBC\|-DES-CBC-' \
-        -m 'ssl3 tls1 tls1_1 tls12 dtls1 dtls12'
-    echo
-
-    # ARIA and ChachaPoly are both (D)TLS 1.2 only
     echo '#### compat.sh: next (ARIA, ChaCha)'
-    OPENSSL="$OPENSSL_NEXT" sh compat.sh -e '^$' -f 'ARIA\|CHACHA' \
-        -m 'tls12 dtls12'
+    OPENSSL="$OPENSSL_NEXT" sh compat.sh -e '^$' -f 'ARIA\|CHACHA'
     echo
 } | tee compat-test-$TEST_OUTPUT
 echo '^^^^^^^^^^^^^^^^ compat.sh ^^^^^^^^^^^^^^^^'

@@ -887,10 +887,18 @@ void psid_init_driver(void)
 
 
 
+
+                unsigned int k;
+
                 psid_modello_del_chip("Sid2Model", (psid->reserved >> 4) & 0x03, primo);
-                psid_modello_del_chip("Sid3Model", psid->quanti_in_piu > 0
-                                      ? (psid->flag_in_piu[0] >> 4) & 0x03 : 0,
-                                      primo);
+                for (k = 0; k < 6; k++) {
+                    char risorsa[12];
+
+                    sprintf(risorsa, "Sid%uModel", k + 3);
+                    psid_modello_del_chip(risorsa, k < psid->quanti_in_piu
+                                          ? (psid->flag_in_piu[k] >> 4) & 0x03 : 0,
+                                          primo);
+                }
             } else {
                 psid_modello_del_chip("Sid2Model", (psid->flags >> 6) & 0x03, primo);
                 psid_modello_del_chip("Sid3Model", (psid->flags >> 8) & 0x03, primo);

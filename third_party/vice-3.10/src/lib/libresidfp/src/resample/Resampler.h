@@ -22,8 +22,6 @@
 #ifndef RESAMPLER_H
 #define RESAMPLER_H
 
-#include "Limiter.h"
-
 #include <cstdint>
 
 namespace reSIDfp
@@ -36,32 +34,7 @@ namespace reSIDfp
 class Resampler
 {
 protected:
-    virtual int32_t output() const = 0;
-
     Resampler() = default;
-
-    mutable uint32_t m_wnoise = 34653463u;
-    mutable int32_t m_bnoise = 0;
-
-#ifdef RESIDFP_RUMORE_REGOLABILE
-
-
-    int32_t m_rumore = 100;
-#endif
-
-    int32_t bnoise() const
-    {
-        // white noise
-        m_wnoise = m_wnoise * 1664525u + 1013904223u;
-
-        // Reduce to 8bit signed
-        int32_t n = (int32_t)((m_wnoise >> 20) & 0xff) - 0x80;
-
-        // high-passed noise
-        m_bnoise = m_bnoise + ((n - m_bnoise) / 8);
-
-        return n - m_bnoise;
-    }
 
 public:
     virtual ~Resampler() = default;
@@ -79,26 +52,9 @@ public:
      *
      * @return resampled sample
      */
-    inline int16_t getOutput(int32_t scaleFactor) const
-    {
-        const int32_t out = (scaleFactor * output()) / 2;
-#ifdef RESIDFP_RUMORE_REGOLABILE
-        return Limiter::softClip(out + (bnoise() * m_rumore) / 100);
-#else
-        return Limiter::softClip(out + bnoise());
-#endif
-    }
+    virtual int32_t output() const = 0;
 
     virtual void reset() = 0;
-
-#ifdef RESIDFP_RUMORE_REGOLABILE
-    void setNoise(int32_t percento) { m_rumore = percento; }
-
-
-
-
-    void setNoiseSeed(uint32_t seme) { m_wnoise = seme; m_bnoise = 0; }
-#endif
 };
 
 } // namespace reSIDfp

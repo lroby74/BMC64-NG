@@ -236,7 +236,12 @@ int rexep256_crt_attach(FILE *fd, uint8_t *rawcart)
             return -1;
         }
 
-        if (chip.bank > 8) {
+        if ((chip.bank < 1) || (chip.bank > 8)) {
+            return -1;
+        }
+
+
+        if ((rexep256_total_size + chip.size) > 0x40000) {
             return -1;
         }
 

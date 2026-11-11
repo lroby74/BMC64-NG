@@ -140,6 +140,14 @@ int cartridge_get_id(int slot)
     return type;
 }
 
+/* FIXME: return filetype of cart with given crtid
+   (CARTRIDGE_FILETYPE_BIN, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_NONE) */
+int cartridge_get_filetype(int crtid)
+{
+    log_error(LOG_DEFAULT, "cartridge_get_filetype not implemented.");
+    return CARTRIDGE_FILETYPE_NONE;
+}
+
 /* FIXME: slot arg is ignored right now.
    this should return a pointer to a filename, or NULL
 */
@@ -575,6 +583,11 @@ static void plus4cart_detach_cartridges(void)
 #endif
     mem_cartridge_type = CARTRIDGE_NONE;
 
+
+    plus4cart_type = CARTRIDGE_NONE;
+    crttype = CARTRIDGE_NONE;
+    util_string_set(&cartfile, NULL);
+
     cart_power_off();
 }
 
@@ -852,8 +865,9 @@ int cartridge_attach_image(int type, const char *filename)
     }
     DBG(("CART: cartridge_attach_image type: %d ID: %d", type, cartid));
 
-    /* allocate temporary array */
+
     rawcartdata = lib_malloc(PLUS4CART_IMAGE_LIMIT);
+    memset(rawcartdata, 0xff, PLUS4CART_IMAGE_LIMIT);
 
     if (type == CARTRIDGE_CRT) {
         DBG(("CART: attach CRT ID: %d '%s'", carttype, filename));
@@ -947,6 +961,26 @@ int cartridge_flush_image(int type)
 int cartridge_flush_secondary_image(int type)
 {
     return -1;
+}
+
+int cartridge_flush_tertiary_image(int type)
+{
+    return -1;
+}
+
+int cartridge_save_tertiary_image(int type, const char *filename)
+{
+    return -1;
+}
+
+int cartridge_can_flush_tertiary_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_save_tertiary_image(int crtid)
+{
+    return 0;
 }
 
 int cartridge_can_save_image(int crtid)
@@ -1191,9 +1225,8 @@ int cartridge_snapshot_read_modules(struct snapshot_s *s)
                 DBG(("CART snapshot read: cart %i handler missing", cart_ids[i]));
                 goto fail2;
         }
+        cart_attach_from_snapshot(cart_ids[i]);
     }
-
-    cart_attach_from_snapshot(cart_ids[i]);
 
     /* set up config */
     /* machine_update_memory_ptrs(); */

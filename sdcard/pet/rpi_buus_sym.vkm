@@ -83,6 +83,7 @@
 !LSHIFT 6 0
 !RSHIFT 6 6
 !VSHIFT RSHIFT
+!SHIFTL LSHIFT
 
 0 1 3 32
 0 9 3 1
@@ -112,6 +113,7 @@ Down 5 4 8
 Del 4 7 0
 BackSpace 4 7 8
 Shift_L 6 0 2
+CapsLock 6 0 64
 Shift_R 6 6 4
 Return 3 4 8
 Escape 2 0 8

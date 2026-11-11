@@ -1043,10 +1043,125 @@ void drive_cpu_execute_one(diskunit_context_t *drv, CLOCK clk_value)
     }
 }
 
-void drive_cpu_execute_all(CLOCK clk_value)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define DRIVE_PASSO_LARGO  16
+
+unsigned int drive_cavo_toccato = 0;
+diskunit_context_t *drive_in_passo = NULL;
+static CLOCK drive_passo_meta = 0;
+static unsigned int drive_in_corso = 0;
+static unsigned int drive_ultimo_cavo = NUM_DISK_UNITS - 1;
+
+static void drive_passo_esegui(diskunit_context_t *unit, CLOCK t)
 {
+    diskunit_context_t *prima = drive_in_passo;
+    CLOCK meta = drive_passo_meta;
+
+    drive_in_passo = unit;
+    drive_passo_meta = t;
+    drive_in_corso |= 1u << unit->mynumber;
+    drive_cpu_execute_one(unit, t);
+    drive_in_corso &= ~(1u << unit->mynumber);
+    drive_in_passo = prima;
+    drive_passo_meta = meta;
+}
+
+void drive_cavo_in_pari(void)
+{
+    diskunit_context_t *drv = drive_in_passo;
+    CLOCK qui = drive_passo_meta;
     unsigned int dnr;
 
+    drive_ultimo_cavo = drv->mynumber;
+
+    if (*(drv->clk_ptr) < drv->cpu->stop_clk) {
+        unsigned int f = drv->cpud->sync_factor;
+        CLOCK resto = (((drv->cpu->stop_clk - *(drv->clk_ptr)) << 16) + f - 1) / f;
+
+        qui = qui > resto ? qui - resto : 0;
+    }
+    for (dnr = 0; dnr < NUM_DISK_UNITS; dnr++) {
+        diskunit_context_t *unit = diskunit_context[dnr];
+
+        if (unit->enable && !(drive_in_corso & (1u << dnr)) && unit->cpu->last_clk < qui) {
+            drive_passo_esegui(unit, qui);
+        }
+    }
+}
+
+
+
+
+
+static void drive_passo_giro(CLOCK t, int tutti)
+{
+    unsigned int primo = drive_ultimo_cavo + 1, k;
+
+    for (k = 0; k < NUM_DISK_UNITS; k++) {
+        diskunit_context_t *unit = diskunit_context[(primo + k) % NUM_DISK_UNITS];
+
+        if (unit->enable && (tutti || unit->cpu->last_clk < t)) {
+            drive_passo_esegui(unit, t);
+        }
+    }
+}
+
+static void drive_cpu_execute_in_step(CLOCK clk_value)
+{
+    unsigned int dnr, enabled = 0, oldest = 0;
+    CLOCK t1 = clk_value, t2 = clk_value; /* the oldest and the next oldest drive clock */
+    CLOCK t;
+
+    for (dnr = 0; dnr < NUM_DISK_UNITS; dnr++) {
+        diskunit_context_t *unit = diskunit_context[dnr];
+
+        if (unit->enable) {
+            CLOCK c = unit->cpu->last_clk;
+
+            enabled++;
+            if (c < t1) {
+                t2 = t1;
+                t1 = c;
+                oldest = dnr;
+            } else if (c < t2) {
+                t2 = c;
+            }
+        }
+    }
+    if (enabled > 1) {
+        if (t1 < t2) {
+            drive_passo_esegui(diskunit_context[oldest], t2);
+        }
+        t = t2;
+        while ((t += DRIVE_PASSO_LARGO) < clk_value) {
+            drive_passo_giro(t, 0);
+        }
+        drive_passo_giro(clk_value, 1);
+        return;
+    }
     for (dnr = 0; dnr < NUM_DISK_UNITS; dnr++) {
         diskunit_context_t *unit = diskunit_context[dnr];
 
@@ -1054,6 +1169,11 @@ void drive_cpu_execute_all(CLOCK clk_value)
             drive_cpu_execute_one(unit, clk_value);
         }
     }
+}
+
+void drive_cpu_execute_all(CLOCK clk_value)
+{
+    drive_cpu_execute_in_step(clk_value);
 }
 
 void drive_cpu_set_overflow(diskunit_context_t *drv)
@@ -1069,9 +1189,23 @@ void drive_cpu_set_overflow(diskunit_context_t *drv)
 /* This is called at every vsync. */
 void drive_vsync_hook(void)
 {
-    unsigned int dnr;
+    unsigned int dnr, insieme = 0;
 
     drive_update_ui_status();
+
+
+
+
+    for (dnr = 0; dnr < NUM_DISK_UNITS; dnr++) {
+        diskunit_context_t *unit = diskunit_context[dnr];
+
+        if (unit->enable && unit->idling_method != DRIVE_IDLE_SKIP_CYCLES) {
+            insieme++;
+        }
+    }
+    if (insieme > 1) {
+        drive_cpu_execute_in_step(maincpu_clk);
+    }
 
     for (dnr = 0; dnr < NUM_DISK_UNITS; dnr++) {
         diskunit_context_t *unit = diskunit_context[dnr];

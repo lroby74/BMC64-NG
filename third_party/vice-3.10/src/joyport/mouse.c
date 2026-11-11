@@ -60,6 +60,7 @@
 #include "snapshot.h"
 
 #include "mouse_1351.h"
+#include "mouse_digital.h"
 #include "mouse_neos.h"
 #include "mouse_paddle.h"
 #include "mouse_quadrature.h"
@@ -202,6 +203,11 @@ void mouse_poll(void)
     tick_t os_now, os_iv, os_iv2;
     CLOCK emu_now, emu_iv, emu_iv2;
     int diff_x, diff_y;
+
+#ifdef MOUSEDRV_HAS_POLL
+    /* Transfer arch input on the emulator core before touching common state. */
+    mousedrv_poll();
+#endif
 
     DBG(("mouse_poll"));
 
@@ -381,6 +387,9 @@ static void mouse_button_left(int pressed)
 {
     DBG(("mouse_button_left %d type:%d\n", pressed, mouse_type));
     switch (mouse_type) {
+        case MOUSE_TYPE_DIGITAL:
+            mouse_digital_button_left(pressed);
+            break;
         case MOUSE_TYPE_1351:
         case MOUSE_TYPE_SMART:
         case MOUSE_TYPE_MICROMYS:
@@ -409,6 +418,9 @@ static void mouse_button_right(int pressed)
 {
     DBG(("mouse_button_right %d\n", pressed));
     switch (mouse_type) {
+        case MOUSE_TYPE_DIGITAL:
+            mouse_digital_button_right(pressed);
+            break;
         case MOUSE_TYPE_1351:
         case MOUSE_TYPE_SMART:
         case MOUSE_TYPE_MICROMYS:
@@ -485,6 +497,7 @@ static const mt_id_t mt_id[] = {
     { MOUSE_TYPE_MICROMYS, JOYPORT_ID_MOUSE_MICROMYS },
     { MOUSE_TYPE_KOALAPAD, JOYPORT_ID_KOALAPAD },
     { MOUSE_TYPE_POWERPAD, JOYPORT_ID_POWERPAD },
+    { MOUSE_TYPE_DIGITAL,  JOYPORT_ID_MOUSE_DIGITAL },
     { -1,                    -1 }
 };
 

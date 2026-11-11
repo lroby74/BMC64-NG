@@ -55,10 +55,17 @@ public:
 	void SetIrqDelay (unsigned nIMODI);
 	unsigned GetIrqDelay (void);
 
+
+
+
+
+
+	void SetPatienceMs (unsigned nMs);
+
 	static const TUSBDeviceID *GetDeviceIDTable (void);
 
 private:
-	static void SetPatience (CUSBEndpoint *pEndpoint);
+	static void SetPatience (CUSBEndpoint *pEndpoint, unsigned nTicks);
 
 private:
 	CUSBEndpoint *m_pEndpointIn;

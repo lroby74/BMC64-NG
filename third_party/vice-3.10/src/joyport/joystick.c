@@ -139,8 +139,18 @@ static joystick_values_t network_joystick_value = { .last_used_joyport = JOYPORT
 static joystick_values_t latch_joystick_value = { .last_used_joyport = JOYPORT_MAX_PORTS };
 
 #ifdef RASPI_COMPILE
-static uint8_t joystick_potx_value[2] = {0xff, 0xff};
-static uint8_t joystick_poty_value[2] = {0xff, 0xff};
+
+
+
+static uint8_t joystick_potx_value[JOYPORT_MAX_PORTS] = {
+    [0 ... JOYPORT_MAX_PORTS - 1] = 0xff };
+static uint8_t joystick_poty_value[JOYPORT_MAX_PORTS] = {
+    [0 ... JOYPORT_MAX_PORTS - 1] = 0xff };
+
+static int joystick_pot_port_is_valid(int port)
+{
+    return port >= 0 && port < JOYPORT_MAX_PORTS;
+}
 #endif
 
 /* mapping of the joystick ports */
@@ -787,13 +797,24 @@ static uint8_t read_joystick(int port)
 static uint8_t read_potx(int port)
 {
     /* printf("read_potx %d %02x %02x %02x\n", port, joystick_value[port + 1]); */
+#ifdef RASPI_COMPILE
+
+
+
+    return joystick_get_potx(port);
+#else
     return joystick_value[port] & JOYPAD_FIRE2 ? 0x00 : 0xff;
+#endif
 }
 
 static uint8_t read_poty(int port)
 {
     /* printf("read_poty %d %02x %02x %02x\n", port, joystick_value[port + 1]); */
+#ifdef RASPI_COMPILE
+    return joystick_get_poty(port);
+#else
     return joystick_value[port] & JOYPAD_FIRE3 ? 0x00 : 0xff;
+#endif
 }
 
 
@@ -910,7 +931,8 @@ void joystick_set_axis_value(unsigned int joynum, unsigned int axis_idx, uint8_t
         joystick_device_t *joydev = joystick_devices[joynum];
         joystick_axis_t   *axis   = joydev->axes[axis_idx];
 
-        if ((joydev->joyport == 0 || joydev->joyport == 1) && (axis->mapping.pot > 0)) {
+        if ((joydev->joyport == 0 || joydev->joyport == 1) &&
+            (axis->mapping.pot > 0 && axis->mapping.pot <= 2)) {
             joystick_axis_value[joydev->joyport][axis->mapping.pot - 1] = value;
         }
     }
@@ -1493,7 +1515,7 @@ static void joy_arch_parse_keyword(char *buffer)
 
     key = strtok(buffer + 1, " \t:");
 
-    if (!strcmp(key, "CLEAR")) {
+    if (key != NULL && !strcmp(key, "CLEAR")) {
         joy_arch_keyword_clear();
     }
 }
@@ -1915,7 +1937,7 @@ static bool joy_arch_parse_entry(const char *buffer, const char *filename, int l
 
             action_name[a] = state.bufptr[a];
             a++;
-            while (a < sizeof action_name &&
+            while (a < sizeof action_name - 1u &&
                    state.bufptr[a] != '\0' &&
                    (isalnum((unsigned char)(state.bufptr[a])) ||
                     state.bufptr[a] == '_' ||
@@ -1936,6 +1958,11 @@ static bool joy_arch_parse_entry(const char *buffer, const char *filename, int l
             /* map axis to potentiometer */
             if (!parse_int(state.bufptr, &endptr, &state.args.pot)) {
                 parser_log_error(&state, "missing potentiometer number.");
+                return false;
+            }
+            if (state.args.pot < 0 || state.args.pot > 2) {
+                parser_log_error(&state, "invalid potentiometer number %d.",
+                                 state.args.pot);
                 return false;
             }
             break;
@@ -2859,7 +2886,7 @@ static int joystick_snapshot_read_module(snapshot_t *s, int port)
         return -1;
     }
 
-    if (SMR_W(m, &joystick_value[port + 1]) < 0) {
+    if (SMR_W(m, &joystick_value[port]) < 0) {
         snapshot_module_close(m);
         return -1;
     }
@@ -4270,33 +4297,70 @@ void joystick_device_close(joystick_device_t *joydev)
 }
 
 #ifdef RASPI_COMPILE
+
+uint8_t joystick_get_potx(int port)
+{
+    if (!joystick_pot_port_is_valid(port)) {
+        return 0xff;
+    }
+    return joystick_value[port] & JOYPAD_FIRE2
+        ? 0x00 : joystick_potx_value[port];
+}
+
+uint8_t joystick_get_poty(int port)
+{
+    if (!joystick_pot_port_is_valid(port)) {
+        return 0xff;
+    }
+    return joystick_value[port] & JOYPAD_FIRE3
+        ? 0x00 : joystick_poty_value[port];
+}
+
 void joystick_set_potx(int port, uint8_t value)
 {
+    if (!joystick_pot_port_is_valid(port)) {
+        return;
+    }
     joystick_potx_value[port] = value;
 }
 
 void joystick_set_poty(int port, uint8_t value)
 {
+    if (!joystick_pot_port_is_valid(port)) {
+        return;
+    }
     joystick_poty_value[port] = value;
 }
 
 void joystick_set_potx_and(int port, uint8_t value)
 {
+    if (!joystick_pot_port_is_valid(port)) {
+        return;
+    }
     joystick_potx_value[port] &= value;
 }
 
 void joystick_set_poty_and(int port, uint8_t value)
 {
+    if (!joystick_pot_port_is_valid(port)) {
+        return;
+    }
     joystick_poty_value[port] &= value;
 }
 
 void joystick_set_potx_or(int port, uint8_t value)
 {
+    if (!joystick_pot_port_is_valid(port)) {
+        return;
+    }
     joystick_potx_value[port] |= value;
 }
 
 void joystick_set_poty_or(int port, uint8_t value)
 {
+    if (!joystick_pot_port_is_valid(port)) {
+        return;
+    }
     joystick_poty_value[port] |= value;
 }
 

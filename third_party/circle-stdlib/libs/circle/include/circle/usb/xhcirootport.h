@@ -45,6 +45,9 @@ public:
 	boolean ReScanDevices (void);
 	boolean RemoveDevice (void);
 
+	boolean PowerOn (void);
+	void PowerOff (void);
+
 	void HandlePortStatusChange (void);
 
 	void StatusChanged (void);
@@ -67,6 +70,7 @@ private:
 	CXHCIMMIOSpace	*m_pMMIO;
 
 	CXHCIUSBDevice	*m_pUSBDevice;
+	boolean		 m_bPowerCycled;
 
 	CSpinLock	 m_SpinLock;
 };

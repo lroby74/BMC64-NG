@@ -841,6 +841,7 @@
   #define BMSR_LSTATUS          0x0004
   #define BMSR_ANEGCOMPLETE     0x0020
 #define MII_PHYSID1		0x02	/* PHYS ID 1                   */
+#define MII_PHYSID2		0x03
 #define MII_ADVERTISE           0x04
  #define ADVERTISE_CSMA         0x0001
  #define ADVERTISE_10HALF       0x0020
@@ -905,6 +906,27 @@
 #define BCM54810_SHD_CLK_CTL        0x03
 #define BCM54810_SHD_CLK_CTL_GTXCLK_EN (1 << 9)
 
+#define PHY_ID_BCM54213PE	0x600d84a0
+#define PHY_ID_BCM54213PE_MASK	0xfffffff0
+#define PHY_ID_MXL86110		0xc1335580
+
+
+#define MII_MXL86110_EXT_ADDR	0x1e
+#define MII_MXL86110_EXT_DATA	0x1f
+#define MXL86110_EXT_CHIP_CFG	0xa001
+ #define MXL86110_CHIP_CFG_RXDLY_ENABLE		(1 << 8)
+#define MXL86110_EXT_RGMII_CFG1	0xa003
+ #define MXL86110_RGMII_CFG1_RX_DELAY_1950PS	(0xd << 10)
+ #define MXL86110_RGMII_CFG1_TX_1G_DELAY_1950PS	(0xd << 0)
+ #define MXL86110_RGMII_CFG1_TX_FE_DELAY_1950PS	(0xd << 4)
+ #define MXL86110_RGMII_CFG1_MASK		(  (0xf << 10) | (0xf << 4) | (0xf << 0))
+#define MXL86110_EXT_RGMII_MDIO_CFG	0xa005
+ #define MXL86110_RGMII_MDIO_CFG_EPA0		(1 << 6)
+#define MXL86110_EXT_LED1_CFG	0xa00d
+#define MXL86110_EXT_LED2_CFG	0xa00e
+ #define MXL86110_LED_CFG_LINK_ACT		0x0670
+ #define MXL86110_LED_CFG_LINK			0x0070
+
 #define _1000BASET		1000
 #define _100BASET		100
 #define _10BASET		10
@@ -931,6 +953,7 @@ LOGMODULE ("macb");
 
 CMACBDevice::CMACBDevice (void)
 :	m_phy_addr (PHY_ID),
+	m_phy_type (PHYTypeUnknown),
 	m_link (0)
 {
 	m_PHYResetPin.AssignPin (GPIO_PHY_RESET);
@@ -1493,24 +1516,46 @@ int CMACBDevice::phy_init (void)
 		return ret;
 
 	/* Check if the PHY is up to snuff... */
-	u16 phy_id = mdio_read(m_phy_addr, MII_PHYSID1);
-	if (phy_id == 0xffff)
+	u16 phy_id1 = mdio_read(m_phy_addr, MII_PHYSID1);
+	if (phy_id1 == 0xffff)
 	{
 		LOGERR("No PHY present");
 		return -1;
 	}
 
-	phy_config_rgmii_id ();
 
-	/* Activity leds */
-	phy_write_shadow(BCM54XX_SHD_LEDS1,
-			   BCM54XX_SHD_LEDS1_LED1(BCM_LED_SRC_MULTICOLOR1)
-			 | BCM54XX_SHD_LEDS1_LED3(BCM_LED_SRC_MULTICOLOR1));
+	u32 phy_id = ((u32) phy_id1 << 16) | mdio_read(m_phy_addr, MII_PHYSID2);
 
-	phy_write_exp(BCM_EXP_MULTICOLOR,
-		        BCM_LED_MULTICOLOR_IN_PHASE
-		      | BCM54XX_SHD_LEDS1_LED1(BCM_LED_MULTICOLOR_LINK_ACT)
-		      | BCM54XX_SHD_LEDS1_LED3(BCM_LED_MULTICOLOR_OFF));
+	LOGNOTE("PHY ID 0x%08X", phy_id);
+	if (phy_id == PHY_ID_MXL86110)
+	{
+		m_phy_type = PHYTypeMXL86110;
+
+		mxl86110_init();
+	}
+	else
+	{
+
+
+
+		if ((phy_id & PHY_ID_BCM54213PE_MASK) != PHY_ID_BCM54213PE)
+		{
+			LOGWARN("Unknown PHY (ID 0x%08X): using the BCM54213PE setup", phy_id);
+		}
+		m_phy_type = PHYTypeBCM54213PE;
+
+		phy_config_rgmii_id ();
+
+		/* Activity leds */
+		phy_write_shadow(BCM54XX_SHD_LEDS1,
+				   BCM54XX_SHD_LEDS1_LED1(BCM_LED_SRC_MULTICOLOR1)
+				 | BCM54XX_SHD_LEDS1_LED3(BCM_LED_SRC_MULTICOLOR1));
+
+		phy_write_exp(BCM_EXP_MULTICOLOR,
+			        BCM_LED_MULTICOLOR_IN_PHASE
+			      | BCM54XX_SHD_LEDS1_LED1(BCM_LED_MULTICOLOR_LINK_ACT)
+			      | BCM54XX_SHD_LEDS1_LED3(BCM_LED_MULTICOLOR_OFF));
+	}
 
 	/* Start auto negotiation */
 	mdio_write(m_phy_addr, MII_ADVERTISE, ADVERTISE_CSMA | ADVERTISE_ALL);
@@ -1527,10 +1572,13 @@ void CMACBDevice::phy_setup (void)
 	u16 stat1000 = mdio_read(m_phy_addr, MII_STAT1000);
 	if (stat1000 & (LPA_1000FULL | LPA_1000HALF | LPA_1000XFULL | LPA_1000XHALF))
 	{
-		phy_write_exp(BCM_EXP_MULTICOLOR,
-			        BCM_LED_MULTICOLOR_IN_PHASE
-			      | BCM54XX_SHD_LEDS1_LED1(BCM_LED_MULTICOLOR_LINK_ACT)
-			      | BCM54XX_SHD_LEDS1_LED3(BCM_LED_MULTICOLOR_LINK));
+		if (m_phy_type == PHYTypeBCM54213PE)
+		{
+			phy_write_exp(BCM_EXP_MULTICOLOR,
+				        BCM_LED_MULTICOLOR_IN_PHASE
+				      | BCM54XX_SHD_LEDS1_LED1(BCM_LED_MULTICOLOR_LINK_ACT)
+				      | BCM54XX_SHD_LEDS1_LED3(BCM_LED_MULTICOLOR_LINK));
+		}
 
 		m_old_speed = m_speed = _1000BASET;
 		m_old_duplex = m_duplex = (stat1000 & (LPA_1000FULL | LPA_1000XFULL)) ? 1 : 0;
@@ -1539,10 +1587,13 @@ void CMACBDevice::phy_setup (void)
 	}
 	else
 	{
-		phy_write_exp(BCM_EXP_MULTICOLOR,
-				BCM_LED_MULTICOLOR_IN_PHASE
-			     | BCM54XX_SHD_LEDS1_LED1(BCM_LED_MULTICOLOR_LINK_ACT)
-			     | BCM54XX_SHD_LEDS1_LED3(BCM_LED_MULTICOLOR_OFF));
+		if (m_phy_type == PHYTypeBCM54213PE)
+		{
+			phy_write_exp(BCM_EXP_MULTICOLOR,
+					BCM_LED_MULTICOLOR_IN_PHASE
+				     | BCM54XX_SHD_LEDS1_LED1(BCM_LED_MULTICOLOR_LINK_ACT)
+				     | BCM54XX_SHD_LEDS1_LED3(BCM_LED_MULTICOLOR_OFF));
+		}
 
 		unsigned media = mii_nway_result(  mdio_read(m_phy_addr, MII_LPA)
 						 & mdio_read(m_phy_addr, MII_ADVERTISE));
@@ -1706,6 +1757,45 @@ void CMACBDevice::phy_write_exp (u16 reg, u16 val)
 {
 	mdio_write(m_phy_addr, MII_BCM54XX_EXP_SEL, reg);
 	mdio_write(m_phy_addr, MII_BCM54XX_EXP_DATA, val);
+}
+
+void CMACBDevice::mxl86110_init (void)
+{
+
+	mxl86110_modify_ext (MXL86110_EXT_RGMII_CFG1, MXL86110_RGMII_CFG1_MASK,
+			       MXL86110_RGMII_CFG1_RX_DELAY_1950PS
+			     | MXL86110_RGMII_CFG1_TX_1G_DELAY_1950PS
+			     | MXL86110_RGMII_CFG1_TX_FE_DELAY_1950PS);
+
+
+	mxl86110_modify_ext (MXL86110_EXT_CHIP_CFG, MXL86110_CHIP_CFG_RXDLY_ENABLE, 0);
+
+
+	mxl86110_modify_ext (MXL86110_EXT_RGMII_MDIO_CFG, MXL86110_RGMII_MDIO_CFG_EPA0, 0);
+
+
+	mxl86110_write_ext (MXL86110_EXT_LED1_CFG, MXL86110_LED_CFG_LINK_ACT);
+	mxl86110_write_ext (MXL86110_EXT_LED2_CFG, MXL86110_LED_CFG_LINK);
+}
+
+void CMACBDevice::mxl86110_write_ext (u16 reg, u16 val)
+{
+	mdio_write(m_phy_addr, MII_MXL86110_EXT_ADDR, reg);
+	mdio_write(m_phy_addr, MII_MXL86110_EXT_DATA, val);
+}
+
+u16 CMACBDevice::mxl86110_read_ext (u16 reg)
+{
+	mdio_write(m_phy_addr, MII_MXL86110_EXT_ADDR, reg);
+
+	return mdio_read(m_phy_addr, MII_MXL86110_EXT_DATA);
+}
+
+void CMACBDevice::mxl86110_modify_ext (u16 reg, u16 mask, u16 set)
+{
+	u16 val = mxl86110_read_ext (reg);
+
+	mxl86110_write_ext (reg, (val & ~mask) | set);
 }
 
 void CMACBDevice::mdio_write(u8 phy_adr, u8 reg, u16 value)

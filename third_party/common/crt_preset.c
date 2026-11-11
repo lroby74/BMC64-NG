@@ -16,6 +16,9 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+
+#include <fatfs/ff.h>
 
 #define CRT_PRESET_LINE_LEN 512
 
@@ -245,4 +248,81 @@ const char *crt_preset_status_name(enum crt_preset_status status) {
     default:
       return "unknown";
   }
+}
+
+
+
+int crt_preset_filename(const char *name, char *filename, size_t size) {
+  if (!name || !filename || !size) return 0;
+  size_t n = strlen(name);
+  if (!n || name[0] == '.' || name[0] == ' ' ||
+      name[n - 1] == '.' || name[n - 1] == ' ') return 0;
+  for (size_t i = 0; i < n; ++i) {
+    if ((unsigned char)name[i] < 32 ||
+        strchr("/\\:*?\"<>|=", name[i])) return 0;
+  }
+  int extension = n > 4 && !strcasecmp(name + n - 4, ".crt");
+  if (n + (extension ? 0 : 4) >= size) return 0;
+  snprintf(filename, size, "%s%s", name, extension ? "" : ".crt");
+  return 1;
+}
+
+enum crt_preset_status crt_preset_write(FILE *fp,
+    const struct crt_preset_field *fields, size_t count, const int *values) {
+  if (!fp || !fields || !values || !count || count > CRT_PRESET_MAX_FIELDS)
+    return CRT_PRESET_INVALID_ARGUMENT;
+  for (size_t i = 0; i < count; ++i)
+    if (!fields[i].key || values[i] < fields[i].min || values[i] > fields[i].max)
+      return CRT_PRESET_INVALID_VALUE;
+  if (fprintf(fp, "version=%d\n", CRT_PRESET_FORMAT_VERSION) < 0)
+    return CRT_PRESET_IO_ERROR;
+  for (size_t i = 0; i < count; ++i)
+    if (fprintf(fp, "%s=%d\n", fields[i].key, values[i]) < 0)
+      return CRT_PRESET_IO_ERROR;
+  return ferror(fp) ? CRT_PRESET_IO_ERROR : CRT_PRESET_OK;
+}
+
+
+
+
+
+extern int fsync(int fd);
+static int crt_preset_exists(const char *path) {
+  FILE *fp = fopen(path, "r");
+  if (fp == NULL) return 0;
+  fclose(fp);
+  return 1;
+}
+
+int crt_preset_save_file(const char *path, int overwrite,
+    const struct crt_preset_field *fields, size_t count, const int *values) {
+  char temporary[272];
+  FILE *fp;
+  int ok;
+  if (!path || strlen(path) > 255) {
+    errno = EINVAL;
+    return -1;
+  }
+  if (crt_preset_exists(path) && !overwrite) return 1;
+  snprintf(temporary, sizeof temporary, "%s.tmp", path);
+  fp = fopen(temporary, "w");
+  if (fp == NULL) return -1;
+  ok = crt_preset_write(fp, fields, count, values) == CRT_PRESET_OK &&
+       fflush(fp) == 0 && fsync(fileno(fp)) == 0;
+  if (fclose(fp) != 0) ok = 0;
+  if (!ok) {
+    remove(temporary);
+    errno = EIO;
+    return -1;
+  }
+  if (crt_preset_exists(path)) remove(path);
+  if (rename(temporary, path) != 0) return -1;
+  return 0;
+}
+
+
+
+int crt_preset_folder(void) {
+  FRESULT result = f_mkdir("SD:/crt");
+  return result == FR_OK || result == FR_EXIST;
 }

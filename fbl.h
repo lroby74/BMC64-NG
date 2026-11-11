@@ -44,6 +44,9 @@ namespace pi5kms = pi4nativekms;
 #endif
 #endif
 
+
+namespace bmx { namespace screenshot { class Snapshot; } }
+
 // A wrapper that manages a single dispmanx layer and
 // indexed frame buffer.
 class FrameBufferLayer {
@@ -112,6 +115,11 @@ public:
   // frame buffer width / hstretch.
   void SetStretch(double hstretch, double vstretch, int hintstr, int vintstr, int use_hintstr, int use_vintstr);
 
+
+
+
+  void SetScalePercent(int percent) { scale_percent_ = percent; }
+
   void SetCenterOffset(int cx, int cy);
 
   // alignment can be -1 = ALIGN TOP, 0 = CENTER, 1 = ALIGN BOTTOM
@@ -162,6 +170,14 @@ public:
                             unsigned pitch);
 
 
+  static bool CaptureSnapshotScreen(bmx::screenshot::Snapshot &snapshot);
+  bool CaptureSnapshotLayer(bmx::screenshot::Snapshot &snapshot, int stage,
+                            int x, int y, int width, int height, bool screen = false);
+  bool CaptureLocalDimensions(int stage, int raw_width, int raw_height,
+                              int *width, int *height);
+  static size_t CaptureSnapshotBytes();
+
+
 
 
   void BlitIntoSecondScreen(void);
@@ -180,6 +196,10 @@ public:
   static void BmcLavoroFirmware(void);
 
 private:
+
+  bool CaptureProcessedSource(const uint8_t **pixels, unsigned *width,
+                              unsigned *height, unsigned *pitch);
+  static bool CaptureInterpolation();
   static void PresentLayerList(bool sync, FrameBufferLayer **layers, unsigned count);
   void FreeInternal(bool keepPixels);
 #if BMX_PI4_LEGACY_DISPLAY
@@ -315,6 +335,7 @@ private:
   int vintstr_;
   int use_hintstr_;
   int use_vintstr_;
+  int scale_percent_ = 100;
 
   // -1 = top, 0 = center, 1 = bottom
   int valign_;

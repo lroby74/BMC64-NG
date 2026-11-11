@@ -118,6 +118,11 @@ struct menu_item {
   // For all
   struct menu_item *next;
 
+
+
+  int scroll_text_first_row;
+  int scroll_text_end_row;
+
   // Always changing, not for external use.
   int render_index;
 
@@ -132,6 +137,12 @@ struct menu_item {
   char displayed_value[MAX_DSP_VAL_LEN];
   // Set to 1 for prefer displayed value over int value
   int prefer_str;
+
+
+  int name_petscii;
+
+
+  int menu_rows;
 
   // Optional menu item specific value changed function
   void (*on_value_changed)(struct menu_item *);
@@ -148,6 +159,12 @@ struct menu_item {
   int menu_top;
 
   void (*cursor_listener_func)(struct menu_item* parent, int);
+
+
+  int (*left_right_listener_func)(struct menu_item* parent,
+                                  struct menu_item* current, int right);
+  int (*key_listener_func)(struct menu_item* parent,
+                           struct menu_item* current, long key);
 
   // For menu roots only, called on menu being popped off the stack (old_root)
   // By the time this is called, the popped root has already been cleared of
@@ -278,6 +295,14 @@ extern void ui_menu_fit_height(int max_rows);
 void ui_error(const char *format, ...);
 void ui_info(const char *format, ...);
 void ui_confirm_wrapped(char *title, const char *txt, int ok_value, int ok_id);
+
+void ui_confirm_wrapped_cancel_default(char *title, const char *txt,
+                                       int ok_value, int ok_id);
+void ui_error_wrapped(const char *txt);
+int ui_keyboard_shift_active(void);
+void ui_keyboard_clear_shift(void);
+void ui_menu_set_button_value_fitted(struct menu_item *item,
+                                     const char *value, int indent);
 void ui_confirm_wrapped_labels(char *title, const char *txt, int ok_value,
                                int ok_id, const char *ok_label,
                                const char *cancel_label);
@@ -296,6 +321,25 @@ void ui_set_on_value_changed_callback(
 
 extern int (*ui_tasto_nella_lista)(struct menu_item *cur, char ch);
 
+
+extern void (*ui_campo_scritto)(struct menu_item *cur);
+extern void (*ui_dopo_i_tasti)(void);
+
+struct menu_item *ui_menu_in_cima(void);
+
+int ui_get_menu_mouse_enabled(void);
+void ui_set_menu_mouse_enabled(int acceso);
+
+
+int ui_get_browser_tail_delay(void);
+int ui_set_browser_tail_delay(int ms);
+
+
+int ui_get_menu_scale_percent(void);
+int ui_set_menu_scale_percent(int percent);
+int ui_get_menu_row_gap(void);
+int ui_set_menu_row_gap(int gap);
+
 void ui_check_key();
 void ui_page_down(void);
 void ui_page_up(void);
@@ -311,6 +355,10 @@ void ui_dismiss_osd_if_active(void);
 void ui_set_render_current_item_only(int v);
 
 struct menu_item* ui_find_item_by_id(struct menu_item *node, int id);
+
+
+void ui_focus_item(struct menu_item *item);
+struct menu_item *ui_menu_root(void);
 
 
 

@@ -24,6 +24,42 @@
 
 u32 CHeapAllocator::s_nBucketSize[] = { HEAP_BLOCK_BUCKET_SIZES };
 
+
+
+
+static THeapBlockHeader *TakeLargeBlock (THeapBlockBucket *pEmptyBucket, size_t nSize)
+{
+	THeapBlockHeader *pBest = 0;
+	THeapBlockHeader *pBestPrev = 0;
+	THeapBlockHeader *pPrev = 0;
+	for (THeapBlockHeader *pBlock = pEmptyBucket->pFreeList; pBlock != 0; pBlock = pBlock->pNext)
+	{
+		if (   pBlock->nSize >= nSize
+		    && pBlock->nSize / 2 <= nSize
+		    && (pBest == 0 || pBlock->nSize < pBest->nSize))
+		{
+			pBest = pBlock;
+			pBestPrev = pPrev;
+		}
+
+		pPrev = pBlock;
+	}
+
+	if (pBest != 0)
+	{
+		if (pBestPrev != 0)
+		{
+			pBestPrev->pNext = pBest->pNext;
+		}
+		else
+		{
+			pEmptyBucket->pFreeList = pBest->pNext;
+		}
+	}
+
+	return pBest;
+}
+
 CHeapAllocator::CHeapAllocator (const char *pHeapName)
 :	m_pHeapName (pHeapName),
 	m_pNext (0),
@@ -102,6 +138,11 @@ void *CHeapAllocator::DoAllocate (size_t nSize)
 	{
 		assert (pBlockHeader->nMagic == HEAP_BLOCK_FREE_MAGIC);
 		pBucket->pFreeList = pBlockHeader->pNext;
+	}
+	else if (   pBucket->nSize == 0
+		 && (pBlockHeader = TakeLargeBlock (pBucket, nSize)) != 0)
+	{
+		assert (pBlockHeader->nMagic == HEAP_BLOCK_FREE_MAGIC);
 	}
 	else
 	{
@@ -218,7 +259,8 @@ void CHeapAllocator::DoFree (void *pBlock)
 	assert (pBlockHeader->nMagic == HEAP_BLOCK_ALLOC_MAGIC);
 	pBlockHeader->nMagic = HEAP_BLOCK_FREE_MAGIC;
 
-	for (THeapBlockBucket *pBucket = m_Bucket; pBucket->nSize > 0; pBucket++)
+	THeapBlockBucket *pBucket;
+	for (pBucket = m_Bucket; pBucket->nSize > 0; pBucket++)
 	{
 		if (pBlockHeader->nSize == pBucket->nSize)
 		{
@@ -237,12 +279,13 @@ void CHeapAllocator::DoFree (void *pBlock)
 		}
 	}
 
-#ifdef HEAP_DEBUG
-	CLogger::Get ()->Write (m_pHeapName, LogDebug, "Trying to free large block (size %u)",
-				pBlockHeader->nSize);
 
-	pBlockHeader->nMagic = 0;
-#endif
+	m_SpinLock.Acquire ();
+
+	pBlockHeader->pNext = pBucket->pFreeList;
+	pBucket->pFreeList = pBlockHeader;
+
+	m_SpinLock.Release ();
 }
 
 #ifdef HEAP_DEBUG

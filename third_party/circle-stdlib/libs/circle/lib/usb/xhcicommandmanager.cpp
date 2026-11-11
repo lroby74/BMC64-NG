@@ -30,6 +30,8 @@ CXHCICommandManager::CXHCICommandManager (CXHCIDevice *pXHCIDevice)
 	m_pMMIO (pXHCIDevice->GetMMIOSpace ()),
 	m_CmdRing (XHCIRingTypeCommand, XHCI_CONFIG_CMD_RING_SIZE, pXHCIDevice),
 	m_bCommandCompleted (TRUE),
+	m_bAborting (FALSE),
+	m_bRingStopped (FALSE),
 	m_pCurrentCommandTRB (0)
 {
 	if (!m_CmdRing.IsValid ())
@@ -238,10 +240,13 @@ int CXHCICommandManager::DoCommand (u32 nControl, u32 nParameter1, u32 nParamete
 						"Command timed out (control 0x%X)", nControl);
 #endif
 
-			m_bCommandCompleted = TRUE;
-			m_pCurrentCommandTRB = 0;
+			int nResult = RecoverTimedOutCommand (pCmdTRB);
+			if (pSlotID != 0 && XHCI_CMD_SUCCESS (nResult))
+			{
+				*pSlotID = m_uchSlotID;
+			}
 
-			return XHCI_PRIV_COMPLETION_CODE_TIMEOUT;
+			return nResult;
 		}
 	}
 
@@ -255,10 +260,85 @@ int CXHCICommandManager::DoCommand (u32 nControl, u32 nParameter1, u32 nParamete
 	return m_uchCompletionCode;
 }
 
+
+
+
+
+int CXHCICommandManager::RecoverTimedOutCommand (TXHCITRB *pCommandTRB)
+{
+	CLogger::Get ()->Write (From, LogWarning, "Command timed out (control 0x%X, USBSTS 0x%X)",
+				pCommandTRB->Control, m_pMMIO->op_read32 (XHCI_REG_OP_USBSTS));
+
+	EnterCritical ();
+	if (m_bCommandCompleted)
+	{
+		LeaveCritical ();
+
+		return m_uchCompletionCode;
+	}
+	m_bAborting = TRUE;
+	m_bRingStopped = FALSE;
+
+	m_pMMIO->op_write64 (XHCI_REG_OP_CRCR,
+			     XHCI_TO_DMA (m_CmdRing.GetFirstTRB ()) | XHCI_REG_OP_CRCR_CA);
+	LeaveCritical ();
+
+	unsigned nStartTicks = CTimer::Get ()->GetTicks ();
+	while (   !m_bRingStopped
+	       || (m_pMMIO->op_read32 (XHCI_REG_OP_CRCR) & XHCI_REG_OP_CRCR_CRR))
+	{
+		if (CTimer::Get ()->GetTicks () - nStartTicks >= 5*HZ)
+		{
+			CLogger::Get ()->Write (From, LogError, "Command ring does not stop");
+
+			m_bAborting = FALSE;
+			m_bCommandCompleted = TRUE;
+			m_pCurrentCommandTRB = 0;
+
+			return XHCI_PRIV_COMPLETION_CODE_TIMEOUT;
+		}
+	}
+
+	DataMemBarrier ();
+
+	int nResult =    m_bCommandCompleted
+		      && m_uchCompletionCode != XHCI_TRB_COMPLETION_CODE_COMMAND_ABORTED
+		    ? m_uchCompletionCode : XHCI_PRIV_COMPLETION_CODE_TIMEOUT;
+
+
+
+
+	pCommandTRB->Parameter1 = 0;
+	pCommandTRB->Parameter2 = 0;
+	pCommandTRB->Status = 0;
+	pCommandTRB->Control =   (pCommandTRB->Control & XHCI_TRB_CONTROL_C)
+			       | XHCI_TRB_TYPE_CMD_NO_OP << XHCI_TRB_CONTROL_TRB_TYPE__SHIFT;
+	DataSyncBarrier ();
+
+	m_pCurrentCommandTRB = 0;
+	m_bCommandCompleted = TRUE;
+	m_bAborting = FALSE;
+
+	CLogger::Get ()->Write (From, LogWarning, "Command ring recovered (result %d)", nResult);
+
+	return nResult;
+}
+
 void CXHCICommandManager::CommandCompleted (TXHCITRB *pCommandTRB, u8 uchCompletionCode,
 					    u8 uchSlotID)
 {
 	assert (pCommandTRB != 0);
+
+
+	if (uchCompletionCode == XHCI_TRB_COMPLETION_CODE_COMMAND_RING_STOPPED)
+	{
+		if (m_bAborting)
+		{
+			m_bRingStopped = TRUE;
+		}
+
+		return;
+	}
 
 #ifdef XHCI_DEBUG
 	u8 uchCommandType =    (pCommandTRB->Control & XHCI_TRB_CONTROL_TRB_TYPE__MASK)

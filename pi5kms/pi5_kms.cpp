@@ -64,10 +64,16 @@ constexpr u32 kHvsVersion = 0x000;
 constexpr u32 kHvsVersionD0 = 0x54;
 constexpr u32 kHvsControl = 0x020;
 constexpr u32 kHvsControlEnable = 1U << 31;
+
+
+
+constexpr u32 kHvsControlConfigured =
+    kHvsControlEnable | (8U << 18) | (15U << 4);
 constexpr u32 kHvs6cDisp0Ctrl0 = 0x030;
 constexpr u32 kHvs6cDisp0Ctrl1 = 0x034;
 constexpr u32 kHvs6cDisp0Bgnd0 = 0x038;
 constexpr u32 kHvs6cDisp0Lptrs = 0x03C;
+constexpr u32 kHvs6cDisp0Cob = 0x040;
 constexpr u32 kHvs6cDisp0Status = 0x044;
 constexpr u32 kHvs6cDisp0Dl = 0x048;
 constexpr u32 kHvs6cDisp0Run = 0x04C;
@@ -109,6 +115,8 @@ constexpr u32 kHvsPixelOrderArgb = 2;
 constexpr u32 kHvsAlphaMaskNone = 0;
 constexpr u32 kHvsAlphaMaskFixed = 3;
 constexpr u32 kHvsOpaqueAlpha = 0xFFFU;
+
+constexpr u32 kHvsCtl2AlphaModeFixed = 1U << 30;
 constexpr u32 kHvsSclHPpfVPpf = 0;
 constexpr u32 kHvsSclHTpzVPpf = 1;
 constexpr u32 kHvsSclHPpfVTpz = 2;
@@ -633,12 +641,30 @@ u32 MakeHdmiVertb(const Mode &mode) {
   return mode.v_back_porch;
 }
 
+
+
+
+
+
+
+
+
+
+
+bool IsBcm2712D0();
+
+unsigned PvDivisoreOrizzontale() {
+  return IsBcm2712D0() ? 2U : 1U;
+}
+
 u32 MakePvHorza(const Mode &mode) {
-  return ((u32)(mode.h_back_porch / 2) << 16) | (mode.h_sync / 2);
+  const unsigned d = PvDivisoreOrizzontale();
+  return ((u32)(mode.h_back_porch / d) << 16) | (mode.h_sync / d);
 }
 
 u32 MakePvHorzb(const Mode &mode) {
-  return ((u32)(mode.h_front_porch / 2) << 16) | (mode.width / 2);
+  const unsigned d = PvDivisoreOrizzontale();
+  return ((u32)(mode.h_front_porch / d) << 16) | (mode.width / d);
 }
 
 u32 MakePvVerta(const Mode &mode) {
@@ -748,7 +774,7 @@ void ProgramHvsDisplay0(const Mode &mode) {
   const u32 ctrl1 = HvsDisp0Ctrl1Offset();
   const u32 ctrl1_before = ReadReg(kHvsBase, ctrl1);
 
-  u32 hvs_control = ReadReg(kHvsBase, kHvsControl) | kHvsControlEnable;
+  u32 hvs_control = kHvsControlConfigured;
   if (g_port->hvs_channel == 1U) {
 
 
@@ -847,7 +873,11 @@ u32 MakeHvsPlaneCtl0(unsigned next_words, bool unity,
     case kPixelFormatRgb565:
       hvs_format = kHvsPixelFormatRgb565;
       pixel_order = kHvsPixelOrderXrgb;
-      alpha_mask = kHvsAlphaMaskFixed;
+
+
+
+
+      alpha_mask = IsBcm2712D0() ? kHvsAlphaMaskFixed : kHvsAlphaMaskNone;
       break;
     case kPixelFormatArgb8888:
       hvs_format = kHvsPixelFormatRgba8888;
@@ -966,9 +996,11 @@ void WriteDlistWord(unsigned index, u32 value) {
 
 void ProgramHvsCob0() {
   const u32 version = ReadReg(kHvsBase, kHvsVersion) & 0xFF;
-  if (version != kHvsVersionD0) {
-    return;
-  }
+
+
+
+  const u32 cob0 =
+      version == kHvsVersionD0 ? kHvs6dDisp0Cob : kHvs6cDisp0Cob;
 
   constexpr u32 line_width = 3840;
   constexpr u32 num_lines = 4;
@@ -976,7 +1008,7 @@ void ProgramHvsCob0() {
 
 
     const u32 top1 = line_width + line_width * num_lines;
-    WriteReg(kHvsBase, kHvs6dDisp0Cob + HvsCanaleScarto(version),
+    WriteReg(kHvsBase, cob0 + HvsCanaleScarto(version),
              (top1 << 16) | (line_width + 16));
     return;
   }
@@ -984,7 +1016,7 @@ void ProgramHvsCob0() {
   u32 base = top + 16;
   top += line_width * num_lines;
 
-  WriteReg(kHvsBase, kHvs6dDisp0Cob, (top << 16) | base);
+  WriteReg(kHvsBase, cob0, (top << 16) | base);
 }
 
 bool AppendPlaneDlist(const Plane &plane,
@@ -1016,7 +1048,15 @@ bool AppendPlaneDlist(const Plane &plane,
   const unsigned start = *count;
   dlist[(*count)++] = 0;
   dlist[(*count)++] = MakeHvsPos0(plane.destination);
-  dlist[(*count)++] = kHvsOpaqueAlpha << 4;
+
+
+
+
+  dlist[(*count)++] =
+      (kHvsOpaqueAlpha << 4) |
+      (plane.format == kPixelFormatRgb565 && !IsBcm2712D0()
+           ? kHvsCtl2AlphaModeFixed
+           : 0U);
   if (!unity) {
     dlist[(*count)++] = MakeHvsPos1(plane.destination);
   }
@@ -1252,6 +1292,64 @@ void PatchScanoutAddresses(ScanoutDlistTemplate *dlist_template,
   }
 }
 
+
+
+
+
+
+
+bool g_sonda_c_fatta = false;
+bool g_controllo_c_fatto = false;
+
+void SondaChipC() {
+  if (g_sonda_c_fatta || IsBcm2712D0()) {
+    return;
+  }
+  g_sonda_c_fatta = true;
+  printf("boot: pi5kms chip C hvs version=0x%08x cxm/lbm/ubm/coba/cob="
+         "%08x/%08x/%08x/%08x/%08x control=0x%08x\r\n",
+         ReadReg(kHvsBase, 0x000), ReadReg(kHvsBase, 0x004),
+         ReadReg(kHvsBase, 0x008), ReadReg(kHvsBase, 0x00C),
+         ReadReg(kHvsBase, 0x010), ReadReg(kHvsBase, 0x014),
+         ReadReg(kHvsBase, kHvsControl));
+  printf("boot: pi5kms chip C hvs disp0 %08x %08x %08x %08x %08x %08x %08x "
+         "disp1 %08x %08x %08x %08x %08x %08x %08x\r\n",
+         ReadReg(kHvsBase, 0x030), ReadReg(kHvsBase, 0x034),
+         ReadReg(kHvsBase, 0x038), ReadReg(kHvsBase, 0x03C),
+         ReadReg(kHvsBase, 0x040), ReadReg(kHvsBase, 0x044),
+         ReadReg(kHvsBase, 0x048), ReadReg(kHvsBase, 0x050),
+         ReadReg(kHvsBase, 0x054), ReadReg(kHvsBase, 0x058),
+         ReadReg(kHvsBase, 0x05C), ReadReg(kHvsBase, 0x060),
+         ReadReg(kHvsBase, 0x064), ReadReg(kHvsBase, 0x068));
+  const uintptr pv = g_port->pv;
+  printf("boot: pi5kms chip C firmware pv ctl=0x%08x vctl=0x%08x "
+         "vsyncd=0x%08x horz=0x%08x/0x%08x vert=0x%08x/0x%08x "
+         "stat=0x%08x mux=0x%08x hw=0x%08x pipe=0x%08x\r\n",
+         ReadReg(pv, kPvControl), ReadReg(pv, kPvVControl),
+         ReadReg(pv, 0x008), ReadReg(pv, kPvHorza), ReadReg(pv, kPvHorzb),
+         ReadReg(pv, kPvVerta), ReadReg(pv, kPvVertb),
+         ReadReg(pv, 0x02C), ReadReg(pv, kPvMuxCfg), ReadReg(pv, 0x068),
+         ReadReg(pv, kPvPipeInitCtrl));
+}
+
+void ControllaChipC() {
+  if (g_controllo_c_fatto || IsBcm2712D0()) {
+    return;
+  }
+  g_controllo_c_fatto = true;
+  const bool quadro = WaitForNextVBlank(100000);
+  const uintptr pv = g_port->pv;
+  const u32 version = ReadReg(kHvsBase, kHvsVersion) & 0xFFU;
+  printf("boot: pi5kms chip C dopo la prima lista: vblank=%s pv ctl=0x%08x "
+         "vctl=0x%08x horz=0x%08x/0x%08x stat=0x%08x hvs status=0x%08x "
+         "cob=0x%08x\r\n",
+         quadro ? "si'" : "NO", ReadReg(pv, kPvControl),
+         ReadReg(pv, kPvVControl), ReadReg(pv, kPvHorza),
+         ReadReg(pv, kPvHorzb), ReadReg(pv, 0x02C),
+         ReadReg(kHvsBase, HvsDisp0StatusOffset()),
+         ReadReg(kHvsBase, kHvs6cDisp0Cob + HvsCanaleScarto(version)));
+}
+
 u32 HvsDlistSlot(unsigned dlist_index) {
   return dlist_index == 0 ? kHvsDlistSlot0 : kHvsDlistSlot1;
 }
@@ -1336,7 +1434,7 @@ bool ProgramScanout(const Plane *planes, unsigned plane_count,
 
   if (program_channel) {
     WriteReg(kHvsBase, kHvsControl,
-             ReadReg(kHvsBase, kHvsControl) | kHvsControlEnable);
+             kHvsControlConfigured);
   }
 
   if (!program_channel && wait_for_vblank && g_hvs_has_active_dlist) {
@@ -1382,6 +1480,9 @@ bool ProgramScanout(const Plane *planes, unsigned plane_count,
 
   g_hvs_submitted_dlist = dlist_index;
   g_hvs_has_active_dlist = true;
+  if (program_channel) {
+    ControllaChipC();
+  }
 #ifdef BMC64_DEBUG_PROFILE
   if (!program_channel) {
     const u32 timing_done_us = CTimer::GetClockTicks();
@@ -1613,6 +1714,7 @@ bool SetMode(const Mode &mode) {
   }
 
   ScegliPorta();
+  SondaChipC();
   printf("boot: pi5kms set %ux%u pclk %u\r\n",
          mode.width, mode.height, mode.pixel_clock);
   const bool live_modeset = g_active_mode_valid;
@@ -1686,8 +1788,13 @@ bool SetMode(const Mode &mode) {
 
   ProgramHvsDisplay0(mode);
 
+
+
+
   WriteReg(g_port->pv, kPvControl,
-           PvConfiguredControl() | kPvControlEnable);
+           (IsBcm2712D0() ? PvConfiguredControl()
+                          : ReadReg(g_port->pv, kPvControl)) |
+               kPvControlEnable);
   WriteReg(g_port->pv, kPvVControl,
            PvConfiguredVControl() | kPvVControlVideoEnable);
 

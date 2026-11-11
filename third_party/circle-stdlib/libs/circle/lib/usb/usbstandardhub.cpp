@@ -50,6 +50,7 @@ CUSBStandardHub::CUSBStandardHub (CUSBFunction *pFunction)
 		m_pDevice[nPort] = 0;
 		m_pStatus[nPort] = 0;
 		m_bPortConfigured[nPort] = FALSE;
+		m_bPortPowerCycled[nPort] = FALSE;
 	}
 }
 
@@ -214,6 +215,23 @@ boolean CUSBStandardHub::RemoveDeviceAt (unsigned nPortIndex)
 	return TRUE;
 }
 
+unsigned CUSBStandardHub::PowerOffAllPorts (void)
+{
+	unsigned nCount = 0;
+
+	for (unsigned nPort = 0; nPort < m_nPorts; nPort++)
+	{
+		if (GetHost ()->ControlMessage (GetEndpoint0 (),
+						REQUEST_OUT | REQUEST_CLASS | REQUEST_TO_OTHER,
+						CLEAR_FEATURE, PORT_POWER, nPort+1, 0, 0) >= 0)
+		{
+			nCount++;
+		}
+	}
+
+	return nCount;
+}
+
 boolean CUSBStandardHub::DisablePort (unsigned nPortIndex)
 {
 	assert (nPortIndex < m_nPorts);
@@ -270,17 +288,9 @@ boolean CUSBStandardHub::EnumeratePorts (void)
 		m_bPowerIsOn = TRUE;
 
 		// m_pHubDesc->bPwrOn2PwrGood delay seems to be not enough for some devices,
-		// so we use the maximum or a configured value here
-		unsigned nMsDelay = 510;
-		CKernelOptions *pOptions = CKernelOptions::Get ();
-		if (pOptions != 0)
-		{
-			unsigned nUSBPowerDelay = pOptions->GetUSBPowerDelay ();
-			if (nUSBPowerDelay != 0)
-			{
-				nMsDelay = nUSBPowerDelay;
-			}
-		}
+
+
+		const unsigned nMsDelay = 510;
 		CTimer::Get ()->MsDelay (nMsDelay);
 	}
 
@@ -316,6 +326,8 @@ boolean CUSBStandardHub::EnumeratePorts (void)
 			continue;
 		}
 
+		unsigned nTry = 1;
+	Retry:
 		if (pHost->ControlMessage (pEndpoint0,
 			REQUEST_OUT | REQUEST_CLASS | REQUEST_TO_OTHER,
 			SET_FEATURE, PORT_RESET, nPort+1, 0, 0) < 0)
@@ -340,6 +352,11 @@ boolean CUSBStandardHub::EnumeratePorts (void)
 		{
 			CLogger::Get ()->Write (FromHub, LogError,
 						"Port %u is not enabled", nPort+1);
+
+			if (RetryPort (nPort, &nTry))
+			{
+				goto Retry;
+			}
 
 			continue;
 		}
@@ -384,8 +401,15 @@ boolean CUSBStandardHub::EnumeratePorts (void)
 			delete m_pDevice[nPort];
 			m_pDevice[nPort] = 0;
 
+			if (RetryPort (nPort, &nTry))
+			{
+				goto Retry;
+			}
+
 			continue;
 		}
+
+		m_bPortPowerCycled[nPort] = FALSE;
 	}
 
 	// now configure devices
@@ -477,6 +501,59 @@ boolean CUSBStandardHub::EnumeratePorts (void)
 	}
 
 	return bResult;
+}
+
+
+
+
+
+
+boolean CUSBStandardHub::RetryPort (unsigned nPortIndex, unsigned *pTry)
+{
+	CUSBHostController *pHost = GetHost ();
+	assert (pHost != 0);
+
+	CUSBEndpoint *pEndpoint0 = GetEndpoint0 ();
+	assert (pEndpoint0 != 0);
+
+	assert (pTry != 0);
+	if (   *pTry >= 4
+	    || pHost->ControlMessage (pEndpoint0,
+				      REQUEST_IN | REQUEST_CLASS | REQUEST_TO_OTHER,
+				      GET_STATUS, 0, nPortIndex+1, m_pStatus[nPortIndex], 4) != 4
+	    || !(m_pStatus[nPortIndex]->wPortStatus & PORT_CONNECTION__MASK))
+	{
+		return FALSE;
+	}
+
+	++*pTry;
+
+	CLogger::Get ()->Write (FromHub, LogWarning,
+				"Port %u: Try %u to initialize device", nPortIndex+1, *pTry);
+
+	if (   *pTry == 3
+	    && !m_bPortPowerCycled[nPortIndex])
+	{
+		m_bPortPowerCycled[nPortIndex] = TRUE;
+
+		CLogger::Get ()->Write (FromHub, LogWarning, "Port %u: Power cycle", nPortIndex+1);
+
+		pHost->ControlMessage (pEndpoint0,
+				       REQUEST_OUT | REQUEST_CLASS | REQUEST_TO_OTHER,
+				       CLEAR_FEATURE, PORT_POWER, nPortIndex+1, 0, 0);
+
+		CTimer::Get ()->MsDelay (500);
+
+		pHost->ControlMessage (pEndpoint0,
+				       REQUEST_OUT | REQUEST_CLASS | REQUEST_TO_OTHER,
+				       SET_FEATURE, PORT_POWER, nPortIndex+1, 0, 0);
+
+		CTimer::Get ()->MsDelay (510);
+	}
+
+	CTimer::Get ()->MsDelay (200);
+
+	return TRUE;
 }
 
 boolean CUSBStandardHub::StartStatusChangeRequest (void)
@@ -617,6 +694,8 @@ void CUSBStandardHub::HandlePortStatusChange (void)
 			{
 				//CLogger::Get ()->Write (FromHub, LogDebug,
 				//			"Device disconnected (port %u)", nPort+1);
+
+				m_bPortPowerCycled[nPort] = FALSE;
 
 				if (m_pDevice[nPort] != 0)
 				{

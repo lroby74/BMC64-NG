@@ -57,6 +57,8 @@ private:
 		       u32 nParameter1 = 0, u32 nParameter2 = 0, u32 nStatus = 0,
 		       u8 *pSlotID = 0);	// result
 
+	int RecoverTimedOutCommand (TXHCITRB *pCommandTRB);
+
 	void CommandCompleted (TXHCITRB *pCommandTRB, u8 uchCompletionCode, u8 uchSlotID);
 	friend class CXHCIEventManager;
 
@@ -67,6 +69,8 @@ private:
 	CXHCIRing	 m_CmdRing;
 
 	volatile boolean m_bCommandCompleted;
+	volatile boolean m_bAborting;
+	volatile boolean m_bRingStopped;
 	TXHCITRB	*m_pCurrentCommandTRB;
 	u8	  	 m_uchCompletionCode;
 	u8	  	 m_uchSlotID;

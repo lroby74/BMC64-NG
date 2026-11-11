@@ -2,6 +2,7 @@
 !LSHIFT 1 7
 !RSHIFT 1 7
 !VSHIFT RSHIFT
+!SHIFTL RSHIFT
 Escape 7 7 8         /*          ESC -> Run/Stop     */
 1             7 0 8   /* 1           */
 2             7 3 8   /* 2           */
@@ -54,7 +55,7 @@ SemiColon     5 5 16  /* :           (scelta) */
 SingleQuote   1 0 33  /* #           (scelta) */
 SingleQuote   7 3 1   /* "           (scelta) */
 BackSlash     6 4 8   /* Freccia sx  (scelta) */
-Shift_L 1 7 2        /*   Left Shift -> Left Shift   */
+Shift_L 1 7 4        /*   Left Shift -> Left Shift   */
 CapsLock 1 7 64      /*    Caps Lock -> Shift Lock   */
 z 1 4 8              /*            Z -> Z            */
 x 2 7 8              /*            X -> X            */

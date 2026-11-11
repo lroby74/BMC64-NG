@@ -181,6 +181,7 @@ static void store_ciapb(cia_context_t *cia_context, CLOCK rclk, uint8_t byte)
     cia1581p = (drivecia1581_context_t *)(cia_context->prv);
 
     if (byte != cia_context->old_pb) {
+        DRIVE_CAVO_TOCCATO();
         if (cia1581p->iecbus != NULL) {
             uint8_t *drive_bus, *drive_data;
             unsigned int unit;
@@ -237,6 +238,7 @@ static uint8_t read_ciapb(cia_context_t *cia_context)
 
     cia1581p = (drivecia1581_context_t *)(cia_context->prv);
 
+    DRIVE_CAVO_TOCCATO();
     if (cia1581p->iecbus != NULL) {
         uint8_t *drive_port;
 

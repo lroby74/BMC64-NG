@@ -240,6 +240,9 @@
 /* libcurl support */
 /* #undef HAVE_LIBCURL */
 
+
+#define HAVE_BMX_WIC64 1
+
 /* Define to 1 if you have the 'FLAC' library (-lFLAC). */
 /* #undef HAVE_LIBFLAC */
 

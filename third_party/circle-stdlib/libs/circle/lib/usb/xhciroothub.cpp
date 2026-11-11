@@ -46,16 +46,23 @@ CXHCIRootHub::~CXHCIRootHub (void)
 
 boolean CXHCIRootHub::Initialize (void)
 {
-	unsigned nMsDelay = 300;		// best guess standard delay
-	CKernelOptions *pOptions = CKernelOptions::Get ();
-	if (pOptions != 0)
+
+
+	for (unsigned nPort = 0; nPort < m_nPorts; nPort++)
 	{
-		unsigned nUSBPowerDelay = pOptions->GetUSBPowerDelay ();
-		if (nUSBPowerDelay != 0)
+		assert (m_pRootPort[nPort] != 0);
+		if (m_pRootPort[nPort]->PowerOn ())
 		{
-			nMsDelay = nUSBPowerDelay;
+			CLogger::Get ()->Write ("xhciroot", LogNotice,
+						"Port %u was powered off", nPort+1);
 		}
 	}
+
+
+
+
+
+	const unsigned nMsDelay = 300;		// best guess standard delay
 
 	CTimer::Get ()->MsDelay (nMsDelay);	// give root ports some time to settle
 
@@ -88,6 +95,26 @@ boolean CXHCIRootHub::ReScanDevices (void)
 	}
 
 	return bResult;
+}
+
+
+
+unsigned CXHCIRootHub::PowerOffUSB3Ports (void)
+{
+	unsigned nCount = 0;
+
+	for (unsigned nPort = 0; nPort < m_nPorts; nPort++)
+	{
+		if (!XHCI_IS_USB2_PORT (nPort+1))
+		{
+			assert (m_pRootPort[nPort] != 0);
+			m_pRootPort[nPort]->PowerOff ();
+
+			nCount++;
+		}
+	}
+
+	return nCount;
 }
 
 void CXHCIRootHub::StatusChanged (u8 uchPortID)

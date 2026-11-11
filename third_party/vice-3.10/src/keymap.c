@@ -170,6 +170,9 @@ static int keyboard_keyword_rowcol(int *row, int *col)
         p = strtok(NULL, " \t,");
         if (p != NULL) {
             c = atoi(p);
+            if (r < 0 || r >= KBD_ROWS || c < 0 || c >= KBD_COLS) {
+                return -1;
+            }
             /* no error */
             *row = r; *col = c;
             return 0;
@@ -192,6 +195,9 @@ static int keyboard_keyword_vshiftl(void)
 {
     char *p = strtok(NULL, " \t,\r");
 
+    if (p == NULL) {
+        return -1;
+    }
     if (!strcmp(p, "RSHIFT")) {
         return KEY_RSHIFT;
     } else if (!strcmp(p, "LSHIFT")) {
@@ -230,6 +236,9 @@ static int keyboard_keyword_cbm(void)
 {
     char *p = strtok(NULL, " \t,\r");
 
+    if (p == NULL) {
+        return -1;
+    }
     if (!strcmp(p, "LCBM")) {
         return KEY_LCBM;
     }
@@ -255,6 +264,9 @@ static int keyboard_keyword_ctrl(void)
 {
     char *p = strtok(NULL, " \t,\r");
 
+    if (p == NULL) {
+        return -1;
+    }
     if (!strcmp(p, "LCTRL")) {
         return KEY_LCTRL;
     }
@@ -310,12 +322,16 @@ static void keyboard_keyword_clear(void)
     }
 }
 
-static void keyboard_keyword_include(void)
+static int keyboard_keyword_include(void)
 {
     char *key;
 
     key = strtok(NULL, " \t");
+    if (key == NULL) {
+        return -1;
+    }
     keyboard_parse_keymap(key, 1);
+    return 0;
 }
 
 static void keyboard_keysym_undef(signed long sym)
@@ -335,7 +351,7 @@ static void keyboard_keysym_undef(signed long sym)
     }
 }
 
-static void keyboard_keyword_undef(void)
+static int keyboard_keyword_undef(void)
 {
     char *key;
 
@@ -344,7 +360,11 @@ static void keyboard_keyword_undef(void)
      *       good idea.
      */
     key = strtok(NULL, " \t");
+    if (key == NULL) {
+        return -1;
+    }
     keyboard_keysym_undef(kbd_arch_keyname_to_keynum(key));
+    return 0;
 }
 
 static void keyboard_parse_keyword(char *buffer, int line, const char *filename)
@@ -353,6 +373,11 @@ static void keyboard_parse_keyword(char *buffer, int line, const char *filename)
     char *key;
 
     key = strtok(buffer + 1, " \t:");
+
+    if (key == NULL) {
+        log_error(keyboard_log, "%s:%d: missing keyword.", filename, line);
+        return;
+    }
 
     if (!strcmp(key, "LSHIFT")) {
         ret = keyboard_keyword_lshift();
@@ -373,9 +398,9 @@ static void keyboard_parse_keyword(char *buffer, int line, const char *filename)
     } else if (!strcmp(key, "CLEAR")) {
         keyboard_keyword_clear();
     } else if (!strcmp(key, "INCLUDE")) {
-        keyboard_keyword_include();
+        ret = keyboard_keyword_include();
     } else if (!strcmp(key, "UNDEF")) {
-        keyboard_keyword_undef();
+        ret = keyboard_keyword_undef();
     } else {
         log_error(keyboard_log, "%s:%d: unknown keyword (%s).", filename, line, key);
     }
@@ -392,7 +417,7 @@ static int keyboard_parse_set_pos_row(signed long sym, int row, int col,
 
     /* FIXME: we should check against the actual size of the emulated
               keyboard here */
-    if ((row >= KBD_ROWS) || (col >= KBD_COLS)) {
+    if ((row >= KBD_ROWS) || (col < 0) || (col >= KBD_COLS)) {
         return -1;
     }
 
@@ -467,6 +492,10 @@ static void keyboard_parse_entry(char *buffer, int line, const char *filename)
     int shift = 0;
 
     key = strtok(buffer, " \t:");
+    if (key == NULL) {
+        /* only whitespace */
+        return;
+    }
 
     sym = kbd_arch_keyname_to_keynum(key);
 
@@ -1143,6 +1172,10 @@ int keyboard_set_keymap_index(int val, void *param)
 static int keyboard_set_keyboard_type(int val, void *param)
 {
     int idx, mapping;
+
+    if (val < 0 || val >= machine_get_num_keyboard_types()) {
+        return -1;
+    }
 
     mapping = machine_keyboard_mapping;
     idx = machine_keymap_index;

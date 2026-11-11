@@ -25,11 +25,18 @@
 
 static const char From[] = "xhciroot";
 
+
+
+#define PORTSC_PRESERVE	  (  XHCI_REG_OP_PORTS_PORTSC_PP | XHCI_REG_OP_PORTS_PORTSC_PIC__MASK \
+			   | XHCI_REG_OP_PORTS_PORTSC_WCE | XHCI_REG_OP_PORTS_PORTSC_WDE \
+			   | XHCI_REG_OP_PORTS_PORTSC_WOE)
+
 CXHCIRootPort::CXHCIRootPort (u8 uchPortID, CXHCIDevice *pXHCIDevice)
 :	m_nPortIndex (uchPortID-1),
 	m_pXHCIDevice (pXHCIDevice),
 	m_pMMIO (pXHCIDevice->GetMMIOSpace ()),
-	m_pUSBDevice (0)
+	m_pUSBDevice (0),
+	m_bPowerCycled (FALSE)
 {
 	assert (XHCI_IS_PORTID (uchPortID));
 }
@@ -51,6 +58,17 @@ boolean CXHCIRootPort::Initialize (void)
 	}
 
 	assert (m_nPortIndex < XHCI_CONFIG_MAX_PORTS);
+#if RASPPI >= 5
+
+
+
+
+
+
+
+	unsigned nTry = 1;
+Retry:
+#endif
 	if (XHCI_IS_USB2_PORT (m_nPortIndex+1))
 	{
 		if (!Reset (100000))
@@ -92,8 +110,45 @@ boolean CXHCIRootPort::Initialize (void)
 		delete m_pUSBDevice;
 		m_pUSBDevice = 0;
 
+#if RASPPI >= 5
+		if (   XHCI_IS_USB2_PORT (m_nPortIndex+1)
+		    && nTry < 4
+		    && IsConnected ())
+		{
+			nTry++;
+
+			CLogger::Get ()->Write (From, LogWarning,
+						"Port %u: Try %u to initialize device", m_nPortIndex+1, nTry);
+
+			if (   nTry == 3
+			    && !m_bPowerCycled)
+			{
+				m_bPowerCycled = TRUE;
+
+				CLogger::Get ()->Write (From, LogWarning,
+							"Port %u: Power cycle", m_nPortIndex+1);
+
+				PowerOff ();
+				CTimer::Get ()->MsDelay (500);
+				PowerOn ();
+				CTimer::Get ()->MsDelay (510);
+
+				if (!IsConnected ())
+				{
+					return FALSE;
+				}
+			}
+
+			CTimer::Get ()->MsDelay (200);
+
+			goto Retry;
+		}
+#endif
+
 		return FALSE;
 	}
+
+	m_bPowerCycled = FALSE;
 
 	if (PowerOffOnOverCurrent ())
 	{
@@ -199,6 +254,40 @@ boolean CXHCIRootPort::RemoveDevice (void)
 	return TRUE;
 }
 
+boolean CXHCIRootPort::PowerOn (void)
+{
+	assert (m_pMMIO != 0);
+	assert (m_nPortIndex < XHCI_CONFIG_MAX_PORTS);
+
+	m_SpinLock.Acquire ();
+
+	u32 nPortSC = m_pMMIO->pt_read32 (m_nPortIndex, XHCI_REG_OP_PORTS_PORTSC);
+	boolean bWasOff = !(nPortSC & XHCI_REG_OP_PORTS_PORTSC_PP);
+	if (bWasOff)
+	{
+		m_pMMIO->pt_write32 (m_nPortIndex, XHCI_REG_OP_PORTS_PORTSC,
+				     (nPortSC & PORTSC_PRESERVE) | XHCI_REG_OP_PORTS_PORTSC_PP);
+	}
+
+	m_SpinLock.Release ();
+
+	return bWasOff;
+}
+
+void CXHCIRootPort::PowerOff (void)
+{
+	assert (m_pMMIO != 0);
+	assert (m_nPortIndex < XHCI_CONFIG_MAX_PORTS);
+
+	m_SpinLock.Acquire ();
+
+	u32 nPortSC = m_pMMIO->pt_read32 (m_nPortIndex, XHCI_REG_OP_PORTS_PORTSC);
+	m_pMMIO->pt_write32 (m_nPortIndex, XHCI_REG_OP_PORTS_PORTSC,
+			     nPortSC & PORTSC_PRESERVE & ~XHCI_REG_OP_PORTS_PORTSC_PP);
+
+	m_SpinLock.Release ();
+}
+
 void CXHCIRootPort::HandlePortStatusChange (void)
 {
 	if (IsConnected ())
@@ -210,6 +299,8 @@ void CXHCIRootPort::HandlePortStatusChange (void)
 	}
 	else
 	{
+		m_bPowerCycled = FALSE;
+
 		if (m_pUSBDevice != 0)
 		{
 			RemoveDevice ();

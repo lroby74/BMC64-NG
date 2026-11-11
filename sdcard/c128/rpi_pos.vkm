@@ -38,6 +38,7 @@
 !LSHIFT 1 7
 !RSHIFT 6 4
 !VSHIFT RSHIFT
+!SHIFTL LSHIFT
 
 Tab 7 2 8       /* CTRL */
 Control_L 7 5 8 /* Commodore Key */
@@ -116,7 +117,7 @@ z 1 4 8
 # Restore key mappings
 PrintScreen -3 0
 PageUp -3 1
-CapsLock -4 1
+CapsLock 1 7 64
 
 KP_0          10 1 8   /* 0 */
 KP_1           8 7 8   /* 1 */
@@ -140,3 +141,9 @@ C128_CAPS     -4 1     /* CAPS LOCK    ALT+F4  (ASCII/DIN) */
 C128_HELP      8 0 8   /* HELP         ALT+F5 */
 C128_LINEFEED  9 3 8   /* LINE FEED    ALT+F6 */
 C128_NOSCROLL 10 7 0   /* NO SCROLL    ALT+F8  (bandiera 0 come a monte) */
+
+F9             9 0 8
+F10            8 3 8
+End            8 0 8
+PageDown       9 3 8
+ScrollLock    10 7 0

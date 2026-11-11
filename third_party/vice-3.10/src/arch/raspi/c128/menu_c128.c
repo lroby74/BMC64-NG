@@ -414,6 +414,15 @@ struct menu_item* emux_add_cartridge_options(struct menu_item* root) {
                      "Set current cart default");
 
   ui_menu_add_button(MENU_SAVE_EASYFLASH, parent, "Save EasyFlash Now");
+
+
+  ui_menu_add_button(MENU_SAVE_MAGICDESKPLUS, parent, "Save Magic Desk Plus Now");
+  {
+    int scrivi = 1;
+    resources_get_int("MagicDeskPlusSRAMWrite", &scrivi);
+    ui_menu_add_toggle(MENU_MAGICDESKPLUS_AUTOSAVE, parent,
+                       "Auto-save Magic Desk Plus", scrivi);
+  }
   ui_menu_add_button(MENU_CART_FREEZE, parent, "Cartridge Freeze");
 
 

@@ -177,4 +177,11 @@ typedef void (*raw_keycode_func_t)(long key);
 extern raw_keycode_func_t raw_keycode_func;
 const char* keycode_to_string(long keycode);
 
+
+#include <stddef.h>
+int keycode_format_vkm_token(long keycode, char *buffer, size_t buffer_size);
+long keycode_from_vkm_token(const char *token);
+int keycode_format_keycap(long keycode, int german_layout,
+                          char *buffer, size_t buffer_size);
+
 #endif

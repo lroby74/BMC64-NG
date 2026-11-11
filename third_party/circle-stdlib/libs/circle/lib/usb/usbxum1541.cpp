@@ -120,15 +120,36 @@ boolean CUSBXum1541Device::Configure (void)
 
 
 
-	SetPatience (m_pEndpointIn);
-	SetPatience (m_pEndpointOut);
+	SetPatience (m_pEndpointIn, XUM1541_PATIENCE_TICKS);
+	SetPatience (m_pEndpointOut, XUM1541_PATIENCE_TICKS);
 
 	CLogger::Get ()->Write (FromXum1541, LogNotice, "xum1541 (ZoomFloppy) ready");
 
 	return TRUE;
 }
 
-void CUSBXum1541Device::SetPatience (CUSBEndpoint *pEndpoint)
+
+
+
+
+
+void CUSBXum1541Device::SetPatienceMs (unsigned nMs)
+{
+	unsigned nTicks = XUM1541_PATIENCE_TICKS;
+	if (nMs != 0)
+	{
+		nTicks = MSEC2HZ (nMs);
+		if (nTicks == 0)
+		{
+			nTicks = 1;
+		}
+	}
+
+	SetPatience (m_pEndpointIn, nTicks);
+	SetPatience (m_pEndpointOut, nTicks);
+}
+
+void CUSBXum1541Device::SetPatience (CUSBEndpoint *pEndpoint, unsigned nTicks)
 {
 #if RASPPI >= 4
 	if (pEndpoint != 0)
@@ -136,11 +157,12 @@ void CUSBXum1541Device::SetPatience (CUSBEndpoint *pEndpoint)
 		CXHCIEndpoint *pXHCI = pEndpoint->GetXHCIEndpoint ();
 		if (pXHCI != 0)
 		{
-			pXHCI->SetTimeoutTicks (XUM1541_PATIENCE_TICKS);
+			pXHCI->SetTimeoutTicks (nTicks);
 		}
 	}
 #else
 	(void) pEndpoint;
+	(void) nTicks;
 #endif
 }
 

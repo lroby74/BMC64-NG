@@ -48,6 +48,7 @@
 #include "maincpu.h"
 #include "monitor.h"
 #include "resources.h"
+#include "snapshot.h"
 #include "tpi.h"
 #include "types.h"
 #include "util.h"
@@ -670,19 +671,99 @@ int tpi_disable(void)
 
 /* ---------------------------------------------------------------------*/
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static const char snap_module_name[] = "CARTIEEE488";
+#define SNAP_MAJOR   0
+#define SNAP_MINOR   1
+
 int tpi_snapshot_read_module(struct snapshot_s *s)
 {
-    if (tpicore_snapshot_read_module(tpi_context, s) < 0) {
-        ieee488_enabled = 0;
-        return -1;
-    } else {
-        ieee488_enabled = 1;
+    uint8_t vmajor, vminor;
+    snapshot_module_t *m;
+
+    if (tpi_rom == NULL) {
+        tpi_rom = lib_malloc(TPI_ROM_SIZE);
     }
+
+    m = snapshot_module_open(s, snap_module_name, &vmajor, &vminor);
+    if (m == NULL) {
+
+        log_warning(LOG_DEFAULT, "IEEE: snapshot contains no ROM data.");
+        memset(tpi_rom, 0xff, TPI_ROM_SIZE);
+        rom_enabled = 1;
+    } else {
+
+        if (snapshot_version_is_bigger(vmajor, vminor, SNAP_MAJOR, SNAP_MINOR)) {
+            snapshot_set_error(SNAPSHOT_MODULE_HIGHER_VERSION);
+            goto fail;
+        }
+
+        if (0
+            || SMR_B_INT(m, &rom_enabled) < 0
+            || SMR_B_INT(m, &tpi_extexrom) < 0
+            || SMR_B_INT(m, &tpi_extgame) < 0
+            || SMR_BA(m, tpi_rom, TPI_ROM_SIZE) < 0) {
+            goto fail;
+        }
+        snapshot_module_close(m);
+        m = NULL;
+    }
+
+    if (tpicore_snapshot_read_module(tpi_context, s) < 0) {
+        goto fail;
+    }
+
+
+
+    if (export_add(&export_res) < 0) {
+        goto fail;
+    }
+    tpi_list_item = io_source_register(&tpi_io2_device);
+    ieee488_enabled = 1;
+
     return 0;
+
+fail:
+    if (m != NULL) {
+        snapshot_module_close(m);
+    }
+    lib_free(tpi_rom);
+    tpi_rom = NULL;
+    return -1;
 }
 
 int tpi_snapshot_write_module(struct snapshot_s *s)
 {
+    snapshot_module_t *m;
+
+    m = snapshot_module_create(s, snap_module_name, SNAP_MAJOR, SNAP_MINOR);
+    if (m == NULL) {
+        return -1;
+    }
+
+    if (0
+        || SMW_B(m, (uint8_t)rom_enabled) < 0
+        || SMW_B(m, (uint8_t)tpi_extexrom) < 0
+        || SMW_B(m, (uint8_t)tpi_extgame) < 0
+        || SMW_BA(m, tpi_rom, TPI_ROM_SIZE) < 0) {
+        snapshot_module_close(m);
+        return -1;
+    }
+    snapshot_module_close(m);
+
     if (tpicore_snapshot_write_module(tpi_context, s) < 0) {
         return -1;
     }

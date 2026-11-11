@@ -49,7 +49,7 @@
 #define TCP_MSS_S			(ETH_MAX_LEN - ETH_HEADER_LEN - IP_HEADER_LEN)
 
 #define TCP_CONFIG_MSS			(TCP_MSS_R - TCP_HEADER_LEN)
-#define TCP_CONFIG_WINDOW		(TCP_CONFIG_MSS * 10)
+#define TCP_CONFIG_WINDOW		(TCP_CONFIG_MSS * 44)
 
 #define TCP_CONFIG_TX_THRESHOLD		0x10000	// TX stops, if this number of bytes is queued
 #define TCP_CONFIG_RX_THRESHOLD		0x10000	// kicks RX, if this number of bytes is queued

@@ -316,6 +316,11 @@ static inline uint8_t io_read(io_source_list_t *list, uint16_t addr)
                             io_source_counter++;
                         }
                         io_source_valid = 1;
+                    } else if ((io_source_counter == 0) && (current->device->io_source_prio != IO_PRIO_LOW)) {
+
+                        firstval = realval = retval;
+                        lowest_order = current->device->order;
+                        io_source_counter++;
                     } else {
                         /* ignore low prio reads when a real value is present already */
                         if (current->device->io_source_prio == IO_PRIO_LOW) {
@@ -347,8 +352,8 @@ static inline uint8_t io_read(io_source_list_t *list, uint16_t addr)
     if (io_source_valid == 0) {
         return read_unused(addr);
     }
-    /* only one valid I/O source was read, return value */
-    if (io_source_valid == 1) {
+
+    if (io_source_counter <= 1) {
         return firstval;
     }
     /* more than one I/O source was read, handle collision */

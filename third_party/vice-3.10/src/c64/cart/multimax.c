@@ -259,6 +259,10 @@ int multimax_crt_attach(FILE *fd, uint8_t *rawcart)
 void multimax_detach(void)
 {
     export_remove(&export_res);
+    if (multimax_list_item) {
+        io_source_unregister(multimax_list_item);
+        multimax_list_item = NULL;
+    }
 }
 
 /* ---------------------------------------------------------------------*/

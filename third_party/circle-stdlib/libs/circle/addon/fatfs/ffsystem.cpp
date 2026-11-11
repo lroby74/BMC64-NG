@@ -138,12 +138,16 @@ void ff_memfree (
 /* RTC function                                                           */
 /*------------------------------------------------------------------------*/
 
+
+
+DWORD g_nFatUltimaDataNota = 0;
+
 DWORD get_fattime (void)
 {
 	unsigned nTime = CTimer::Get ()->GetLocalTime ();
 	if (nTime == 0)
 	{
-		return 0;
+		return g_nFatUltimaDataNota;
 	}
 
 	unsigned nSecond = nTime % 60;
@@ -168,7 +172,7 @@ DWORD get_fattime (void)
 
 	if (nYear < 1980)
 	{
-		return 0;
+		return g_nFatUltimaDataNota;
 	}
 
 	unsigned nMonth = 0;

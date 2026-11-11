@@ -102,6 +102,8 @@
 #include "libsmb2.h"
 #include "libsmb2-raw.h"
 #include "libsmb2-private.h"
+
+extern time_t bmc_smb_monotonic_seconds(void);
 #include "smb2-signing.h"
 #include "portable-endian.h"
 #include "ntlmssp.h"
@@ -5317,7 +5319,7 @@ int smb2_serve_port(struct smb2_server *server, const int max_connections, smb2_
                            );
 
                 if (ready > 0) {
-                        now = time(NULL);
+                        now = bmc_smb_monotonic_seconds();
 
 
                         for (smb2 = smb2_active_contexts(); smb2; smb2 = smb2->next) {
@@ -5336,7 +5338,7 @@ int smb2_serve_port(struct smb2_server *server, const int max_connections, smb2_
                                                 smb2_close_context(smb2);
                                         }
                                 }
-                                if (!SMB2_VALID_SOCKET(smb2->fd) && ((time(NULL) - now) > (smb2->timeout)))
+                                if (!SMB2_VALID_SOCKET(smb2->fd) && ((bmc_smb_monotonic_seconds() - now) > (smb2->timeout)))
                                 {
                                         smb2_set_error(smb2, "Timeout expired and no connection exists");
                                         smb2_close_context(smb2);

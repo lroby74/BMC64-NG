@@ -78,12 +78,24 @@ private:
 	u16 phy_read_shadow (u16 shadow);
 	void phy_write_shadow (u16 shadow, u16 val);
 	void phy_write_exp (u16 reg, u16 val);
+	void mxl86110_init (void);
+	void mxl86110_write_ext (u16 reg, u16 val);
+	u16 mxl86110_read_ext (u16 reg);
+	void mxl86110_modify_ext (u16 reg, u16 mask, u16 set);
 
 	void mdio_write (u8 phy_adr, u8 reg, u16 value);
 	u16 mdio_read (u8 phy_adr, u8 reg);
 	void mdio_reset (void);
 
 	static unsigned mii_nway_result (unsigned negotiated);
+
+private:
+	enum TPHYType
+	{
+		PHYTypeUnknown,
+		PHYTypeBCM54213PE,
+		PHYTypeMXL86110
+	};
 
 private:
 	CMACAddress m_MACAddress;
@@ -106,6 +118,7 @@ private:
 	unsigned m_tx_last_ticks;
 
 	u16 m_phy_addr;
+	TPHYType m_phy_type;
 	int m_link;		// link state (1: up, 0: down)
 	int m_speed;		// _10BASET, _100BASET, or _1000BASET
 	int m_duplex;		// 1: full duplex

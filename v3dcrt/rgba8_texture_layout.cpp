@@ -1,6 +1,9 @@
 #include "v3dcrt/rgba8_texture_layout.h"
 
 #include <string.h>
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
 
 namespace v3dcrt {
 namespace {
@@ -476,6 +479,108 @@ bool UploadRgba8TexturePhysical(uint8_t *destination,
       return false;
   }
   return output == destination + layout.size_bytes;
+}
+
+namespace {
+
+uint32_t ExpandRgb565(uint16_t pixel) {
+  const uint32_t r = (pixel >> 11U) & 31U;
+  const uint32_t g = (pixel >> 5U) & 63U;
+  const uint32_t b = pixel & 31U;
+  return 0xff000000U | ((r << 3U) | (r >> 2U)) |
+      (((g << 2U) | (g >> 4U)) << 8U) |
+      (((b << 3U) | (b >> 2U)) << 16U);
+}
+
+template<bool Indexed, bool Response>
+uint32_t ReadUploadPixel(const TextureUploadSource &source, const uint8_t *row,
+                         uint32_t x) {
+  if (Indexed) return source.palette_rgba8[row[x]];
+  uint16_t pixel;
+  memcpy(&pixel, row + x * sizeof pixel, sizeof pixel);
+  if (Response) pixel = source.rgb565_lut[pixel];
+  return ExpandRgb565(pixel);
+}
+
+template<bool Indexed, bool Response>
+void ConvertUploadSpan(const TextureUploadSource &source, const uint8_t *row,
+                       uint32_t source_x, uint32_t count, uint32_t *output) {
+  uint32_t x = 0U;
+#if defined(__aarch64__) && defined(__ARM_NEON)
+  if (!Indexed && !Response) {
+    for (; x + 8U <= count; x += 8U) {
+      const uint16x8_t pixels = vld1q_u16(
+          reinterpret_cast<const uint16_t *>(row + (source_x + x) * 2U));
+      const uint16x8_t red5 = vshrq_n_u16(pixels, 11);
+      const uint16x8_t green6 = vandq_u16(vshrq_n_u16(pixels, 5), vdupq_n_u16(63));
+      const uint16x8_t blue5 = vandq_u16(pixels, vdupq_n_u16(31));
+      const uint16x8_t red = vorrq_u16(vshlq_n_u16(red5, 3), vshrq_n_u16(red5, 2));
+      const uint16x8_t green = vorrq_u16(vshlq_n_u16(green6, 2), vshrq_n_u16(green6, 4));
+      const uint16x8_t blue = vorrq_u16(vshlq_n_u16(blue5, 3), vshrq_n_u16(blue5, 2));
+      const uint32x4_t alpha = vdupq_n_u32(0xff000000U);
+      const uint32x4_t low = vorrq_u32(alpha, vorrq_u32(vmovl_u16(vget_low_u16(red)),
+          vorrq_u32(vshlq_n_u32(vmovl_u16(vget_low_u16(green)), 8),
+                    vshlq_n_u32(vmovl_u16(vget_low_u16(blue)), 16))));
+      const uint32x4_t high = vorrq_u32(alpha, vorrq_u32(vmovl_u16(vget_high_u16(red)),
+          vorrq_u32(vshlq_n_u32(vmovl_u16(vget_high_u16(green)), 8),
+                    vshlq_n_u32(vmovl_u16(vget_high_u16(blue)), 16))));
+      vst1q_u32(output + x, low);
+      vst1q_u32(output + x + 4U, high);
+    }
+  }
+#endif
+  for (; x < count; ++x)
+    output[x] = ReadUploadPixel<Indexed, Response>(source, row, source_x + x);
+}
+
+template<bool Indexed, bool Response>
+bool ConvertUploadRegion(void *opaque, uint32_t origin_x, uint32_t origin_y,
+                         uint32_t width, uint32_t height, uint32_t *rgba8,
+                         uint32_t stride_words) {
+  const auto &source = *static_cast<const TextureUploadSource *>(opaque);
+
+
+  const uint32_t padding = origin_x < source.left_edge_padding ?
+      source.left_edge_padding - origin_x : 0U;
+  const uint32_t prefix = padding < width ? padding : width;
+  const uint32_t source_x = origin_x < source.left_edge_padding ?
+      0U : origin_x - source.left_edge_padding;
+  for (uint32_t y = 0U; y < height; ++y) {
+    const uint8_t *row = source.pixels +
+        static_cast<size_t>(origin_y + y) * source.pitch;
+    uint32_t *output = rgba8 + y * stride_words;
+    if (prefix != 0U) {
+      const uint32_t first = ReadUploadPixel<Indexed, Response>(source, row, 0U);
+      for (uint32_t x = 0U; x < prefix; ++x) output[x] = first;
+    }
+    ConvertUploadSpan<Indexed, Response>(source, row, source_x,
+                                         width - prefix, output + prefix);
+  }
+  return true;
+}
+
+}  // namespace
+
+bool UploadConvertedRgba8TexturePhysical(
+    uint8_t *destination, uint32_t destination_size,
+    const Rgba8TextureLayout &layout, const TextureUploadSource &source) {
+  const bool indexed = source.format == kTextureUploadIndexed8;
+  if (destination == nullptr || source.pixels == nullptr ||
+      (!indexed && source.format != kTextureUploadRgb565) ||
+      (indexed && source.palette_rgba8 == nullptr) ||
+      source.left_edge_padding >= layout.width ||
+      !Rgba8TextureLayoutMatchesComputed(layout, UINT32_MAX) ||
+      destination_size < layout.size_bytes ||
+      source.pitch < layout.width * (indexed ? 1U : 2U) ||
+      static_cast<uint64_t>(source.pitch) * layout.height > SIZE_MAX) {
+    return false;
+  }
+  Rgba8TextureRegionSource convert = indexed ? ConvertUploadRegion<true, false> :
+      source.rgb565_lut != nullptr ? ConvertUploadRegion<false, true> :
+                                    ConvertUploadRegion<false, false>;
+
+  return UploadRgba8TexturePhysical(destination, destination_size, layout,
+      convert, const_cast<TextureUploadSource *>(&source));
 }
 
 const char *Rgba8TextureTilingName(Rgba8TextureTiling tiling) {

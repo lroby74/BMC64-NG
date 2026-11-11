@@ -142,6 +142,7 @@ static void store_pra(via_context_t *via_context, uint8_t byte, uint8_t oldpa,
     viap = (drivevia_context_t *)(via_context->prv);
 
     if (byte != oldpa) {
+        DRIVE_CAVO_TOCCATO();
         DEBUG_IEC_DRV_WRITE(byte);
 
         if (iecbus != NULL) {
@@ -237,6 +238,7 @@ static uint8_t read_pra(via_context_t *via_context, uint16_t addr)
 
     viap = (drivevia_context_t *)(via_context->prv);
 
+    DRIVE_CAVO_TOCCATO();
     if (iecbus != NULL) {
         byte = (((via_context->via[VIA_PRA] & 0x1a)
                  | iecbus->drv_port) ^ 0x85);

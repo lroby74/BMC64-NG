@@ -473,7 +473,10 @@ void flash040core_reset(flash040_context_t *flash040_context)
     flash040_context->flash_base_state = FLASH040_STATE_READ;
     flash040_context->program_byte = 0;
     flash_clear_erase_mask(flash040_context);
-    alarm_unset(flash040_context->erase_alarm);
+
+    if (flash040_context->erase_alarm != NULL) {
+        alarm_unset(flash040_context->erase_alarm);
+    }
 }
 
 void flash040core_init(struct flash040_context_s *flash040_context,
@@ -494,6 +497,10 @@ void flash040core_init(struct flash040_context_s *flash040_context,
 void flash040core_shutdown(flash040_context_t *flash040_context)
 {
     FLASH_DEBUG(("Shutdown"));
+
+
+    alarm_destroy(flash040_context->erase_alarm);
+    flash040_context->erase_alarm = NULL;
 }
 
 /* -------------------------------------------------------------------------- */

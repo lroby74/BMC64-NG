@@ -96,7 +96,7 @@ public:
 
 	/// \param pBlock Memory block to be freed
 	/// \note Memory space of blocks, which are bigger than the largest bucket size,\n
-	///	  cannot be returned to a free list and is lost.
+
 	void Free (void *pBlock);
 
 #ifdef HEAP_DEBUG

@@ -60,6 +60,8 @@ static int sid_model;                 /* app_resources.sidModel */
 static int sid_model2;                /* app_resources.sidModel */
 
 static int sid_model3;
+
+static int sid_model_oltre[5];
 #endif
 #if defined(HAVE_RESID)
 static int sid_resid_sampling;
@@ -343,6 +345,37 @@ static int set_sid_model3(int val, void *param)
     sid_state_changed = 1;
     return 0;
 }
+
+
+
+
+static int set_sid_model_oltre(int val, void *param)
+{
+    int *dove = (int *)param;
+
+    if (val == SID_MODEL_DEFAULT) {
+        val = SID_MODEL_6581;
+        if ((machine_class == VICE_MACHINE_C128) ||
+            (machine_class == VICE_MACHINE_C64) ||
+            (machine_class == VICE_MACHINE_C64SC) ||
+            (machine_class == VICE_MACHINE_SCPU64)) {
+            val = SID_MODEL_8580;
+        }
+    }
+
+    switch (val) {
+        case SID_MODEL_6581:
+        case SID_MODEL_8580:
+        case SID_MODEL_8580D:
+            break;
+        default:
+            return -1;
+    }
+
+    *dove = val;
+    sid_state_changed = 1;
+    return 0;
+}
 #endif
 
 #if defined(HAVE_RESID) || defined(HAVE_RESID_DTV)
@@ -507,9 +540,11 @@ static int set_sid_residfp_6581_old_caps(int val, void *param)
 }
 
 
+
+
 static int set_sid_residfp_background_noise(int val, void *param)
 {
-    if (val < 0 || val > 100) {
+    if (val < 0 || val > 200) {
         return -1;
     }
     sid_residfp_background_noise = val;
@@ -631,7 +666,7 @@ static const resource_int_t resid_resources_int[] = {
 static const resource_int_t residfp_resources_int[] = {
     { "SidResid6581OldCaps", 0, RES_EVENT_NO, NULL,
       &sid_residfp_6581_old_caps, set_sid_residfp_6581_old_caps, NULL },
-    { "SidResidBackgroundNoise", 0, RES_EVENT_NO, NULL,
+    { "SidResidBackgroundNoise", 100, RES_EVENT_NO, NULL,
       &sid_residfp_background_noise, set_sid_residfp_background_noise, NULL },
     { "SidResid6581FilterCurve", RESIDFP_6581_FILTER_CURVE_DEFAULT, RES_EVENT_NO, NULL,
       &sid_residfp_6581_filter_curve, set_sid_residfp_6581_filter_curve, NULL },
@@ -666,6 +701,16 @@ static resource_int_t common_resources_int[] = {
       &sid_model2, set_sid_model2, NULL },
     { "Sid3Model", SID_MODEL_DEFAULT, RES_EVENT_SAME, NULL,
       &sid_model3, set_sid_model3, NULL },
+    { "Sid4Model", SID_MODEL_DEFAULT, RES_EVENT_SAME, NULL,
+      &sid_model_oltre[0], set_sid_model_oltre, &sid_model_oltre[0] },
+    { "Sid5Model", SID_MODEL_DEFAULT, RES_EVENT_SAME, NULL,
+      &sid_model_oltre[1], set_sid_model_oltre, &sid_model_oltre[1] },
+    { "Sid6Model", SID_MODEL_DEFAULT, RES_EVENT_SAME, NULL,
+      &sid_model_oltre[2], set_sid_model_oltre, &sid_model_oltre[2] },
+    { "Sid7Model", SID_MODEL_DEFAULT, RES_EVENT_SAME, NULL,
+      &sid_model_oltre[3], set_sid_model_oltre, &sid_model_oltre[3] },
+    { "Sid8Model", SID_MODEL_DEFAULT, RES_EVENT_SAME, NULL,
+      &sid_model_oltre[4], set_sid_model_oltre, &sid_model_oltre[4] },
 #endif
     RESOURCE_INT_LIST_END
 };

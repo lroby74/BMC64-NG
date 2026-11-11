@@ -48,6 +48,8 @@ public:
 	void ReScanDevices (void);
 	boolean UpdatePlugAndPlay (void) override;
 
+	unsigned PowerOffUSB3Ports (void);
+
 	boolean SubmitBlockingRequest (CUSBRequest *pURB, unsigned nTimeoutMs = USB_TIMEOUT_NONE);
 	boolean SubmitAsyncRequest (CUSBRequest *pURB, unsigned nTimeoutMs = USB_TIMEOUT_NONE);
 

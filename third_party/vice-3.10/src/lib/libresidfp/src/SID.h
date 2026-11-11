@@ -33,6 +33,9 @@
 #include "ExternalFilter.h"
 #include "Filter.h"
 #include "Voice.h"
+#include "Limiter.h"
+#include "Noise.h"
+
 #include "State.h"
 
 namespace reSIDfp
@@ -79,6 +82,9 @@ private:
 
 #ifdef RESIDFP_RUMORE_REGOLABILE
 
+
+
+
     int rumorePercento = 100;
 
 
@@ -93,6 +99,8 @@ private:
 
     /// SID voices
     Voice voice[3];
+
+    Noise m_noise;
 
     /// Used to amplify the output by x/2 to get an adequate playback volume
     int scaleFactor;
@@ -181,6 +189,22 @@ private:
         uint16_t filtOutput = filter->clock(voice[0], voice[1], voice[2]);
         int32_t exFiltInput = static_cast<int32_t>(filtOutput) + INT16_MIN;
         return externalFilter.clock(exFiltInput);
+    }
+
+
+    inline int16_t getOutput()
+    {
+        const int32_t out = (scaleFactor * resampler->output()) / 2;
+#ifdef RESIDFP_RUMORE_REGOLABILE
+
+
+
+        if (rumorePercento == 0)
+            return Limiter::softClip(out);
+        return Limiter::softClip(out + (m_noise.output() * rumorePercento) / 100);
+#else
+        return Limiter::softClip(out + m_noise.output());
+#endif
     }
 
 private:
@@ -369,6 +393,10 @@ public:
 
 
 
+
+
+
+
     void setBackgroundNoise(int percento);
 
 
@@ -418,6 +446,11 @@ public:
      * Set strong P+S for 6581 model.
      */
     void enableStrongPS(bool enable);
+
+
+
+
+    void setNoiseLevel(int level);
 
 #ifdef RESIDFP_INVILUPPI_VISIBILI
 
@@ -483,7 +516,7 @@ int SID::clock(unsigned int cycles, int16_t* buf)
                 int32_t output = clockFilt();
                 if (unlikely(resampler->input(output)))
                 {
-                    buf[s++] = resampler->getOutput(scaleFactor);
+                    buf[s++] = getOutput();
                 }
             }
 
@@ -524,7 +557,7 @@ int SID::clock(int16_t* buf, int bufSize)
                 int32_t output = clockFilt();
                 if (unlikely(resampler->input(output)))
                 {
-                    buf[s++] = resampler->getOutput(scaleFactor);
+                    buf[s++] = getOutput();
                     if (unlikely(s == bufSize))
                     {
                         break;

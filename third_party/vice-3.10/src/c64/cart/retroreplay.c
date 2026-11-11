@@ -1222,7 +1222,9 @@ int retroreplay_bin_save(const char *filename)
         }
     }
 
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
 
     return 0;
 }
@@ -1271,7 +1273,9 @@ int retroreplay_crt_save(const char *filename)
             data += 0x2000;
         }
     }
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 

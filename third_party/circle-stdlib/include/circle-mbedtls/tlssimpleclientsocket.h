@@ -32,7 +32,8 @@ namespace CircleMbedTLS {
 class CTLSSimpleClientSocket : public CTLSSocket	/// Easy to use socket for SSL/TLS clients
 {
 public:
-	CTLSSimpleClientSocket (CTLSSimpleSupport *pTLSSupport, int nProtocol);
+	CTLSSimpleClientSocket (CTLSSimpleSupport *pTLSSupport, int nProtocol,
+			       boolean bExternalBIO = FALSE);
 	~CTLSSimpleClientSocket (void);
 
 	/// \brief Add certificate in PEM or DER format
@@ -50,6 +51,11 @@ public:
 	/// \note Has to be called before Setup()
 	/// \note Scans for files with the extension ".pem", ".crt" or ".der"
 	int AddCertificatePath (const char *pPath);
+
+
+	/// \note Has to be called before Setup()
+	void SetVerifyCallback (int (*pCallback) (void *, mbedtls_x509_crt *, int, uint32_t *),
+				void *pParam);
 
 	/// \brief Setup SSL/TLS configuration prior to Connect()
 	/// \param pServername The hostname of the server to be connected
@@ -69,6 +75,8 @@ private:
 	CTLSConfig		m_TLSConfig;
 
 	boolean m_bCertAdded;
+	int (*m_pVerifyCallback) (void *, mbedtls_x509_crt *, int, uint32_t *);
+	void *m_pVerifyParam;
 };
 
 }

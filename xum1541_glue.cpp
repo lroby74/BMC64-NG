@@ -197,6 +197,14 @@ extern "C" int circle_xum1541_get_imod(void) {
   return s_pXum != 0 ? (int)s_pXum->GetIrqDelay() : -1;
 }
 
+
+
+extern "C" void circle_xum1541_set_patience_ms(int ms) {
+  if (s_pXum != 0) {
+    s_pXum->SetPatienceMs(ms > 0 ? (unsigned)ms : 0);
+  }
+}
+
 void circle_xum1541_clear_halts (void) {
   if (s_pXum != nullptr) {
     s_pXum->ClearHalts ();

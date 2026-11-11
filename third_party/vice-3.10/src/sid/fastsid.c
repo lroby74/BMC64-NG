@@ -1042,7 +1042,9 @@ static int fastsid_init(sound_t *psid, int speed, int cycles_per_sec, int factor
 
 
 
-    if (psid->chip_num >= 2 && resources_get_int("Sid3Model", &sid_model) < 0) {
+
+    if (psid->chip_num >= 2 &&
+        resources_get_int_sprintf("Sid%dModel", &sid_model, psid->chip_num + 1) < 0) {
         return 0;
     }
 #else

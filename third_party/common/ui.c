@@ -43,7 +43,9 @@
 #include "menu_text_layout.h"
 #include "font.h"
 #include "menu_timing.h"
+#include "ui_geometry.h"
 #include "overlay.h"
+#include "menu_usb.h"
 
 
 
@@ -236,6 +238,61 @@ int ui_emulation_is_paused(void) { return 0; }
 const int menu_width_chars = 40;
 const int menu_height_chars = 25;
 
+
+
+
+
+
+
+
+
+
+
+static int ui_menu_scale = UI_MENU_SCALE_DEFAULT;
+static int ui_menu_row_gap = UI_MENU_ROW_GAP_DEFAULT;
+static void ui_apply_menu_row_gap_layout(void);
+
+int ui_get_menu_scale_percent(void) {
+  return ui_menu_scale;
+}
+
+int ui_set_menu_scale_percent(int percent) {
+  if (!ui_menu_scale_is_valid(percent)) {
+    return 0;
+  }
+  ui_menu_scale = percent;
+  circle_set_scale_fbl(FB_LAYER_UI, percent);
+  if (ui_showing) {
+    circle_hide_fbl(FB_LAYER_UI);
+    ui_showing = 0;
+  }
+  return 1;
+}
+
+int ui_get_menu_row_gap(void) {
+  return ui_menu_row_gap;
+}
+
+int ui_set_menu_row_gap(int gap) {
+  if (!ui_menu_row_gap_is_valid(gap)) {
+    return 0;
+  }
+  if (gap != ui_menu_row_gap) {
+    ui_menu_row_gap = gap;
+    ui_apply_menu_row_gap_layout();
+  }
+  return 1;
+}
+
+
+static int ui_menu_altezza(int righe) {
+  int h = ui_menu_height_for_rows(righe, ui_menu_row_gap);
+  if (h <= 0 || h > menu_height_chars * UI_MENU_GLYPH_HEIGHT) {
+    h = menu_height_chars * UI_MENU_GLYPH_HEIGHT;
+  }
+  return h;
+}
+
 // Stack of menu screens
 static int current_menu = -1;
 struct menu_item menu_roots[NUM_MENU_ROOTS];
@@ -265,6 +322,64 @@ void (*on_value_changed)(struct menu_item *) = NULL;
 
 
 int (*ui_tasto_nella_lista)(struct menu_item *cur, char ch) = NULL;
+
+
+
+
+
+
+
+void (*ui_campo_scritto)(struct menu_item *cur) = NULL;
+void (*ui_dopo_i_tasti)(void) = NULL;
+
+
+
+
+
+
+
+
+
+
+
+#define UI_MOUSE_CODA 32U
+#define UI_MOUSE_SINISTRO 1U
+#define UI_MOUSE_DESTRO 2U
+#define UI_MOUSE_CENTRALE 4U
+#define UI_MOUSE_ZONA_MORTA 12
+#define UI_MOUSE_PASSO_TRASCINA 16
+#define UI_MOUSE_MAX_PASSI 4
+#define UI_MOUSE_SOMMA_MAX 10000
+struct ui_mouse_evento {
+  unsigned tasti;
+  int dx;
+  int dy;
+  int rotella;
+};
+static unsigned ui_mouse_testa;
+static unsigned ui_mouse_coda_fine;
+static struct ui_mouse_evento ui_mouse_eventi[UI_MOUSE_CODA];
+static volatile int ui_mouse_acceso = 1;
+static int ui_mouse_sessione;
+static int ui_mouse_visto;
+static int ui_mouse_x;
+static int ui_mouse_y;
+static unsigned ui_mouse_tasti;
+static struct menu_item *ui_mouse_trascina;
+static int ui_mouse_trascina_asse;
+static int ui_mouse_trascina_dx;
+static int ui_mouse_trascina_dy;
+static int ui_mouse_trascina_resto;
+
+static int ui_mouse_al_menu;
+static unsigned ui_mouse_ignorati;
+static void ui_mouse_sessione_apri(void);
+static void ui_mouse_sessione_chiudi(void);
+static void ui_mouse_freccia(void);
+
+
+
+
 
 // Key presses turn into these. Some actions are repeatable and
 // the frequency at which they are executed can accelerate the
@@ -475,6 +590,50 @@ void ui_draw_char_raw(const char singlechar, int x, int y, int color,
    ui_draw_char((uint8_t)singlechar, x, y, color, dst, dst_pitch, stretch, 0);
 }
 
+
+
+
+
+
+
+
+static uint8_t ui_petscii_codice_schermo(uint8_t code, int reverse_mode) {
+  uint8_t rev = (uint8_t)(reverse_mode ? 0x80 : 0x00);
+
+  if (code >= 0x40 && code <= 0x5f) {
+    return (uint8_t)((code - 0x40) | rev);
+  } else if (code >= 0x60 && code <= 0x7f) {
+    return (uint8_t)((code - 0x20) | rev);
+  } else if (code >= 0xa0 && code <= 0xbf) {
+    return (uint8_t)((code - 0x40) | rev);
+  } else if (code >= 0xc0 && code <= 0xfe) {
+    return (uint8_t)((code - 0x80) | rev);
+  } else if (code == 0xff) {
+    return (uint8_t)(0x5e | rev);
+  }
+  return (uint8_t)(code | rev);
+}
+
+static uint8_t ui_petscii_a_schermo(uint8_t c) {
+  if (c < 0x20U) {
+    return (uint8_t)(c | 0x80U);
+  }
+  if (c >= 0x80U && c < 0xa0U) {
+    return ui_petscii_codice_schermo((uint8_t)(c - 0x20U), 1);
+  }
+  return ui_petscii_codice_schermo(c, 0);
+}
+
+static void ui_draw_text_petscii(const char *text, int x, int y, int color) {
+  const unsigned char *p = (const unsigned char *)text;
+  int x2 = x;
+  while (*p) {
+    ui_draw_char(ui_petscii_a_schermo(*p), x2, y, color, NULL, 0, 1, 0);
+    x2 += 8;
+    p++;
+  }
+}
+
 void ui_draw_text(const char *text, int x, int y, int color) {
   ui_draw_text_buf(text, x, y, color, NULL, 0, 1);
 }
@@ -553,9 +712,14 @@ static void do_on_value_changed(struct menu_item *item) {
   }
 }
 
+
+
+static struct menu_item *ui_campo_toccato;
+
 static void ui_type_char(char ch) {
   struct menu_item *cur = menu_cursor_item[current_menu];
   if (cur->type == TEXTFIELD) {
+    ui_campo_toccato = cur;
 
 
 
@@ -606,6 +770,9 @@ static void ui_type_char(char ch) {
       memmove(str + cur->value - 1, str + cur->value,
               (strlen(str) - cur->value + 1) * sizeof(char));
       cur->value--;
+      if (ui_campo_scritto != NULL) {
+        ui_campo_scritto(cur);
+      }
     } else {
       if (strlen(cur->str_value) >= cur->max_length)
         return;
@@ -617,6 +784,9 @@ static void ui_type_char(char ch) {
       cur->value++;
       if (cur->textfield_code && strlen(str) == cur->max_length) {
         do_on_value_changed(cur);
+      }
+      if (ui_campo_scritto != NULL) {
+        ui_campo_scritto(cur);
       }
     }
   } else {
@@ -658,8 +828,81 @@ static void ui_action_tasto(long action) {
   }
 }
 
+
+
+
+
+
+
+static int ui_browser_tail_delay = 250;
+static int invio_giu;
+static int invio_consumato;
+static int invio_riparte;
+static struct menu_item *invio_voce;
+static unsigned long invio_da;
+static int lettere_utf8(const char *s);
+
+static int invio_voce_lunga(struct menu_item *v) {
+  return v != NULL && !v->disabled && v->nome_lungo != NULL &&
+         lettere_utf8(v->nome_lungo) > MAX_MENU_STR - 1;
+}
+
+static void ui_invio_giu(long key) {
+  if (key != KEYCODE_Return || ui_browser_tail_delay <= 0 || invio_giu) {
+    return;
+  }
+  if (!invio_voce_lunga(menu_cursor_item[current_menu])) {
+    return;
+  }
+  invio_giu = 1;
+  invio_consumato = 0;
+  invio_voce = menu_cursor_item[current_menu];
+  invio_da = circle_get_ticks();
+}
+
+
+
+static int ui_invio_su(long key) {
+  int mangiato;
+  if (key != KEYCODE_Return || !invio_giu) {
+    return 0;
+  }
+  mangiato = invio_consumato || invio_voce != menu_cursor_item[current_menu] ||
+             (circle_get_ticks() - invio_da) >=
+                 (unsigned long)ui_browser_tail_delay * 1000UL;
+  invio_giu = 0;
+  invio_voce = NULL;
+  if (mangiato) {
+    invio_riparte = 1;
+  }
+  return mangiato;
+}
+
+
+static void ui_invio_reset(void) {
+  invio_voce = NULL;
+  if (invio_giu) {
+    invio_consumato = 1;
+  }
+}
+
+int ui_get_browser_tail_delay(void) {
+  return ui_browser_tail_delay;
+}
+
+int ui_set_browser_tail_delay(int ms) {
+  if (ms != 0 && ms != 100 && ms != 250 && ms != 500 && ms != 750 &&
+      ms != 1000) {
+    return 0;
+  }
+  ui_browser_tail_delay = ms;
+  ui_invio_reset();
+  return 1;
+}
+
 // Happens on main loop.
 static void ui_key_pressed(long key) {
+  ui_invio_giu(key);
   // Anything other than left/right will reset transparency
   // and render current item only flags. They are applicable
   // only while the user is on the item they were triggered
@@ -675,6 +918,14 @@ static void ui_key_pressed(long key) {
 
 
 
+  if (menu_roots[current_menu].key_listener_func != NULL &&
+      menu_roots[current_menu].key_listener_func(
+          &menu_roots[current_menu], menu_cursor_item[current_menu], key)) {
+    return;
+  }
+
+
+
 
 
 
@@ -685,6 +936,23 @@ static void ui_key_pressed(long key) {
 
   if (menu_cursor_item[current_menu] != NULL &&
       menu_cursor_item[current_menu]->type == TEXTFIELD) {
+
+
+
+    if (ui_alt & 2) {
+      char gr = menu_text_layout_altgr_to_char(key, shift_eff,
+                                               ui_keyboard_mapping,
+                                               ui_keyboard_layout);
+      if (gr != '\0') {
+        ui_type_char(gr);
+        return;
+      }
+      if (key >= KEYCODE_a && key <= KEYCODE_0 &&
+          (ui_keyboard_layout == MENU_TEXT_LAYOUT_IT ||
+           ui_keyboard_layout == MENU_TEXT_LAYOUT_DE)) {
+        return;
+      }
+    }
     char ch = menu_text_layout_key_to_char(key, shift_eff,
                                            ui_keyboard_mapping,
                                            ui_keyboard_layout);
@@ -763,6 +1031,9 @@ static void ui_key_pressed(long key) {
 
 // Happens on main loop. Process a key release for the ui.
 static void ui_key_released(long key) {
+  if (ui_invio_su(key)) {
+    return;
+  }
   if (key == commodore_key_sym) {
     ui_commodore_down = 0;
     return;
@@ -779,6 +1050,11 @@ static void ui_key_released(long key) {
     return;
   case KEYCODE_Return:
     ui_action(ACTION_Return);
+    return;
+  case KEYCODE_Space:
+
+
+    menu_quick_access_try_assign(menu_cursor_item[current_menu]);
     return;
   case KEYCODE_Escape:
   case KEYCODE_BackQuote:
@@ -847,6 +1123,7 @@ static void ui_action_frame() {
 void ui_render_single_frame() {
   menu_update_network_status();
   menu_update_temperatura();
+  menu_usb_capture_refresh();
 
 
 
@@ -861,6 +1138,7 @@ void ui_render_single_frame() {
   for (int msi=0;msi<=current_menu;msi++) {
      ui_render_now(msi);
   }
+  ui_mouse_freccia();
 
 
 
@@ -1877,7 +2155,25 @@ static void ui_lettore_sid_sonda(void) {
          lettore_secondi(), let_salto_fino);
 }
 
+
+
+
+
+
+
+
+
+
+
+
+static struct menu_item *ui_voce_prima_di_esc = NULL;
+static void ui_riporta_voce_prima_di_esc(void);
+static void ui_traverse(void);
+
 static void ui_toggle(void) {
+  if (ui_enabled) {
+    ui_riporta_voce_prima_di_esc();
+  }
 
 
 
@@ -1889,12 +2185,19 @@ static void ui_toggle(void) {
     ui_esc_chiude_tutto = 0;
   }
 
+  if (ui_enabled) {
+    ui_mouse_sessione_apri();
+  } else {
+    ui_mouse_sessione_chiudi();
+  }
+
   lettore_mostrato = 0;
   lettore_rimette_vic();
   if (ui_enabled) {
 
 
     ui_stato_normale();
+    ui_voce_prima_di_esc = NULL;
     ui_alt = 0;
     emux_trap_main_loop_ui();
   }
@@ -1915,6 +2218,10 @@ void ui_pop_all_and_toggle() {
 }
 
 static void cursor_pos_updated() {
+
+  ui_voce_prima_di_esc = NULL;
+  ui_campo_toccato = NULL;
+  ui_invio_reset();
   // Tell listener
   if (menu_roots[current_menu].cursor_listener_func) {
      menu_roots[current_menu].cursor_listener_func(&menu_roots[current_menu],
@@ -1976,9 +2283,13 @@ void ui_menu_fit_height(int max_rows) {
   if (n > max_rows) {
     n = max_rows;
   }
-  if (n * 8 > menu_roots[current_menu].menu_height) {
-    menu_roots[current_menu].menu_height = n * 8;
-    menu_window_bottom[current_menu] = menu_window_top[current_menu] + n;
+  if (ui_menu_altezza(n) > menu_roots[current_menu].menu_height) {
+
+    menu_roots[current_menu].menu_height = ui_menu_altezza(n);
+    menu_roots[current_menu].menu_rows = n;
+    menu_window_bottom[current_menu] = menu_window_top[current_menu] +
+        ui_menu_visible_rows(menu_roots[current_menu].menu_height,
+                             ui_menu_row_gap);
 
 
 
@@ -2018,6 +2329,50 @@ static void ui_sync_cursor_item(void) {
 
   menu_cursor_item[current_menu] = NULL;
   ui_traverse_children(menu_roots[current_menu].first_child, &idx);
+}
+
+
+
+
+static int ui_riga_della_voce(struct menu_item *node,
+                              const struct menu_item *v, int *index) {
+  while (node != NULL) {
+    if (node == v) {
+      return *index;
+    }
+    *index = *index + 1;
+    if (node->type == FOLDER && node->is_expanded &&
+        node->first_child != NULL) {
+      int riga = ui_riga_della_voce(node->first_child, v, index);
+      if (riga >= 0) {
+        return riga;
+      }
+    }
+    node = node->next;
+  }
+  return -1;
+}
+
+
+
+
+static void ui_riporta_voce_prima_di_esc(void) {
+  struct menu_item *v = ui_voce_prima_di_esc;
+  int index = 0;
+  int riga;
+
+  ui_voce_prima_di_esc = NULL;
+  if (v == NULL || current_menu != 0) {
+    return;
+  }
+  riga = ui_riga_della_voce(menu_roots[0].first_child, v, &index);
+  if (riga < 0 || !ui_cursor_is_selectable(riga)) {
+    return;
+  }
+  menu_cursor[0] = riga;
+  ui_traverse();
+  ui_sync_cursor_item();
+  cursor_pos_updated();
 }
 
 void ui_select_first_interactive_item(void) {
@@ -2063,6 +2418,11 @@ static void ui_move_cursor(int direction) {
 
 static void ui_action(long action) {
 
+
+  if (action != ACTION_Escape && action != ACTION_Exit) {
+    ui_voce_prima_di_esc = NULL;
+  }
+
   ui_azione_in_corso = action;
   ui_action_corpo(action);
   ui_azione_in_corso = ACTION_None;
@@ -2084,6 +2444,22 @@ static void ui_action_corpo(long action) {
   switch (action) {
   case ACTION_Up:
   case ACTION_Down:
+
+
+
+
+
+    if (cur != NULL && cur == ui_campo_toccato && cur->type == TEXTFIELD &&
+        !cur->disabled && cur->sub_id != MENU_SUB_SEARCH &&
+        cur->sub_id != MENU_SUB_PICK_FILE && cur->id != MENU_WIFI_SSID &&
+        !cur->textfield_code) {
+      int menu_prima = current_menu;
+      ui_campo_toccato = NULL;
+      do_on_value_changed(cur);
+      if (current_menu != menu_prima) {
+        return;
+      }
+    }
     ui_move_cursor(action == ACTION_Up ? -1 : 1);
 
 
@@ -2099,8 +2475,20 @@ static void ui_action_corpo(long action) {
     break;
   case ACTION_Left:
   case ACTION_MiniLeft:
+    if (action == ACTION_Left &&
+        menu_roots[current_menu].left_right_listener_func &&
+        menu_roots[current_menu].left_right_listener_func(
+            &menu_roots[current_menu], cur, 0)) {
+      break;
+    }
     if (cur->disabled) break;
-    if (cur->type == RANGE) {
+    if (action == ACTION_Left && cur->type == FOLDER) {
+
+      if (cur->is_expanded) {
+        cur->is_expanded = 0;
+        do_on_value_changed(menu_cursor_item[current_menu]);
+      }
+    } else if (cur->type == RANGE) {
       int prima = cur->value;
       if (action == ACTION_MiniLeft)
          cur->value -= cur->ministep;
@@ -2122,12 +2510,11 @@ static void ui_action_corpo(long action) {
       if (cur->value < 0) {
         cur->value = cur->num_choices - 1;
       }
-      // NOTE: This doesn't support the first choice being disabled!
+
+
+
       while (cur->choice_disabled[cur->value] && cur->value != orig) {
-        cur->value -= 1;
-      }
-      if (cur->value < 0) {
-        cur->value = cur->num_choices - 1;
+        cur->value = (cur->value + cur->num_choices - 1) % cur->num_choices;
       }
       do_on_value_changed(menu_cursor_item[current_menu]);
     } else if (cur->type == TOGGLE) {
@@ -2143,8 +2530,20 @@ static void ui_action_corpo(long action) {
     break;
   case ACTION_Right:
   case ACTION_MiniRight:
+    if (action == ACTION_Right &&
+        menu_roots[current_menu].left_right_listener_func &&
+        menu_roots[current_menu].left_right_listener_func(
+            &menu_roots[current_menu], cur, 1)) {
+      break;
+    }
     if (cur->disabled) break;
-    if (cur->type == RANGE) {
+    if (action == ACTION_Right && cur->type == FOLDER) {
+
+      if (!cur->is_expanded) {
+        cur->is_expanded = 1;
+        do_on_value_changed(menu_cursor_item[current_menu]);
+      }
+    } else if (cur->type == RANGE) {
       int prima = cur->value;
       if (action == ACTION_MiniRight)
          cur->value += cur->ministep;
@@ -2206,6 +2605,7 @@ static void ui_action_corpo(long action) {
       }
       do_on_value_changed(menu_cursor_item[current_menu]);
     } else if (cur->type == TEXTFIELD) {
+      ui_campo_toccato = NULL;
       do_on_value_changed(menu_cursor_item[current_menu]);
     }
     break;
@@ -2217,7 +2617,20 @@ static void ui_action_corpo(long action) {
       }
       ui_pop_menu();
     } else {
-      ui_toggle();
+
+
+      struct menu_item *quick_access = ui_find_item_by_id(
+          menu_roots[0].first_child, MENU_QUICK_ACCESS_FOLDER);
+      if (quick_access != NULL && cur != quick_access) {
+
+
+        struct menu_item *toccata = cur;
+        ui_focus_item(quick_access);
+        cursor_pos_updated();
+        ui_voce_prima_di_esc = toccata;
+      } else {
+        ui_toggle();
+      }
     }
     break;
   case ACTION_Exit:
@@ -2274,9 +2687,22 @@ static const char *salta_lettere_utf8(const char *s, int quante) {
 
 
 
+
+static int lettere_del_nome(const struct menu_item *node, int indent) {
+  int colonne = MAX_MENU_STR - 1;
+  if (strcmp(node->displayed_value, "(dir)") == 0) {
+    int libere = node->menu_width / 8 - indent - 1 - 6;
+    if (libere > 0 && libere < colonne) {
+      colonne = libere;
+    }
+  }
+  return colonne;
+}
+
+
+
 static void nome_che_scorre(const char *nome, unsigned long trascorso,
-                            char *buf, size_t n) {
-  int finestra = MAX_MENU_STR - 1;
+                            int finestra, char *buf, size_t n) {
   int oltre = lettere_utf8(nome) - finestra;
   int passo = 0;
   if (oltre > 0) {
@@ -2306,20 +2732,64 @@ static unsigned long scorre_da;
 
 
 
+static int ui_invio_fine_del_nome(struct menu_item *node, unsigned long ora,
+                                  int finestra, char *buf, size_t n) {
+  int lettere;
+  const char *da;
+  size_t quanti;
+  if (!invio_giu || invio_voce != node || node->nome_lungo == NULL) {
+    return 0;
+  }
+  if (!invio_consumato &&
+      ora - invio_da < (unsigned long)ui_browser_tail_delay * 1000UL) {
+    return 0;
+  }
+  invio_consumato = 1;
+  lettere = lettere_utf8(node->nome_lungo);
+  da = salta_lettere_utf8(node->nome_lungo,
+                          lettere > finestra ? lettere - finestra : 0);
+  quanti = strlen(da);
+  if (quanti > n - 1) {
+    quanti = n - 1;
+  }
+  memcpy(buf, da, quanti);
+  buf[quanti] = '\0';
+  return 1;
+}
+
+
+
 static const char *testo_della_voce(struct menu_item *node,
-                                    int sotto_il_cursore, char *buf,
+                                    int sotto_il_cursore, int indent, char *buf,
                                     size_t n) {
-  if (!sotto_il_cursore || node->nome_lungo == NULL ||
-      strncmp(node->nome_lungo, node->name, strlen(node->name)) != 0) {
+  int finestra = lettere_del_nome(node, indent);
+  const char *intero = node->name;
+  if (node->nome_lungo != NULL &&
+      strncmp(node->nome_lungo, node->name, strlen(node->name)) == 0) {
+    intero = node->nome_lungo;
+  }
+  if (lettere_utf8(intero) <= finestra) {
     return node->name;
   }
+  if (!sotto_il_cursore) {
+    nome_che_scorre(node->name, 0, finestra, buf, n);
+    return buf;
+  }
   unsigned long ora = circle_get_ticks();
+  if (intero == node->nome_lungo &&
+      ui_invio_fine_del_nome(node, ora, finestra, buf, n)) {
+    return buf;
+  }
+  if (invio_riparte) {
+    scorre_voce = NULL;
+    invio_riparte = 0;
+  }
   if (node != scorre_voce || menu_cursor[current_menu] != scorre_cursore) {
     scorre_voce = node;
     scorre_cursore = menu_cursor[current_menu];
     scorre_da = ora;
   }
-  nome_che_scorre(node->nome_lungo, ora - scorre_da, buf, n);
+  nome_che_scorre(intero, ora - scorre_da, finestra, buf, n);
   return buf;
 }
 
@@ -3394,6 +3864,912 @@ static const char *testo_della_voce(struct menu_item *node,
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+int ui_get_menu_mouse_enabled(void) {
+  return ui_mouse_acceso;
+}
+
+void ui_set_menu_mouse_enabled(int acceso) {
+  ui_mouse_acceso = acceso ? 1 : 0;
+  if (!ui_mouse_acceso) {
+    ui_mouse_sessione_chiudi();
+  } else if (ui_enabled && !ui_mouse_sessione) {
+    ui_mouse_sessione_apri();
+  }
+}
+
+static void ui_mouse_svuota(void) {
+  circle_lock_acquire();
+  ui_mouse_testa = ui_mouse_coda_fine;
+  circle_lock_release();
+}
+
+static void ui_mouse_trascina_finita(void) {
+  ui_mouse_trascina = NULL;
+  ui_mouse_trascina_asse = 0;
+  ui_mouse_trascina_dx = 0;
+  ui_mouse_trascina_dy = 0;
+  ui_mouse_trascina_resto = 0;
+}
+
+static void ui_mouse_sessione_apri(void) {
+  struct menu_item *p = NULL;
+
+  ui_mouse_svuota();
+  ui_mouse_tasti = 0;
+  ui_mouse_trascina_finita();
+  ui_mouse_visto = 0;
+  ui_mouse_sessione = ui_mouse_acceso;
+
+  if (current_menu >= 0) {
+    p = menu_roots[current_menu].first_child;
+  }
+  if (p != NULL && p->menu_width > 0 && p->menu_height > 0) {
+    ui_mouse_x = p->menu_left + p->menu_width / 2;
+    ui_mouse_y = p->menu_top + p->menu_height / 2;
+  } else {
+    ui_mouse_x = ui_fb_w / 2;
+    ui_mouse_y = ui_fb_h / 2;
+  }
+}
+
+static void ui_mouse_sessione_chiudi(void) {
+  ui_mouse_svuota();
+  ui_mouse_sessione = 0;
+  ui_mouse_visto = 0;
+  ui_mouse_tasti = 0;
+  ui_mouse_trascina_finita();
+}
+
+static int ui_mouse_somma(int a, int b) {
+  long s = (long)a + (long)b;
+  if (s > UI_MOUSE_SOMMA_MAX) return UI_MOUSE_SOMMA_MAX;
+  if (s < -UI_MOUSE_SOMMA_MAX) return -UI_MOUSE_SOMMA_MAX;
+  return (int)s;
+}
+
+
+static void ui_mouse_metti(unsigned tasti, int dx, int dy, int rotella) {
+  struct ui_mouse_evento *e;
+
+  circle_lock_acquire();
+  if (ui_mouse_testa != ui_mouse_coda_fine) {
+    e = &ui_mouse_eventi[(ui_mouse_coda_fine - 1U) & (UI_MOUSE_CODA - 1U)];
+    if (e->tasti == tasti) {
+      e->dx = ui_mouse_somma(e->dx, dx);
+      e->dy = ui_mouse_somma(e->dy, dy);
+      e->rotella = ui_mouse_somma(e->rotella, rotella);
+      circle_lock_release();
+      return;
+    }
+  }
+  if (ui_mouse_coda_fine - ui_mouse_testa >= UI_MOUSE_CODA) {
+    ui_mouse_testa++;
+  }
+  e = &ui_mouse_eventi[ui_mouse_coda_fine & (UI_MOUSE_CODA - 1U)];
+  e->tasti = tasti;
+  e->dx = dx;
+  e->dy = dy;
+  e->rotella = rotella;
+  ui_mouse_coda_fine++;
+  circle_lock_release();
+}
+
+
+
+
+
+int ui_mouse_rapporto(unsigned *tasti, unsigned *tasti_prima, int dx, int dy, int rotella) {
+  if (ui_enabled && ui_mouse_acceso) {
+    if (!ui_mouse_al_menu) {
+      if (*tasti_prima & UI_MOUSE_SINISTRO) emu_mouse_button_left(0);
+      if (*tasti_prima & UI_MOUSE_DESTRO) emu_mouse_button_right(0);
+      if (*tasti_prima & UI_MOUSE_CENTRALE) emu_mouse_button_middle(0);
+      ui_mouse_ignorati = *tasti_prima & *tasti;
+      ui_mouse_al_menu = 1;
+    }
+    ui_mouse_ignorati &= *tasti;
+    ui_mouse_metti(*tasti & ~ui_mouse_ignorati & 7U, dx, dy, rotella);
+    return 1;
+  }
+  if (ui_mouse_al_menu) {
+    ui_mouse_al_menu = 0;
+    ui_mouse_ignorati = *tasti;
+  }
+  ui_mouse_ignorati &= *tasti;
+  if (ui_mouse_ignorati) {
+    *tasti &= ~ui_mouse_ignorati;
+    *tasti_prima &= ~ui_mouse_ignorati;
+  }
+  return 0;
+}
+
+static void ui_mouse_muovi(int dx, int dy) {
+  ui_mouse_x = ui_mouse_somma(ui_mouse_x, dx);
+  ui_mouse_y = ui_mouse_somma(ui_mouse_y, dy);
+  if (ui_mouse_x < 0) ui_mouse_x = 0;
+  if (ui_mouse_y < 0) ui_mouse_y = 0;
+  if (ui_fb_w > 0 && ui_mouse_x > ui_fb_w - 1) ui_mouse_x = ui_fb_w - 1;
+  if (ui_fb_h > 0 && ui_mouse_y > ui_fb_h - 1) ui_mouse_y = ui_fb_h - 1;
+}
+
+
+
+static int ui_mouse_riga(void) {
+  struct menu_item *p;
+  int indice;
+
+  if (current_menu < 0) return -1;
+  p = menu_roots[current_menu].first_child;
+  if (p == NULL) return -1;
+  if (ui_mouse_x < p->menu_left || ui_mouse_x >= p->menu_left + p->menu_width ||
+      ui_mouse_y < p->menu_top || ui_mouse_y >= p->menu_top + p->menu_height) {
+    return -1;
+  }
+  indice = menu_window_top[current_menu] +
+           (ui_mouse_y - p->menu_top) / ui_menu_row_pitch(ui_menu_row_gap);
+  if (indice >= menu_window_bottom[current_menu] || indice >= max_index[current_menu]) {
+    return -1;
+  }
+  return indice;
+}
+
+
+
+static struct menu_item *ui_mouse_scegli(void) {
+  int quale = current_menu;
+  int i = ui_mouse_riga();
+
+  if (i < 0 || !ui_cursor_is_selectable(i)) return NULL;
+  if (i != menu_cursor[current_menu]) {
+    menu_cursor[current_menu] = i;
+    cursor_pos_updated();
+    if (current_menu != quale) return NULL;
+    ui_sync_cursor_item();
+  }
+  return menu_cursor_item[current_menu];
+}
+
+
+
+static void ui_mouse_bordo(int dy) {
+  struct menu_item *p;
+
+  if (current_menu < 0 || dy == 0) return;
+  p = menu_roots[current_menu].first_child;
+  if (p == NULL) return;
+  if (ui_mouse_x < p->menu_left || ui_mouse_x >= p->menu_left + p->menu_width) return;
+  if (dy < 0 && ui_mouse_y <= p->menu_top && menu_window_top[current_menu] > 0) {
+    if (ui_cursor_is_selectable(menu_window_top[current_menu])) {
+      menu_cursor[current_menu] = menu_window_top[current_menu];
+    }
+    ui_action(ACTION_Up);
+  } else if (dy > 0 && ui_mouse_y >= p->menu_top + p->menu_height - 1 &&
+             menu_window_bottom[current_menu] < max_index[current_menu]) {
+    if (ui_cursor_is_selectable(menu_window_bottom[current_menu] - 1)) {
+      menu_cursor[current_menu] = menu_window_bottom[current_menu] - 1;
+    }
+    ui_action(ACTION_Down);
+  }
+}
+
+
+static void ui_mouse_cambia(struct menu_item *v, int passi, int fini) {
+  int incremento;
+  long nuovo;
+
+  if (v == NULL || v->type != RANGE || v->disabled || passi == 0) return;
+  incremento = fini ? v->ministep : v->step;
+  if (incremento <= 0) incremento = 1;
+  nuovo = (long)v->value + (long)passi * incremento;
+  if (nuovo < v->min) nuovo = v->min;
+  if (nuovo > v->max) nuovo = v->max;
+  if (nuovo == v->value) return;
+  v->value = (int)nuovo;
+  do_on_value_changed(v);
+}
+
+
+
+static void ui_mouse_trascina_avanti(const struct ui_mouse_evento *e) {
+  int appena = 0;
+  int passi;
+  int ax, ay;
+
+  if (!(e->tasti & UI_MOUSE_SINISTRO) || current_menu < 0 ||
+      ui_mouse_trascina != menu_cursor_item[current_menu]) {
+    ui_mouse_trascina_finita();
+    return;
+  }
+  if (ui_mouse_trascina_asse == 0) {
+    ui_mouse_trascina_dx = ui_mouse_somma(ui_mouse_trascina_dx, e->dx);
+    ui_mouse_trascina_dy = ui_mouse_somma(ui_mouse_trascina_dy, e->dy);
+    ax = ui_mouse_trascina_dx < 0 ? -ui_mouse_trascina_dx : ui_mouse_trascina_dx;
+    ay = ui_mouse_trascina_dy < 0 ? -ui_mouse_trascina_dy : ui_mouse_trascina_dy;
+    if (ax < UI_MOUSE_ZONA_MORTA && ay < UI_MOUSE_ZONA_MORTA) return;
+    ui_mouse_trascina_asse = ax >= ay ? 1 : 2;
+    ui_mouse_trascina_resto = ui_mouse_trascina_asse == 1 ? ui_mouse_trascina_dx : -ui_mouse_trascina_dy;
+    if (ui_mouse_trascina_resto > 0) {
+      ui_mouse_trascina_resto -= UI_MOUSE_ZONA_MORTA;
+    } else if (ui_mouse_trascina_resto < 0) {
+      ui_mouse_trascina_resto += UI_MOUSE_ZONA_MORTA;
+    }
+    appena = 1;
+  }
+  if (!appena) {
+    ui_mouse_trascina_resto = ui_mouse_somma(ui_mouse_trascina_resto,
+                                             ui_mouse_trascina_asse == 1 ? e->dx : -e->dy);
+  }
+  passi = ui_mouse_trascina_resto / UI_MOUSE_PASSO_TRASCINA;
+  if (passi != 0) {
+    ui_mouse_trascina_resto %= UI_MOUSE_PASSO_TRASCINA;
+    if (passi > UI_MOUSE_MAX_PASSI) passi = UI_MOUSE_MAX_PASSI;
+    if (passi < -UI_MOUSE_MAX_PASSI) passi = -UI_MOUSE_MAX_PASSI;
+    ui_mouse_cambia(ui_mouse_trascina, passi, 1);
+  }
+}
+
+static void ui_mouse_servi(const struct ui_mouse_evento *e) {
+  unsigned premuti = e->tasti & ~ui_mouse_tasti;
+  int era_visto = ui_mouse_visto;
+  struct menu_item *v;
+  int r;
+
+  ui_mouse_tasti = e->tasti;
+  if (!ui_mouse_sessione || !ui_mouse_acceso || !ui_enabled || current_menu < 0) {
+    ui_mouse_trascina_finita();
+    return;
+  }
+  ui_mouse_visto = 1;
+  if (ui_mouse_trascina != NULL) {
+    ui_mouse_trascina_avanti(e);
+    return;
+  }
+  if (e->dx != 0 || e->dy != 0) {
+    ui_mouse_muovi(e->dx, e->dy);
+    ui_mouse_bordo(e->dy);
+    (void)ui_mouse_scegli();
+  }
+  if (premuti & UI_MOUSE_DESTRO) {
+    ui_action(ACTION_Escape);
+    return;
+  }
+  r = e->rotella;
+  if (r > 16) r = 16;
+  if (r < -16) r = -16;
+  if (r != 0) {
+
+    int i = era_visto ? ui_mouse_riga() : -1;
+    int contati = 0;
+    struct menu_item *sotto =
+        i >= 0 ? ui_item_at_index(menu_roots[current_menu].first_child, i, &contati) : NULL;
+    if (sotto != NULL && sotto->type == RANGE && !sotto->disabled) {
+      v = ui_mouse_scegli();
+      if (v == sotto) {
+        ui_mouse_cambia(v, r, 0);
+      }
+      return;
+    }
+    for (; r > 0; r--) ui_action(ACTION_Up);
+    for (; r < 0; r++) ui_action(ACTION_Down);
+    return;
+  }
+  if ((premuti & UI_MOUSE_SINISTRO) && era_visto) {
+    v = ui_mouse_scegli();
+    if (v == NULL) return;
+    if (v->type == RANGE && !v->disabled) {
+      ui_mouse_trascina_finita();
+      ui_mouse_trascina = v;
+    } else {
+      ui_action(ACTION_Return);
+    }
+  }
+}
+
+
+static void ui_check_mouse(void) {
+  struct ui_mouse_evento ev[UI_MOUSE_CODA];
+  unsigned n = 0;
+  unsigned i;
+
+  if (ui_enabled && ui_mouse_acceso && !ui_mouse_sessione) {
+    ui_mouse_sessione_apri();
+  }
+  circle_lock_acquire();
+  while (ui_mouse_testa != ui_mouse_coda_fine && n < UI_MOUSE_CODA) {
+    ev[n++] = ui_mouse_eventi[ui_mouse_testa & (UI_MOUSE_CODA - 1U)];
+    ui_mouse_testa++;
+  }
+  circle_lock_release();
+  for (i = 0; i < n; i++) {
+    ui_mouse_servi(&ev[i]);
+  }
+}
+
+
+static void ui_mouse_freccia(void) {
+  static const char *const disegno[] = {
+      "#",          "##",         "#=#",        "#==#",       "#===#",      "#====#",
+      "#=====#",    "#======#",   "#=======#",  "#====#####", "#==#=#",     "#=#.#=#",
+      "##..#=#",    "#....#=#",   ".....#=#",   "......#",
+  };
+  unsigned y;
+  unsigned x;
+
+  if (!ui_mouse_sessione || !ui_mouse_visto || !ui_mouse_acceso || ui_transparent || ui_fb == NULL) {
+    return;
+  }
+  for (y = 0; y < sizeof(disegno) / sizeof(disegno[0]); y++) {
+    for (x = 0; disegno[y][x] != '\0'; x++) {
+      int px = ui_mouse_x + (int)x;
+      int py = ui_mouse_y + (int)y;
+      if (disegno[y][x] == '.' || px < 0 || py < 0 || px >= ui_fb_w || py >= ui_fb_h) continue;
+      ui_draw_rect(px, py, 1, 1, disegno[y][x] == '#' ? BG_COLOR : FG_COLOR, 1);
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // Do key press/releases on the main loop
 void ui_check_key(void) {
   static long process_ui_key[PENDING_UI_KEY_SIZE];
@@ -3426,6 +4802,16 @@ void ui_check_key(void) {
     } else {
       ui_key_released(process_ui_key[i]);
     }
+  }
+
+  if (process_index > 0 && ui_dopo_i_tasti != NULL) {
+    ui_dopo_i_tasti();
+  }
+  ui_check_mouse();
+  {
+
+    extern void menu_before_render(void);
+    menu_before_render();
   }
 
   // Ui action frame tick
@@ -3828,7 +5214,8 @@ static void ui_campo_finestra(struct menu_item *node, int fuoco, int *primo,
 
 
 static void ui_render_children(struct menu_item *node,
-                               int stack_index, int *index, int indent) {
+                               int stack_index, int *index, int indent,
+                               int row_pitch) {
   while (node != NULL) {
     node->render_index = *index;
 
@@ -3842,7 +5229,9 @@ static void ui_render_children(struct menu_item *node,
     // Render a row
     if (*index >= menu_window_top[stack_index] &&
         *index < menu_window_bottom[stack_index]) {
-      int y = (*index - menu_window_top[stack_index]) * 8 + node->menu_top;
+
+      int y = (*index - menu_window_top[stack_index]) * row_pitch +
+              node->menu_top;
       if (*index == menu_cursor[stack_index]) {
         ui_draw_rect(node->menu_left, y, node->menu_width, 8, HILITE_COLOR, 1);
         menu_cursor_item[stack_index] = node;
@@ -3861,11 +5250,17 @@ static void ui_render_children(struct menu_item *node,
           *index == menu_cursor[stack_index]) {
 
         char scorre[(MAX_MENU_STR - 1) * 4 + 1];
-        ui_draw_text(testo_della_voce(node,
-                                      *index == menu_cursor[stack_index] &&
-                                          stack_index == current_menu,
-                                      scorre, sizeof(scorre)),
-           node->menu_left + (indent + 1) * 8, y, colour);
+        if (node->name_petscii && raw_video_font != NULL) {
+
+          ui_draw_text_petscii(node->name,
+                               node->menu_left + (indent + 1) * 8, y, colour);
+        } else {
+          ui_draw_text(testo_della_voce(node,
+                                        *index == menu_cursor[stack_index] &&
+                                            stack_index == current_menu,
+                                        indent, scorre, sizeof(scorre)),
+             node->menu_left + (indent + 1) * 8, y, colour);
+        }
 
         if (node->type == READ_ONLY_HEADING &&
           node->displayed_value[0] != '\0') {
@@ -3958,7 +5353,8 @@ static void ui_render_children(struct menu_item *node,
     *index = *index + 1;
     if (node->type == FOLDER && node->is_expanded &&
         node->first_child != NULL) {
-      ui_render_children(node->first_child, stack_index, index, indent + 1);
+      ui_render_children(node->first_child, stack_index, index, indent + 1,
+                         row_pitch);
     }
     node = node->next;
   }
@@ -3977,6 +5373,77 @@ static void ui_draw_shadow_text(const char* txt, int *x, int *y, int col) {
   ui_draw_text(txt, *x, *y-1, 0);
   ui_draw_text(txt, *x, *y, col);
   *x = *x + strlen(txt) *8;
+}
+
+
+
+
+
+
+
+static const uint8_t ui_frecce_scorrimento[2][8] = {
+  {0x18, 0x3c, 0x7e, 0x18, 0x18, 0x18, 0x18, 0x18},
+  {0x18, 0x18, 0x18, 0x18, 0x18, 0x7e, 0x3c, 0x18},
+};
+
+static void ui_disegna_freccia(int quale, int x, int y, int colore) {
+  int r, c;
+  if (x < 0 || y < 0 || x > ui_fb_w - 8 || y > ui_fb_h - 8) {
+    return;
+  }
+  for (r = 0; r < 8; r++) {
+    uint8_t riga = ui_frecce_scorrimento[quale][r];
+    for (c = 0; c < 8; c++) {
+      if (riga & (0x80 >> c)) {
+        ui_fb[x + c + (y + r) * ui_fb_pitch] = colore;
+      }
+    }
+  }
+}
+
+static void ui_render_scroll_indicators(int menu_stack_index, int total_rows) {
+  struct menu_item *root = &menu_roots[menu_stack_index];
+  int window_top = menu_window_top[menu_stack_index];
+  int window_bottom = menu_window_bottom[menu_stack_index];
+  int prima = root->scroll_text_first_row;
+  int fine = root->scroll_text_end_row;
+  int first_text_row;
+  int text_end;
+  int marker_x;
+
+
+  if (prima < 0 && root->sub_id == MENU_SUB_TEXT_CONTENTS) {
+    prima = 2;
+    fine = total_rows;
+  }
+  if (prima < 0) {
+    return;
+  }
+  first_text_row = prima > window_top ? prima : window_top;
+  text_end = fine < window_bottom ? fine : window_bottom;
+  if (text_end > total_rows) {
+    text_end = total_rows;
+  }
+  if (first_text_row >= text_end) {
+    return;
+  }
+  marker_x = root->menu_left + root->menu_width - 8;
+  if (window_top > 0) {
+    ui_disegna_freccia(0, marker_x,
+                       root->menu_top + (first_text_row - window_top) *
+                           ui_menu_row_pitch(ui_menu_row_gap),
+                       FG_COLOR);
+  }
+  if (window_bottom < total_rows) {
+    ui_disegna_freccia(1, marker_x,
+                       root->menu_top + (text_end - 1 - window_top) *
+                           ui_menu_row_pitch(ui_menu_row_gap),
+                       FG_COLOR);
+  }
+
+
+
+
 }
 
 void ui_render_now(int menu_stack_index) {
@@ -4009,9 +5476,11 @@ void ui_render_now(int menu_stack_index) {
                ptr->menu_height + 2, BORDER_COLOR, 0);
 
   // menu text
-  ui_render_children(ptr, menu_stack_index, &index, indent);
+  ui_render_children(ptr, menu_stack_index, &index, indent,
+                     ui_menu_row_pitch(ui_menu_row_gap));
 
   max_index[menu_stack_index] = index;
+  ui_render_scroll_indicators(menu_stack_index, index);
 
   if (menu_cursor[menu_stack_index] >= max_index[menu_stack_index]) {
     menu_cursor[menu_stack_index] = max_index[menu_stack_index] - 1;
@@ -4144,6 +5613,8 @@ static void ui_clear_child_menu(struct menu_item *node) {
 }
 
 static void ui_clear_menu(int menu_index) {
+  ui_campo_toccato = NULL;
+  ui_invio_reset();
   struct menu_item *node = &menu_roots[menu_index];
   ui_clear_child_menu(node->first_child);
   node->first_child = NULL;
@@ -4200,11 +5671,11 @@ static int calc_root_menu_top() {
 struct menu_item *ui_push_menu(int w_chars, int h_chars) {
 
   int menu_width = w_chars * 8;
-  int menu_height = h_chars * 8;
+
+
+  int menu_height = ui_menu_altezza(h_chars);
   if (w_chars < 0)
     menu_width = menu_width_chars * 8;
-  if (h_chars < 0)
-    menu_height = menu_height_chars * 8;
 
   current_menu++;
   if (current_menu >= NUM_MENU_ROOTS) {
@@ -4214,13 +5685,18 @@ struct menu_item *ui_push_menu(int w_chars, int h_chars) {
   ui_clear_menu(current_menu);
 
   // Client must set callback on each push so clear here.
+  menu_roots[current_menu].scroll_text_first_row = -1;
+  menu_roots[current_menu].scroll_text_end_row = -1;
   menu_roots[current_menu].on_value_changed = NULL;
   menu_roots[current_menu].on_popped_off = NULL;
   menu_roots[current_menu].on_popped_to = NULL;
+  menu_roots[current_menu].left_right_listener_func = NULL;
+  menu_roots[current_menu].key_listener_func = NULL;
 
   // Set dimensions
   menu_roots[current_menu].menu_width = menu_width;
   menu_roots[current_menu].menu_height = menu_height;
+  menu_roots[current_menu].menu_rows = h_chars;
 
   if (w_chars == -2) {
     menu_roots[current_menu].menu_left = calc_root_menu_left();
@@ -4246,11 +5722,10 @@ struct menu_item *ui_push_menu(int w_chars, int h_chars) {
 
   menu_cursor[current_menu] = 0;
   menu_window_top[current_menu] = 0;
-  if (h_chars < 0) {
-     menu_window_bottom[current_menu] = menu_height_chars;
-  } else {
-     menu_window_bottom[current_menu] = h_chars;
-  }
+
+
+  menu_window_bottom[current_menu] =
+      ui_menu_visible_rows(menu_height, ui_menu_row_gap);
 
   return &menu_roots[current_menu];
 }
@@ -4285,6 +5760,12 @@ void glob_osd_popped(struct menu_item *new_root,
 
 int ui_osd_attivo(void) {
   return osd_active;
+}
+
+
+
+struct menu_item *ui_menu_in_cima(void) {
+  return current_menu >= 0 ? &menu_roots[current_menu] : NULL;
 }
 
 
@@ -4426,6 +5907,9 @@ void ui_confirm_wrapped_labels(char *title, const char *txt, int ok_value,
   }
 
   struct menu_item *root = ui_push_menu(CONF_LARGHEZZA, altezza);
+
+  root->scroll_text_first_row = 2;
+  root->scroll_text_end_row = 2 + n_righe;
   struct menu_item *child = ui_menu_add_read_only(root, title,
                                                    READ_ONLY_HEADING);
 
@@ -4453,15 +5937,102 @@ void ui_confirm_wrapped(char *title, const char *txt, int ok_value, int ok_id) {
   ui_confirm_wrapped_labels(title, txt, ok_value, ok_id, "OK", "CANCEL");
 }
 
+
+
+
+
+
+int ui_keyboard_shift_active(void) {
+  return keyboard_shift != 0;
+}
+
+void ui_keyboard_clear_shift(void) {
+  keyboard_shift = 0;
+}
+
+void ui_menu_set_button_value_fitted(struct menu_item *item,
+                                     const char *value, int indent) {
+  size_t available;
+  size_t value_len;
+  size_t menu_chars;
+  size_t label_end;
+  int width;
+
+  if (item == NULL || item->type != BUTTON) {
+    return;
+  }
+  if (value == NULL) {
+    value = "";
+  }
+
+  strncpy(item->str_value, value, MAX_STR_VAL_LEN - 1);
+  item->str_value[MAX_STR_VAL_LEN - 1] = '\0';
+  item->prefer_str = 1;
+
+
+  width = item->menu_width > 0 ? item->menu_width
+                               : menu_roots[current_menu].menu_width;
+  menu_chars = width > 0 ? (size_t)width / 8U : 0U;
+  label_end = (size_t)(indent >= 0 ? indent : 0) + 1U + strlen(item->name);
+  available = menu_chars > label_end + 2U ? menu_chars - label_end - 2U : 0U;
+  if (available >= MAX_DSP_VAL_LEN) {
+    available = MAX_DSP_VAL_LEN - 1U;
+  }
+
+  value_len = strlen(item->str_value);
+  if (value_len <= available) {
+    memcpy(item->displayed_value, item->str_value, value_len + 1U);
+  } else if (available >= 4U) {
+    memcpy(item->displayed_value, item->str_value, available - 3U);
+    memcpy(item->displayed_value + available - 3U, "...", 4U);
+  } else {
+    size_t dots = available < 3U ? available : 3U;
+    memset(item->displayed_value, '.', dots);
+    item->displayed_value[dots] = '\0';
+  }
+}
+
+
+void ui_error_wrapped(const char *txt) {
+  ui_confirm_wrapped_labels("Error", txt, 0, -1, "OK", "CANCEL");
+}
+
+
+
+void ui_confirm_wrapped_cancel_default(char *title, const char *txt,
+                                       int ok_value, int ok_id) {
+  struct menu_item *it;
+  ui_confirm_wrapped_labels(title, txt, ok_value, ok_id, "OK", "CANCEL");
+  if (ok_id < 0) {
+    return;
+  }
+  for (it = menu_roots[current_menu].first_child; it != NULL; it = it->next) {
+    if (it->id == MENU_CONFIRM_CANCEL) {
+      it->value = ok_value;
+      it->sub_id = ok_id;
+    }
+  }
+  ui_action_corpo(ACTION_Down);
+  ui_render_single_frame();
+}
+
 // These nav functions are really inefficient...but oh well.
+
+
 void ui_page_down() {
-  for (int n=0;n<menu_height_chars;n++) {
+  int menu_index = current_menu;
+  int visible_rows = menu_window_bottom[current_menu] -
+                     menu_window_top[current_menu];
+  for (int n=0;n<visible_rows && current_menu == menu_index;n++) {
     ui_action(ACTION_Down);
   }
 }
 
 void ui_page_up() {
-  for (int n=0;n<menu_height_chars;n++) {
+  int menu_index = current_menu;
+  int visible_rows = menu_window_bottom[current_menu] -
+                     menu_window_top[current_menu];
+  for (int n=0;n<visible_rows && current_menu == menu_index;n++) {
     ui_action(ACTION_Up);
   }
 }
@@ -4561,6 +6132,25 @@ void ui_set_cur_pos(int pos) {
   }
 }
 
+
+
+
+void ui_focus_item(struct menu_item *item) {
+  if (item == NULL) {
+    return;
+  }
+  ui_traverse();
+  if (item->render_index >= 0) {
+    ui_to_top();
+    ui_set_cur_pos(item->render_index);
+  }
+}
+
+
+struct menu_item *ui_menu_root(void) {
+  return current_menu >= 0 ? &menu_roots[0] : NULL;
+}
+
 struct menu_item* ui_find_item_by_id(struct menu_item *node, int id) {
   if (node == NULL) {
     return NULL;
@@ -4586,6 +6176,10 @@ void ui_enable_osd(void) {
   emux_alza_la_tastiera();
   osd_active = 1;
   ui_enabled = 1;
+
+  if (!ui_mouse_sessione) {
+    ui_mouse_sessione_apri();
+  }
   ui_alt = 0;
 
 
@@ -4641,6 +6235,14 @@ static FILE *passi_f = NULL;
 static int passi_rotto = 0;
 
 static void passi_riga(const char *verbo, const char *cosa) {
+
+
+
+
+
+
+
+
   if (passi_rotto) {
     return;
   }
@@ -4799,6 +6401,95 @@ static void ui_update_children(struct menu_item *node,
     node = node->next;
   }
 }
+
+
+
+
+
+
+
+static void ui_aggiorna_misure(struct menu_item *node, int top, int left,
+                               int width, int height) {
+  while (node != NULL) {
+    node->menu_top = top;
+    node->menu_left = left;
+    node->menu_width = width;
+    node->menu_height = height;
+
+    if (node->type == FOLDER && node->first_child != NULL) {
+      ui_aggiorna_misure(node->first_child, top, left, width, height);
+    }
+    node = node->next;
+  }
+}
+
+static void ui_reflow_menu_window(int menu_index) {
+  int capacity = ui_menu_visible_rows(
+      menu_roots[menu_index].menu_height, ui_menu_row_gap);
+  int top = menu_window_top[menu_index];
+  int max_top;
+
+  if (capacity < 1) {
+    capacity = 1;
+  }
+  max_top = max_index[menu_index] > capacity
+                ? max_index[menu_index] - capacity
+                : 0;
+  if (top > max_top) {
+    top = max_top;
+  }
+  if (menu_cursor[menu_index] < top) {
+    top = menu_cursor[menu_index];
+  } else if (menu_cursor[menu_index] >= top + capacity) {
+    top = menu_cursor[menu_index] - capacity + 1;
+  }
+  if (top < 0) {
+    top = 0;
+  } else if (top > max_top) {
+    top = max_top;
+  }
+  menu_window_top[menu_index] = top;
+  menu_window_bottom[menu_index] = top + capacity;
+}
+
+static void ui_apply_menu_row_gap_layout(void) {
+  int menu_index;
+
+  if (current_menu < 0) {
+    return;
+  }
+
+  for (menu_index = 0; menu_index <= current_menu; ++menu_index) {
+    struct menu_item *root = &menu_roots[menu_index];
+    int height = root->menu_rows <= 0
+                     ? menu_height_chars * UI_MENU_GLYPH_HEIGHT
+                     : ui_menu_altezza(root->menu_rows);
+
+    root->menu_height = height;
+    if (menu_index > 0) {
+      root->menu_top = root->menu_rows <= 0
+                           ? menu_roots[0].menu_top
+                           : menu_roots[0].menu_top +
+                                 (menu_roots[0].menu_height - height) / 2;
+    }
+    ui_aggiorna_misure(root->first_child, root->menu_top, root->menu_left,
+                       root->menu_width, root->menu_height);
+    ui_reflow_menu_window(menu_index);
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void ui_geometry_changed(int dpx, int dpy,
                          int fbw, int fbh,

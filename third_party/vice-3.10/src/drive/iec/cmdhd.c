@@ -883,6 +883,7 @@ static uint8_t read_prb10(via_context_t *via_context)
 
     viap = (drivevia_context_t *)(via_context->prv);
 
+    DRIVE_CAVO_TOCCATO();
     if (iecbus != NULL) {
         byte = (((via_context->via[VIA_PRB] & 0x1a)
                  | iecbus->drv_port) ^ 0x85);
@@ -906,6 +907,7 @@ static void store_prb10(via_context_t *via_context, uint8_t byte, uint8_t oldpb,
     viap = (drivevia_context_t *)(via_context->prv);
 
     if (byte != oldpb) {
+        DRIVE_CAVO_TOCCATO();
         DEBUG_IEC_DRV_WRITE(byte);
 
         if (iecbus != NULL) {

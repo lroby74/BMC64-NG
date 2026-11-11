@@ -32,4 +32,15 @@
 void build_usb_menu(int dev, struct menu_item *parent);
 int add_pot_values(int *value, int potx, int poty);
 
+
+
+
+void menu_usb_mapping_initialize(void);
+void menu_usb_mapping_finish_load(const int *mode_was_loaded,
+                                  const int *loaded_mode,
+                                  const int *mapping_was_loaded);
+int menu_usb_mapping_mode(int device);
+void menu_usb_gamepad_info_changed(void);
+void menu_usb_capture_refresh(void);
+
 #endif

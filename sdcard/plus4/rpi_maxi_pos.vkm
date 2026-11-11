@@ -57,7 +57,7 @@ Home 7 1 8      /* Clr */
 Left 6 0 8
 Return 0 1 8
 Right 6 3 8
-Shift_L 1 7 2
+Shift_L 1 7 4
 Shift_R 1 7 4
 Up 5 3 8
 BackSlash 0 7 8       /* at */

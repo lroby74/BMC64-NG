@@ -400,6 +400,18 @@ void drive_reset(void);
 void drive_shutdown(void);
 void drive_cpu_execute_one(struct diskunit_context_s *drv, CLOCK clk_value);
 void drive_cpu_execute_all(CLOCK clk_value);
+
+
+extern unsigned int drive_cavo_toccato;
+extern struct diskunit_context_s *drive_in_passo;
+void drive_cavo_in_pari(void);
+#define DRIVE_CAVO_TOCCATO()           \
+    do {                               \
+        drive_cavo_toccato++;          \
+        if (drive_in_passo != NULL) {  \
+            drive_cavo_in_pari();      \
+        }                              \
+    } while (0)
 void drive_cpu_set_overflow(struct diskunit_context_s *drv);
 void drive_vsync_hook(void);
 int drive_get_disk_drive_type(int dnr);

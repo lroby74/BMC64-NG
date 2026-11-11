@@ -1,5 +1,6 @@
 #include "pi5v3d/pi5_v3d.h"
 #include "pi5v3d/pi5_v3d71_texture_state.h"
+#include "pi5v3d/pi5_v3d71_shader_state.h"
 #include "pi5v3d/pi5_v3d_shader.h"
 #include "pi5v3d/shaders/pi5_shader_package_adapter.h"
 #include "pi5v3d/shaders/shader_artifact_materializer.h"
@@ -18,6 +19,9 @@
 #include <stdio.h>
 #include <string.h>
 
+
+extern "C" void bmc_v3d_scala_lati_pi5(u32 *w, u32 *h);
+
 namespace pi5v3d {
 
 namespace {
@@ -27,6 +31,7 @@ bool g_kms_active = false;
 bool g_initialized = false;
 bool g_available = false;
 bool g_hardware_visible = false;
+unsigned g_v3d_ip_revision = 0;
 bool g_unavailable_logged = false;
 bool g_buffers_ready = false;
 bool g_buffers_logged = false;
@@ -3202,11 +3207,8 @@ bool BuildFragmentReplayShaderStateRecord(
 
   uint8_t *record = cl_binding->cpu + 0x40;
   memset(record, 0, 32);
-  // BCM2712 revision 10 uses GL_SHADER_STATE_RECORD_DRAW_INDEX.
-  record[0] = 1U << 1;  // Enable clipping.
-  record[1] = 1U << 7;  // Fragment shader uses real pixel-centre W.
-  record[2] = 1U << 5;  // Disable implicit point/line varyings.
-  record[3] = 2;  // Number of varyings in fragment shader.
+  WriteLe32(record, FragmentShaderStateFlags(g_v3d_ip_revision) |
+                        (2U << 24));
   record[4] = 1;  // Coordinate shader output VPM segment size.
   record[5] = 0;  // Coordinate shader input VPM segment size, min 1.
   record[6] = 1;  // Vertex shader output VPM segment size.
@@ -3219,11 +3221,11 @@ bool BuildFragmentReplayShaderStateRecord(
   WriteLe32(record + 28, cs_uniforms);
 
   printf("boot: pi5v3d fragment replay shader_record "
-         "flags=%02x,%02x,%02x varyings=%u "
+         "iprev=%u flags=%02x,%02x,%02x varyings=%u "
          "record=0x%08x fs_code=0x%08x fs_uniforms=0x%08x "
          "vs_code=0x%08x vs_uniforms=0x%08x "
          "cs_code=0x%08x cs_uniforms=0x%08x attr=0x%08x\r\n",
-         record[0], record[1], record[2], record[3],
+         g_v3d_ip_revision, record[0], record[1], record[2], record[3],
          cl_binding->v3d_address + 0x40,
          fs_code, fs_uniforms, vs_code, vs_uniforms,
          cs_code, cs_uniforms,
@@ -4479,7 +4481,14 @@ bool BuildFragmentReplayTargetPlane(
     target_buffer.height,
     target_buffer.depth,
     pi5kms::kPixelFormatRgb565,
-    pi5kms::kScaleFilterNearest,
+
+
+
+    (geometry.log_name != nullptr &&
+     strcmp(geometry.log_name, "fragment_frame_output") == 0 &&
+     (geometry.width < target.destination_rect.width ||
+      geometry.height < target.destination_rect.height))
+        ? pi5kms::kScaleFilterMitchell : pi5kms::kScaleFilterNearest,
     {0, 0, geometry.width, geometry.height},
     {(s32)target.destination_rect.x,
      (s32)target.destination_rect.y,
@@ -4959,11 +4968,15 @@ bool PrepareContinuousFragmentGeometry(
   *output_resolution_active = false;
   const OutputResolutionPath output_path = SelectedOutputResolutionPath();
   if (output_path != kOutputResolutionPathDisabled) {
-    const FragmentReplayGeometry output_geometry = {
+    FragmentReplayGeometry output_geometry = {
       target.destination_rect.width,
       target.destination_rect.height,
       "fragment_frame_output"
     };
+
+
+
+    ::bmc_v3d_scala_lati_pi5(&output_geometry.width, &output_geometry.height);
     if (output_geometry.width == 0 || output_geometry.height == 0 ||
         output_geometry.width > kOutputTargetMaxWidth ||
         output_geometry.height > kOutputTargetMaxHeight) {
@@ -7310,52 +7323,20 @@ bool StageFragmentTextureSource(
     return false;
   }
 
-  struct UploadContext {
-    const TextureSource *source;
-    Rect rect;
-    const u32 *palette;
-    const u16 *output_response_lut;
-  } context = {
-    &source,
-    rect,
-    g_fragment_source_staging_cache.palette,
+  const v3dcrt::TextureUploadSource upload = {
+    source.pixels + static_cast<size_t>(rect.y) * source.pitch +
+        rect.x * (source.pixelmode == 0 ? 1U : 2U),
+    source.pitch,
+    source.pixelmode == 0 ? v3dcrt::kTextureUploadIndexed8 :
+                            v3dcrt::kTextureUploadRgb565,
+    source.pixelmode == 0 ? g_fragment_source_staging_cache.palette : nullptr,
     output_response.enabled ?
-        g_fragment_source_staging_cache.output_response_lut : nullptr
+        g_fragment_source_staging_cache.output_response_lut : nullptr,
+    0U
   };
-  const auto region_source = [](void *opaque, u32 origin_x, u32 origin_y,
-                                u32 width, u32 height, u32 *rgba8,
-                                u32 stride_words) -> bool {
-    UploadContext *upload = static_cast<UploadContext *>(opaque);
-    if (upload == nullptr || rgba8 == nullptr || stride_words < width) {
-      return false;
-    }
-    for (u32 y = 0U; y < height; ++y) {
-      const uint8_t *row = upload->source->pixels +
-          (upload->rect.y + origin_y + y) * upload->source->pitch;
-      if (upload->source->pixelmode == 0) {
-        row += upload->rect.x + origin_x;
-        for (u32 x = 0U; x < width; ++x) {
-          rgba8[y * stride_words + x] = upload->palette[row[x]];
-        }
-      } else {
-        row += (upload->rect.x + origin_x) * 2U;
-        for (u32 x = 0U; x < width; ++x) {
-          u16 rgb = 0U;
-          memcpy(&rgb, row + x * 2U, sizeof rgb);
-          if (upload->output_response_lut != nullptr) {
-            rgb = upload->output_response_lut[rgb];
-          }
-          rgba8[y * stride_words + x] =
-              v3d71::Rgba8TextureWordFromRgb565(rgb);
-        }
-      }
-    }
-    return true;
-  };
-  if (!v3d71::UploadRgba8TexturePhysical(
-          g_fragment_source_scratch.cpu,
-          g_fragment_source_scratch.size,
-          layout, region_source, &context)) {
+  if (!v3dcrt::UploadConvertedRgba8TexturePhysical(
+          g_fragment_source_scratch.cpu, g_fragment_source_scratch.size,
+          layout, upload)) {
     return false;
   }
 
@@ -9383,6 +9364,7 @@ bool ProbeHardware() {
     return false;
   }
 
+  g_v3d_ip_revision = iprev;
   return true;
 }
 
@@ -10139,6 +10121,7 @@ void Shutdown() {
   g_initialized = false;
   g_available = false;
   g_hardware_visible = false;
+  g_v3d_ip_revision = 0;
   g_unavailable_logged = false;
   g_buffers_ready = false;
   g_buffers_logged = false;

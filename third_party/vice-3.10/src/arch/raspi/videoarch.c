@@ -262,6 +262,35 @@ static void check_dimensions(struct video_canvas_s* canvas,
 }
 
 // Draw buffer bridge functions back to kernel
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static unsigned int altezza_strato_vic(struct video_canvas_s *canvas,
+                                       unsigned int alto_vice) {
+   int tx, ty, gw, gh;
+   if (machine_class != VICE_MACHINE_PET) {
+      return alto_vice;
+   }
+   set_canvas_size(VIC_INDEX, &tx, &ty, &gw, &gh);
+   ty *= canvas->raster_skip;
+   if (ty > 0 && (unsigned int)ty > alto_vice) {
+      return (unsigned int)ty;
+   }
+   return alto_vice;
+}
+
 static int draw_buffer_alloc(struct video_canvas_s *canvas,
                              uint8_t **draw_buffer,
                              unsigned int fb_width, unsigned int fb_height,
@@ -275,11 +304,24 @@ static int draw_buffer_alloc(struct video_canvas_s *canvas,
                               fb_pitch);
       emux_frame_buffer_changed(FB_LAYER_VDC);
    } else {
+
+
+      unsigned int alto_vice = fb_height * canvas->raster_skip;
+      unsigned int alto;
       check_dimensions(canvas, VIC_INDEX, fb_width,
-                          fb_height * canvas->raster_skip, raster_lines);
+                          alto_vice, raster_lines);
+      alto = altezza_strato_vic(canvas, alto_vice);
       status = circle_alloc_fbl(FB_LAYER_VIC, 0 /* indexed */, draw_buffer,
-                              fb_width, fb_height * canvas->raster_skip,
+                              fb_width, alto,
                               fb_pitch);
+      if (status == 0 && alto > alto_vice) {
+
+         memset(*draw_buffer + (size_t)alto_vice * (*fb_pitch), 0,
+                (size_t)(alto - alto_vice) * (*fb_pitch));
+         log_message(LOG_DEFAULT,
+                     "Video: strato del PET alto %u righe, la tela del VICE %u: sotto, nero",
+                     alto, alto_vice);
+      }
       emux_frame_buffer_changed(FB_LAYER_VIC);
    }
 

@@ -35,6 +35,7 @@
 #include "resources.h"
 #include "keyboard.h"
 #include "cartridge.h"
+#include "tapeport.h"
 
 // RASPI includes
 #include "emux_api.h"
@@ -79,6 +80,13 @@ static void menu_value_changed(struct menu_item *item) {
         petmodel_set(item->sub_id);
         update_model_label();
         ui_pop_all_and_toggle();
+        break;
+     case MENU_PETSPEED_DONGLE:
+
+
+        resources_set_int("TapePort1Device",
+                          item->value ? TAPEPORT_DEVICE_PETSPEED_DONGLE
+                                      : TAPEPORT_DEVICE_DATASETTE);
         break;
      default:
         break;
@@ -194,6 +202,12 @@ void emux_add_machine_options(struct menu_item* parent) {
     item->sub_id = id_values[i];
     item->on_value_changed = menu_value_changed;
   }
+
+  int dev = TAPEPORT_DEVICE_NONE;
+  resources_get_int("TapePort1Device", &dev);
+  item = ui_menu_add_toggle(MENU_PETSPEED_DONGLE, parent, "PetSpeed dongle",
+                            dev == TAPEPORT_DEVICE_PETSPEED_DONGLE);
+  item->on_value_changed = menu_value_changed;
 }
 
 struct menu_item* emux_add_cartridge_options(struct menu_item* root) {

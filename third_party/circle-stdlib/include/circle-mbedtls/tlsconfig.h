@@ -67,6 +67,12 @@ public:
 		mbedtls_ssl_conf_ca_chain (&m_Config, pCA_Chain->Get (), 0);	// TODO: add CRLs
 	}
 
+	void SetVerifyCallback (int (*pCallback) (void *, mbedtls_x509_crt *, int, uint32_t *),
+				void *pParam)
+	{
+		mbedtls_ssl_conf_verify (&m_Config, pCallback, pParam);
+	}
+
 	void SetRNG (CCTR_DRBG *pCTR_DRBG)
 	{
 		mbedtls_ssl_conf_rng (&m_Config, mbedtls_ctr_drbg_random, pCTR_DRBG->Get ());

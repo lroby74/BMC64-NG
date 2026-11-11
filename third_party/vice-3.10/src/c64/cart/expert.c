@@ -733,7 +733,9 @@ int expert_bin_save(const char *filename)
         return -1;
     }
 
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -797,7 +799,9 @@ int expert_crt_save(const char *filename)
         return -1;
     }
 
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     DBG(("EXPERT: ERROR save crt ok\n"));
 
     return 0;

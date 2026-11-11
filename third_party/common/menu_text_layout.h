@@ -26,4 +26,9 @@
 char menu_text_layout_key_to_char(long key, int shifted,
                                   int keyboard_mapping, int keyboard_layout);
 
+
+
+char menu_text_layout_altgr_to_char(long key, int shifted,
+                                    int keyboard_mapping, int keyboard_layout);
+
 #endif

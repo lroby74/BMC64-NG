@@ -55,4 +55,16 @@ enum crt_preset_status crt_preset_parse(
 
 const char *crt_preset_status_name(enum crt_preset_status status);
 
+
+
+int crt_preset_filename(const char *name, char *filename, size_t size);
+enum crt_preset_status crt_preset_write(
+    FILE *fp, const struct crt_preset_field *fields, size_t count,
+    const int *values);
+
+int crt_preset_save_file(const char *path, int overwrite,
+    const struct crt_preset_field *fields, size_t count, const int *values);
+
+int crt_preset_folder(void);
+
 #endif

@@ -143,7 +143,9 @@ enum bmx_output_level_mapping {
 };
 
 #define MAX_USB_DEVICES 4
-#define MAX_JOY_PORTS 4
+
+
+#define MAX_JOY_PORTS 10
 
 #define NUM_GPIO_PINS 23
 
@@ -477,6 +479,31 @@ extern volatile unsigned long bmc_scheda_da;
 
 #define BTN_ASSIGN_SID_MOTORE      1009
 
+
+#define BTN_ASSIGN_SCREENSHOT      1010
+
+
+
+
+
+#define BTN_ASSIGN_RIAVVIA_PI      1011
+#define BTN_ASSIGN_SPEGNI_PI       1012
+
+
+
+
+
+
+#define BTN_ASSIGN_ATTACH_DISK_10_2 1013
+#define BTN_ASSIGN_ATTACH_DISK_11_2 1014
+#define BTN_ASSIGN_SID_OSD         1015
+enum { SCREENSHOT_EMULATOR, SCREENSHOT_SCALED, SCREENSHOT_CRT, SCREENSHOT_SCREEN };
+enum { SCREENSHOT_FORMAT_PPM, SCREENSHOT_FORMAT_PNG };
+extern int circle_take_screenshot(int stage, int maximum_width, int layer,
+                                  int x, int y, int width, int height,
+                                  int format, char *name, int name_size);
+extern uint64_t circle_get_ticks64(void);
+
 #define JOYDEV_NUM_JOYDEVS 23
 #define JOYDEV_NONE 0
 #define JOYDEV_NUMPAD 1
@@ -582,6 +609,9 @@ extern void circle_set_palette_fbl(int layer, uint8_t index, uint16_t rgb565);
 extern void circle_set_palette32_fbl(int layer, uint8_t index, uint32_t argb);
 extern void circle_update_palette_fbl(int layer);
 extern void circle_set_stretch_fbl(int layer, double hstretch, double vstretch, int hintstr, int vintstr, int use_hintstr, int use_vintstr);
+
+
+extern void circle_set_scale_fbl(int layer, int percent);
 extern void circle_set_src_rect_fbl(int layer, int x, int y, int w, int h);
 extern void circle_set_center_offset(int layer, int cx, int cy);
 extern void circle_set_valign_fbl(int layer, int align, int padding);
@@ -607,9 +637,28 @@ extern unsigned circle_arm_max_mhz(void);
 extern unsigned circle_gpu_mhz(int quale, int massimo);
 
 extern unsigned circle_get_gpu_mhz(void);
+#if RASPPI >= 4
+
+
+
+
+extern int circle_ventola_presente(void);
+extern int circle_ventola_scelta(void);
+extern void circle_ventola_scegli(int scelta);
+extern void circle_ventola_diag(char *riga, unsigned dim);
+#endif
 
 
 extern int circle_get_local_time(unsigned *secs);
+
+
+
+enum { CIRCLE_NTP_OFF, CIRCLE_NTP_WAITING_NETWORK, CIRCLE_NTP_SYNCING,
+       CIRCLE_NTP_SYNCED, CIRCLE_NTP_FAILED };
+extern void circle_ntp_imposta(int acceso, const char *server,
+                               const char *riserva, int minuti);
+extern void circle_ntp_adesso(void);
+extern int circle_ntp_stato(char *dettaglio, int n, unsigned *ultimo_locale);
 extern int circle_board_type(void);
 extern unsigned circle_get_arm_clock();
 extern void circle_cpu_slow(int slow);
@@ -640,6 +689,10 @@ extern void circle_xum1541_set_imod(int imodi);
 extern int circle_xum1541_get_imod(void);
 extern int circle_xum1541_bulk_out(const unsigned char *buf, int len);
 extern int circle_xum1541_bulk_in(unsigned char *buf, int len);
+
+
+
+extern void circle_xum1541_set_patience_ms(int ms);
 extern unsigned circle_get_temperature();
 extern int circle_gpio_enabled();
 extern int circle_gpio_outputs_enabled();
@@ -680,6 +733,13 @@ extern void circle_sound_banco_blocca(int millisecondi);
 
 extern int circle_usb_presta(void);
 extern void circle_usb_restituisci(void);
+
+
+extern void circle_usb_spegni_per_riavvio(void);
+
+
+extern int circle_usb_spegni_ms(void);
+extern void circle_usb_spegni_imposta(int ms);
 
 extern uint8_t circle_get_userport_ddr(void);
 extern uint8_t circle_get_userport(void);
@@ -739,6 +799,10 @@ extern void emu_joy_interrupt_abs(int port, int device,
 extern void emu_spinner_mouse(unsigned buttons, int wheel);
 
 
+
+extern int ui_mouse_rapporto(unsigned *tasti, unsigned *tasti_prima, int dx, int dy, int rotella);
+
+
 extern void emu_spinner_alza(int j);
 
 // Queue a quick function request for the main loop. Interrupt safe.
@@ -781,6 +845,26 @@ extern int emu_get_keyboard_shiftlock(void);
 
 
 
+
+
+
+
+
+
+
+
+
+
+#ifndef BMC64_SCATOLA_NERA
+
+
+
+#define BMC64_SCATOLA_NERA 0
+
+#endif
+
+
+
 extern void passo_nota(const char *cosa);
 
 // Send a key press/release to the UI. Should be called only when ui
@@ -804,6 +888,14 @@ extern void emu_set_usb_gamepad_display_name(int device, const char *display_nam
 // Test whether emulator is in a config mode where it wants to receive
 // raw usb data.
 extern int emu_wants_raw_usb(void);
+
+
+extern int emu_gamepad_button_capture_report(unsigned device, unsigned buttons,
+                                             unsigned button_count);
+
+extern int emu_wants_raw_keyboard(void);
+extern void emu_set_raw_keyboard(unsigned device, unsigned char modifiers,
+                                 const unsigned char raw_keys[6]);
 
 // Send the emulator raw usb data. Used for configuring usb devices in menu.
 extern void emu_set_raw_usb(int device,

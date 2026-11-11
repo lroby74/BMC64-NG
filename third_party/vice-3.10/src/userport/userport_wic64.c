@@ -57,6 +57,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "alarm.h"
 #include "cmdline.h"
@@ -73,7 +74,15 @@
 #include "util.h"
 #include "charset.h"
 
-#ifdef HAVE_LIBCURL
+#if defined(HAVE_LIBCURL) || defined(HAVE_BMX_WIC64)
+
+#ifdef HAVE_BMX_WIC64
+#include "wic64/transport.h"
+#include "wic64/config.h"
+static void bmx_cancel_transport(void);
+static uint8_t bmx_reply_byte(uint32_t offset);
+static void bmx_release_reply(void);
+#endif
 
 #define VICEWIC64VERSION PACKAGE"-"VERSION
 #define WIC64_VERSION_MAJOR 2
@@ -125,7 +134,9 @@ static void userport_wic64_reset(void);
 static void wic64_reset_user_helper(void);
 static void wic64_set_status(const char *status);
 static void prep_wic64_str(void);
+#ifndef HAVE_BMX_WIC64
 static void do_connect(uint8_t *url);
+#endif
 static void cmd_tcp_write(void);
 static void cmd_timeout(int arm);
 static void cmd_remote_timeout(int arm);
@@ -220,6 +231,7 @@ static void wic64_log(const char *col, const char *fmt, ...)
 
     va_start(args, fmt);
     vsnprintf(t, 256, fmt, args);
+    va_end(args);
     log_message(wic64_loghandle, "%s%s" LOG_COL_OFF, col, t);
 }
 
@@ -237,6 +249,7 @@ static void debug_log(const char *col, const int lv, const char *fmt, ...)
     }
     va_start(args, fmt);
     vsnprintf(t, 256, fmt, args);
+    va_end(args);
     wic64_log(col, "%s", t);
 }
 
@@ -246,6 +259,11 @@ static void debug_log(const char *col, const int lv, const char *fmt, ...)
  */
 static void wic64_log_hexdump(const char *col, const char *buf, int len)
 {
+#ifdef HAVE_BMX_WIC64
+
+
+    return;
+#endif
     int i;
     int idx = 0;
     int lines = 0;
@@ -314,6 +332,28 @@ static void debug_hexdump(const char *col, const int lv, const char *buf, int le
 #define MACADDR_INVALID     "FF:FF:FF:FF:FF:FF"
 #define SECTOKEN_INVALID    "0123456789ab"
 
+#ifdef HAVE_BMX_WIC64
+static int bmx_report_real, bmx_report_rssi = -65;
+static char *bmx_report_ssid;
+static int bmx_set_report_real(int value, void *unused) {
+    if (value != 0 && value != 1) return -1;
+    bmx_report_real = value; return 0;
+}
+static int bmx_set_report_rssi(int value, void *unused) {
+    if (value < -127 || value > 0) return -1;
+    bmx_report_rssi = value; return 0;
+}
+static int bmx_set_report_ssid(const char *value, void *unused) {
+    bmx_wic64_reporting r = BMX_WIC64_REPORTING_DEFAULT;
+    if (!value || strlen(value) >= sizeof r.ssid) return -1;
+    strcpy(r.ssid, value);
+    if (!bmx_wic64_reporting_valid(&r)) return -1;
+
+    util_string_set(&bmx_report_ssid, value);
+    return 0;
+}
+#endif
+
 static const resource_string_t wic64_resources[] =
 {
     { "WIC64DefaultServer", "http://x.wic64.net/", (resource_event_relevant_t)0, NULL,
@@ -324,6 +364,10 @@ static const resource_string_t wic64_resources[] =
       (char **) &wic64_internal_ip, wic64_set_ipaddress, NULL },
     { "WIC64SecToken", SECTOKEN_INVALID, (resource_event_relevant_t)0, NULL,
       (char **) &wic64_sec_token, wic64_set_sectoken, NULL },
+#ifdef HAVE_BMX_WIC64
+    { "WIC64EmulatedSSID", "bmx-wic64", RES_EVENT_NO, NULL,
+      &bmx_report_ssid, bmx_set_report_ssid, NULL },
+#endif
     RESOURCE_STRING_LIST_END,
 };
 
@@ -342,6 +386,10 @@ static const resource_int_t wic64_resources_int[] = {
       &wic64_hexdumplines, wic64_set_hexdumplines, NULL },
     { "WIC64RemoteTimeout", WIC64_DEFAULT_REMOTE_TIMEOUT, RES_EVENT_NO, NULL,
       &wic64_remote_timeout, wic64_set_remote_timeout, NULL },
+#ifdef HAVE_BMX_WIC64
+    { "WIC64RealReporting", 0, RES_EVENT_NO, NULL, &bmx_report_real, bmx_set_report_real, NULL },
+    { "WIC64EmulatedRSSI", -65, RES_EVENT_NO, NULL, &bmx_report_rssi, bmx_set_report_rssi, NULL },
+#endif
     RESOURCE_INT_LIST_END
 };
 
@@ -380,8 +428,31 @@ static tzones_t timezones[] = {
     { 31, "Dont Know Time", 0, 0, 0 },
 };
 
+#ifdef HAVE_BMX_WIC64
+static int bmx_wic64_cmdline_enable(const char *value, void *param)
+{
+    if (strcmp(value, "0") == 0) {
+        return userport_get_device() == USERPORT_DEVICE_WIC64 ?
+            resources_set_int("UserportDevice", USERPORT_DEVICE_NONE) : 0;
+    }
+    if (strcmp(value, "1") != 0) return -1;
+    return resources_set_int("UserportDevice", USERPORT_DEVICE_WIC64);
+}
+#endif
+
 static const cmdline_option_t cmdline_options[] =
 {
+#ifdef HAVE_BMX_WIC64
+    { "-wic64reporting", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, "WIC64RealReporting", NULL, "<0|1>", "Report emulated or actual network" },
+    { "-wic64ssid", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, "WIC64EmulatedSSID", NULL, "<SSID>", "Emulated SSID" },
+    { "-wic64rssi", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
+      NULL, NULL, "WIC64EmulatedRSSI", NULL, "<-127..0>", "Emulated signal strength" },
+    { "-bmxwic64", CALL_FUNCTION, CMDLINE_ATTRIB_NEED_ARGS,
+      bmx_wic64_cmdline_enable, NULL, NULL, NULL,
+      "<0|1>", "Enable BMX WiC64 userport emulation" },
+#endif
     { "-wic64server", SET_RESOURCE, CMDLINE_ATTRIB_NEED_ARGS,
       NULL, NULL, "WIC64DefaultServer", NULL,
       "<URL>", "Specify default server URL" },
@@ -509,7 +580,11 @@ static uint8_t NETWORK_ERROR    = 4;
 static uint8_t SERVER_ERROR     = 5;
 static char *err2string[] = { "SUCCESS", "INTERNAL", "CLIENT", "CONNECTION", "NETWORK", "SERVER" };
 
-#define HTTPREPLY_MAXLEN ((unsigned)(16 * 1024 * 1024)) /* 16MB needed for potential large images to flash via bigloader */
+#ifdef HAVE_BMX_WIC64
+#define HTTPREPLY_MAXLEN BMX_WIC64_MAX_REQUEST
+#else
+#define HTTPREPLY_MAXLEN ((unsigned)(16 * 1024 * 1024))
+#endif /* 16MB needed for potential large images to flash via bigloader */
 static size_t httpbufferptr = 0;
 static uint8_t *httpbuffer = NULL;
 static char *replybuffer = NULL;
@@ -525,6 +600,7 @@ static char *encoded_helper = NULL;
 #ifndef WINDOWS_COMPILE
 #include <unistd.h>
 #endif
+#ifndef HAVE_BMX_WIC64
 #include <curl/curl.h>
 
 #define MAX_PARALLEL 1 /* number of simultaneous transfers */
@@ -535,6 +611,7 @@ static CURL *curl = NULL;              /* used for telnet */
 static uint8_t curl_buf[240];          /* this slows down by smaller chunks sent to C64, improves BBSs  */
 static uint8_t *curl_send_buf = NULL;
 static uint16_t curl_send_len;
+#endif
 
 /* ------------------------------------------------------------------------- */
 static int userport_wic64_enable(int value)
@@ -548,8 +625,28 @@ static int userport_wic64_enable(int value)
         wic64_loghandle = log_open("WiC64");
     }
 
+#ifdef HAVE_BMX_WIC64
+    if (val) {
+        replybuffer = malloc(HTTPREPLY_MAXLEN + 16);
+        commandbuffer = malloc(COMMANDBUFFER_MAXLEN);
+        if (!replybuffer || !commandbuffer) {
+            free(replybuffer); free(commandbuffer);
+            replybuffer = NULL; commandbuffer = NULL;
+            return -1;
+        }
+        commandbuffer[0] = 0;
+        userport_wic64_enabled = 1;
+        prep_wic64_str();
+        userport_wic64_reset();
+        wic64_set_status("enabled");
+        return 0;
+    }
+    bmx_cancel_transport();
+    bmx_wic64_reset(0);
+#endif
     userport_wic64_enabled = val;
     if (val) {
+#ifndef HAVE_BMX_WIC64
         httpbuffer = lib_malloc(HTTPREPLY_MAXLEN);
         debug_log(CONS_COL_NO, 2, "%s: httpreplybuffer allocated 0x%xkB", __FUNCTION__,
                    HTTPREPLY_MAXLEN / 1024);
@@ -575,6 +672,7 @@ static int userport_wic64_enable(int value)
 
         prep_wic64_str();
         userport_wic64_reset();
+#endif
     } else {
         if (httpbuffer) {
             lib_free(httpbuffer);
@@ -592,6 +690,7 @@ static int userport_wic64_enable(int value)
             lib_free(commandbuffer);
             commandbuffer = NULL;
         }
+#ifndef HAVE_BMX_WIC64
         if (curl_send_buf) {
             lib_free(curl_send_buf);
             curl_send_buf = NULL;
@@ -606,6 +705,7 @@ static int userport_wic64_enable(int value)
             curl_global_cleanup();
             curl = NULL;
         }
+#endif
         if (post_url) {
             lib_free(post_url);
             post_url = NULL;
@@ -662,6 +762,9 @@ static int userport_wic64_enable(int value)
 
 static int wic64_set_default_server(const char *val, void *v)
 {
+#ifdef HAVE_BMX_WIC64
+    if (!bmx_wic64_server_valid(val)) return -1;
+#endif
     util_string_set(&default_server_hostname, val);
     return 0;
 }
@@ -710,6 +813,7 @@ static int wic64_set_sectoken(const char *val, void *v)
 
 static int wic64_set_timezone(int val, void *param)
 {
+    if (val < 0 || val >= (int)(sizeof timezones / sizeof timezones[0])) return -1;
     current_tz = val;
     return 0;
 }
@@ -728,6 +832,9 @@ static int wic64_set_logenabled(int val, void *param)
 
 static int wic64_set_loglevel(int val, void *param)
 {
+#ifdef HAVE_BMX_WIC64
+    if (val < 0 || val > 1) return -1;
+#endif
     if (val > WIC64_MAXTRACELEVEL) {
       val = WIC64_MAXTRACELEVEL;
     }
@@ -759,6 +866,9 @@ static int wic64_set_resetuser(int val, void *param)
 
 static int wic64_set_hexdumplines(int val, void *param)
 {
+#ifdef HAVE_BMX_WIC64
+    if (val < 1 || val > 8) return -1;
+#endif
     wic64_hexdumplines = val;
     return 0;
 }
@@ -773,6 +883,9 @@ static int wic64_set_remote_timeout(int val, void *param)
     if (val > 255) {
         wic64_remote_timeout = 255;
     }
+#ifdef HAVE_BMX_WIC64
+    remote_to = wic64_remote_timeout;
+#endif
     return 0;
 }
 
@@ -806,6 +919,12 @@ int userport_wic64_resources_init(void)
 void userport_wic64_resources_shutdown(void)
 {
     wic64_log(CONS_COL_NO, "%s: shutting down wic64", __FUNCTION__);
+#ifdef HAVE_BMX_WIC64
+    userport_wic64_enable(0);
+#endif
+#ifdef HAVE_BMX_WIC64
+    lib_free(bmx_report_ssid); bmx_report_ssid = NULL;
+#endif
     lib_free(default_server_hostname);
     lib_free(wic64_mac_address);
     lib_free(wic64_internal_ip);
@@ -938,6 +1057,7 @@ static void prep_wic64_str(void)
     cmd2string[WIC64_CMD_DEPRECATED_LEGACY_HTTP_POST_24] = "WIC64_CMD_DEPRECATED_LEGACY_HTTP_POST_24";
 }
 
+#ifndef HAVE_BMX_WIC64
 static size_t write_cb(char *data, size_t n, size_t l, void *userp)
 {
     size_t tmp = httpbufferptr + n * l;
@@ -1182,6 +1302,8 @@ static void do_http_get(char *url)
 
 /* ---------------------------------------------------------------------*/
 
+#endif
+
 #define FLAG2_ACTIVE    0
 #define FLAG2_INACTIVE  1
 #define FLAG2_TOGGLE_DELAY 3    /* delay in cycles to toggle flag2 */
@@ -1249,10 +1371,17 @@ static void wic64_sleep_cycles(int cycles, void *cb)
 static void reply_next_byte(void)
 {
     if (replyptr < reply_length) {
+#ifdef HAVE_BMX_WIC64
+        reply_port_value = bmx_reply_byte(replyptr);
+#else
         reply_port_value = replybuffer[replyptr];
+#endif
         /* debug_log(CONS_COL_NO, 2, "reply_next_byte: %3u/%3u - %02x'%c'", replyptr, reply_length, reply_port_value, isprint((unsigned char)reply_port_value)?reply_port_value:'.')); */
         replyptr++;
         if (replyptr == reply_length) {
+#ifdef HAVE_BMX_WIC64
+            bmx_release_reply();
+#endif
             replyptr = reply_length = 0;
         }
     } else {
@@ -1264,6 +1393,7 @@ static void send_binary_reply(const uint8_t *reply, size_t len)
 {
     int offs;
 
+    if (len > HTTPREPLY_MAXLEN) return;
     /* highbyte first! */
     if (big_load) {
         offs = 4;
@@ -1278,7 +1408,7 @@ static void send_binary_reply(const uint8_t *reply, size_t len)
         replybuffer[0] = ((len + cheatlen) >> 8) & 0xff;
     }
 
-    memcpy((char*)replybuffer + offs, reply, len);
+    if (len) memcpy((char*)replybuffer + offs, reply, len);
     reply_length = (uint32_t)(len + offs);
     replyptr = 0;
     if (len > 0) {
@@ -1292,6 +1422,9 @@ static void send_binary_reply(const uint8_t *reply, size_t len)
 
 static void cmd_timeout_alarm_handler(CLOCK offset, void *data)
 {
+#ifdef HAVE_BMX_WIC64
+    bmx_cancel_transport();
+#endif
     wic64_log(LOG_COL_LRED, "timed out - '%s' command", cmd2string[input_command]);
     replyptr = reply_length = 0;
     input_state = INPUT_EXP_PROT;
@@ -1339,6 +1472,7 @@ static void send_reply_revised(const uint8_t rcode, const char *msg, const uint8
 {
     int offs = 0;
 
+    if (len > HTTPREPLY_MAXLEN) return;
     wic64_set_status(msg);
 
     if (wic64_protocol != WIC64_PROT_LEGACY) {
@@ -1358,7 +1492,8 @@ static void send_reply_revised(const uint8_t rcode, const char *msg, const uint8
             replybuffer[3] = (len >> 16) & 0xff;
             replybuffer[4] = (len >> 24) & 0xff;
         }
-        memcpy((char *) &replybuffer[3 + offs], (const char *)payload, len);
+        replyptr = 0;
+        if (len) memcpy((char *) &replybuffer[3 + offs], (const char *)payload, len);
         debug_log(col, 2, "sends header...");
         debug_hexdump(col, 2, replybuffer, 3 + offs);
         if (len > 0) {
@@ -1411,6 +1546,7 @@ static void cmd_get_version(int variant)
     }
 }
 
+#ifndef HAVE_BMX_WIC64
 static int _encode(char **p, int len)
 {
     int enc_it = 0;
@@ -1787,9 +1923,16 @@ static void cmd_http_post(int cmd)
     }
 }
 
+#else
+#include "userport_wic64_bmx_transport.inc"
+#endif
+
 /* set wlan ssid + password */
 static void cmd_wifi(int cmd)
 {
+#ifdef HAVE_BMX_WIC64
+    bmx_submit_transport();
+#else
     wic64_log_hexdump(CONS_COL_NO, (const char *)commandbuffer, commandptr); /* commands may contain '0' */
 
     int l = (wic64_protocol == WIC64_PROT_LEGACY) ? 0 : 1; /* kludge to make it compatible */
@@ -1827,11 +1970,15 @@ static void cmd_wifi(int cmd)
     default:
         break;
     }
+#endif
 }
 
 /* get wic64 ip address */
 static void cmd_get_network(int cmd)
 {
+#ifdef HAVE_BMX_WIC64
+    bmx_submit_transport();
+#else
     char buffer[0x20];
     if (cmd == WIC64_CMD_GET_MAC) {
         sprintf(buffer, "%s", wic64_mac_address);
@@ -1840,6 +1987,7 @@ static void cmd_get_network(int cmd)
         sprintf(buffer, "%s", wic64_internal_ip);
     }
     send_reply_revised(SUCCESS, "Success", (uint8_t *)buffer, strlen(buffer) + 1, NULL);
+#endif
 }
 
 
@@ -1901,6 +2049,7 @@ static void cmd_get_timezone(void)
     send_reply_revised(SUCCESS, "Success", (uint8_t *)buf, strlen(buf) + 1, NULL);
 }
 
+#ifndef HAVE_BMX_WIC64
 /* open a curl connection */
 static void do_connect(uint8_t *buffer)
 {
@@ -2108,6 +2257,8 @@ static void cmd_tcp_close(void)
     send_reply_revised(SUCCESS, "Success", NULL, 0, "0");
 }
 
+#endif
+
 static void cmd_get_statusmsg(void)
 {
     uint8_t t[40];
@@ -2180,7 +2331,9 @@ static void cmd_legacy(int cmd)
         break;
     }
     case WIC64_CMD_DEPRECATED_LOG_TO_SERIAL_CONSOLE_09:
+#ifndef HAVE_BMX_WIC64
         wic64_loglevel++;
+#endif
         send_reply_revised(SUCCESS, "LEGACY", NULL, 0, NULL);
         break;
     case WIC64_CMD_DEPRECATED_GET_UPD_0A:
@@ -2255,6 +2408,19 @@ static void cmd_legacy(int cmd)
 /* ------------------------------ revised commands ---------------------*/
 static void do_command(void)
 {
+#ifdef HAVE_BMX_WIC64
+    if ((input_command == WIC64_CMD_SET_TIMEZONE ||
+         input_command == WIC64_CMD_DEPRECATED_SET_UPD_PORT_0E ||
+         input_command == WIC64_CMD_DEPRECATED_SET_TCP_PORT_20) && commandptr != 2) {
+        send_reply_revised(CLIENT_ERROR, "Expected two bytes", NULL, 0, "!E");
+        return;
+    }
+    if (input_command == WIC64_CMD_SET_TIMEZONE &&
+        (commandbuffer[0] + commandbuffer[1] * 10 >= 32)) {
+        send_reply_revised(CLIENT_ERROR, "Invalid timezone", NULL, 0, "!E");
+        return;
+    }
+#endif
     switch (input_command) {
     case WIC64_CMD_GET_VERSION_STRING:
     case WIC64_CMD_GET_VERSION_NUMBERS:
@@ -2290,13 +2456,16 @@ static void do_command(void)
     {
         const char *sv;
         resources_get_string("WIC64DefaultServer", &sv);
-        wic64_log(CONS_COL_NO, "get default server '%s'", sv);
+        wic64_log(CONS_COL_NO, "get default server");
         send_reply_revised(SUCCESS, "Success", (uint8_t *)sv, strlen(sv) + 1, NULL);
         break;
     }
     case WIC64_CMD_SET_SERVER:
-        wic64_log(CONS_COL_NO, "set default server '%s'", commandbuffer);
-        resources_set_string("WIC64DefaultServer", (char *)commandbuffer);
+        wic64_log(CONS_COL_NO, "set default server");
+        if (resources_set_string("WIC64DefaultServer", (char *)commandbuffer) < 0) {
+            send_reply_revised(CLIENT_ERROR, "Invalid server", NULL, 0, "!E");
+            break;
+        }
         send_reply_revised(SUCCESS, "Success", NULL, 0, "0");
         break;
     case WIC64_CMD_GET_LOCAL_TIME:
@@ -2419,6 +2588,13 @@ static void wic64_prot_state(uint8_t value)
         break;
     case INPUT_EXP_LH:          /* len high byte */
         input_length = (value << 8) | input_length;
+#ifdef HAVE_BMX_WIC64
+        if (wic64_protocol == WIC64_PROT_LEGACY && input_length < 4) {
+            input_state = INPUT_EXP_PROT;
+            send_reply_revised(CLIENT_ERROR, "Invalid length", NULL, 0, "!E");
+            return;
+        }
+#endif
         if (wic64_protocol == WIC64_PROT_REVISED) {
             input_state = INPUT_EXP_ARGS;
         } else if (wic64_protocol == WIC64_PROT_EXTENDED) {
@@ -2433,7 +2609,14 @@ static void wic64_prot_state(uint8_t value)
         input_state = INPUT_EXP_HH;
         break;
     case INPUT_EXP_HH:
-        input_length = (value << 24) | input_length;
+        input_length = ((uint32_t)value << 24) | input_length;
+#ifdef HAVE_BMX_WIC64
+        if (input_length > BMX_WIC64_MAX_REQUEST) {
+            input_state = INPUT_EXP_PROT;
+            send_reply_revised(CLIENT_ERROR, "Request too large", NULL, 0, "!E");
+            return;
+        }
+#endif
         input_state = INPUT_EXP_ARGS;
         break;
     case INPUT_EXP_ARGS:
@@ -2471,7 +2654,11 @@ static void run_command_helper(void)
     cmd_timeout(0);
     commandptr = input_state = input_length = 0;
     input_command = WIC64_CMD_NONE;
+#ifdef HAVE_BMX_WIC64
+    commandbuffer[0] = 0;
+#else
     memset(commandbuffer, 0, COMMANDBUFFER_MAXLEN);
+#endif
 }
 
 /* PC2 irq (pulse) triggers when C64 reads/writes to userport */
@@ -2486,6 +2673,9 @@ static void userport_wic64_store_pbx(uint8_t value, int pulse)
 
             if (input_state == INPUT_EXP_PROT) {
                 int old_prot = wic64_protocol;
+#ifdef HAVE_BMX_WIC64
+                bmx_cancel_transport();
+#endif
                 wic64_protocol = value;
                 switch (value) {
                 case WIC64_PROT_LEGACY:
@@ -2613,8 +2803,13 @@ static void userport_wic64_store_pa2(uint8_t value)
             replyptr--;         /* rewind by 1 byte */
             wic64_log(LOG_COL_LRED, "discarding %d bytes, which were not sent to host",
                       (reply_length - replyptr));
+#ifndef HAVE_BMX_WIC64
             wic64_log_hexdump(LOG_COL_LRED, &replybuffer[replyptr], (reply_length - replyptr));
+#endif
         }
+#ifdef HAVE_BMX_WIC64
+        bmx_cancel_transport();
+#endif
         replyptr = reply_length = 0; /* host decided to send, truncate outputbuffer */
     }
 }
@@ -2635,6 +2830,7 @@ static void userport_wic64_store_pa2(uint8_t value)
     be used by libcurl when we make connections, so it can be shown to the user
     in the emulation.
 */
+#ifndef HAVE_BMX_WIC64
 static int getlocalip(char *str)
 {
     char *ip;
@@ -2667,6 +2863,8 @@ static int getlocalip(char *str)
 
     return 0;
 }
+
+#endif
 
 static void userport_wic64_reset(void)
 {
@@ -2704,6 +2902,17 @@ static void userport_wic64_reset(void)
     }
     /* flag2 and cycle alarms need to be preserverd !*/
     remote_to = wic64_remote_timeout; /* reset to given value */
+#ifdef HAVE_BMX_WIC64
+    bmx_cancel_transport();
+    bmx_wic64_reset(userport_wic64_enabled);
+    replyptr = reply_length = reply_port_value = 0;
+    if (commandbuffer) commandbuffer[0] = 0;
+    if (cmd_remote_timeout_alarm) alarm_unset(cmd_remote_timeout_alarm);
+    if (flag2_alarm) alarm_unset(flag2_alarm);
+    if (cycle_alarm) { alarm_destroy(cycle_alarm); cycle_alarm = NULL; }
+
+
+#else
     if (curl) {
         /* connection closed */
         curl_easy_cleanup(curl);
@@ -2767,6 +2976,8 @@ static void userport_wic64_reset(void)
     }
 
 
+#endif
+
     /* wic64_set_status("RESET"); real HW doesn't tell this */
 
     wic64_log(LOG_COL_LBLUE, "cyan color: host -> WiC64 communication");
@@ -2774,7 +2985,7 @@ static void userport_wic64_reset(void)
     wic64_log(LOG_COL_LRED, "red color: some error");
     wic64_log(CONS_COL_NO, "no color: other information");
 
-    handshake_flag2();
+    if (userport_wic64_enabled) handshake_flag2();
 }
 
 /* ---------------------------------------------------------------------*/
@@ -2832,6 +3043,9 @@ static int userport_wic64_read_snapshot_module(snapshot_t *s)
         || (SMR_B(m, &input_command) < 0)) {
         goto fail;
     }
+#ifdef HAVE_BMX_WIC64
+    userport_wic64_reset();
+#endif
     return snapshot_module_close(m);
 
   fail:

@@ -165,6 +165,55 @@
 
 #define XUM_QUIET_US                (2000u * 1000u)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define XUM_PAZIENZA_RESET_MS       1500
+#define XUM_PAZIENZA_PASSO_MS       200
+#define XUM_MUTO_US                 (2000u * 1000u)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define XUM_PAZIENZA_LAVORO_MS      (10u * 60u * 1000u)
+static int canale15_ascolta = 0;
+static unsigned char comando_primo = 0;
+static unsigned char drive_al_lavoro = 0;
+static unsigned long xum_busy_tetto_us = XUM_BUSY_TOTAL_US;
+
 static log_t xum_log = LOG_DEFAULT;
 static int xum_open = 0;
 
@@ -173,10 +222,18 @@ static int xum_parked = 0;
 
 
 
+static int xum_non_sveglio = 0;
+
+
+
 
 static unsigned long xum_ultimo_uso = 0;
 static unsigned long xum_zitto_fino_a = 0;
 static int xum_zitto = 0;
+
+
+
+static int xum_pazienza_corta = 0;
 
 
 
@@ -405,6 +462,65 @@ int CBMAPIDECL cbm_unlisten(CBM_FILE f);
 
 
 
+static int pazienza_ms_ora = 0;
+static void pazienza_metti(int ms)
+{
+    pazienza_ms_ora = ms;
+    circle_xum1541_set_patience_ms(ms);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static void xum_rimetti_in_passo(void)
+{
+    unsigned char cmdBuf[XUM_CMDBUF_SIZE];
+    unsigned char statusBuf[XUM_STATUSBUF_SIZE];
+    int giro;
+
+    memset(cmdBuf, 0, sizeof(cmdBuf));
+    cmdBuf[0] = XUM1541_IEC_POLL;
+
+    pazienza_metti(XUM_PAZIENZA_PASSO_MS);
+    for (giro = 0; giro < 3; giro++) {
+        if (circle_xum1541_bulk_out(cmdBuf, (int)sizeof(cmdBuf))
+                == (int)sizeof(cmdBuf)
+         && circle_xum1541_bulk_in(statusBuf, (int)sizeof(statusBuf))
+                == (int)sizeof(statusBuf)
+         && XUM_GET_STATUS(statusBuf) == XUM1541_IO_READY) {
+            break;
+        }
+    }
+    pazienza_metti(0);
+    if (giro > 0) {
+        xum_diag("usb: passo ritrovato dopo (giri, 3 = mai)", giro, 0, 0);
+    }
+}
+
+
+static void turbo_traccia_guasto(const char *why);
+
+
+
+
+
 
 
 
@@ -418,6 +534,49 @@ static int turbo_dopo_uj = 0;
 static unsigned long uj_fino_a = 0;
 #define UJ_RIACCENSIONE_US          (1600u * 1000u)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define LINEA_DRIVE_ASPETTATO_MS    600u
+
+
+
+
+
+
+#define LINEA_FIRMWARE_ARRESO_MS    1500u
+static unsigned long solo_fino_a = 0;
+static unsigned long linea_ms_ultima = 0;
+static void riaccensione_da_aspettare(const char *perche)
+{
+    uj_fino_a = circle_get_ticks() + UJ_RIACCENSIONE_US;
+    if (uj_fino_a == 0) {
+        uj_fino_a = 1;
+    }
+    solo_fino_a = 0;
+    xum_riga("%s: nessun ATN per %u ms, i drive ripartono", perche,
+             UJ_RIACCENSIONE_US / 1000u);
+}
+
 static int xum_fallito(const char *why)
 {
     if (turbo_dopo_uj) {
@@ -430,6 +589,7 @@ static int xum_fallito(const char *why)
         log_error(xum_log, "xum1541: %s - the machine is told DEVICE NOT "
                            "PRESENT", why);
         xum_diag(why, 0, 0, 0);
+        turbo_traccia_guasto(why);
     }
     xum_zitto = 1;
     xum_zitto_fino_a = circle_get_ticks() + XUM_QUIET_US;
@@ -462,8 +622,15 @@ static int xum_fallito(const char *why)
         len = circle_xum1541_control_in(XUM1541_INIT, devInfo, sizeof(devInfo));
         if (len >= 3 && (devInfo[2] & XUM1541_DOING_RESET) != 0) {
             circle_xum1541_clear_halts();
+
+            riaccensione_da_aspettare("ripresa: il firmware ha tirato la linea");
         }
         xum_parked = 0;
+
+
+        if (len >= 3) {
+            xum_rimetti_in_passo();
+        }
     }
 
     return -1;
@@ -593,11 +760,370 @@ static int scolo_dentro = 0;
 static int scolo_un_blocco(void);
 static void scolo_finisci(void);
 
+
+
+static int linea_dopo_scolo = 0;
+static void scolo_comincia(void);
+static int turbo_a_meta_file(void);
+static void svuota_il_turbo(const char *perche);
+
+
+
+static unsigned long muto_fino_a = 0;
+static int muto_dice_no(void);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int drive_commodore = 0;
+static int accensione_da_fare = 1;
+static int cbm_reset_linea(void);
+static void turbo_lascia_per_la_linea(void);
+static void accensione_mista(void);
+
+
+
+
+static int linea_come_sul_ferro(void)
+{
+    return drive_commodore == 1;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define RIPARTENZA_PASSO_US         10000u
+#define RIPARTENZA_LIBERO_N         3u
+#define RIPARTENZA_MARGINE_US       (100u * 1000u)
+#define RIPARTENZA_PRESA_US         (2500u * 1000u)
+#define RIPARTENZA_TETTO_US         (6000u * 1000u)
+
+
+
+
+
+
+
+
+#define LINEA_OSSERVATA_TETTO_US    (3000u * 1000u)
+#define LINEA_OSSERVATA_DOPO_US     (100u * 1000u)
+#define LINEA_OSSERVATA_CIECA_US    (1000u * 1000u)
+
+
+#define RIPOSO_ATTESA_US            (2000u * 1000u)
+static int linea_presa_ms = -1;
+
+static int linea_tenuta_ms = 0;
+
+
+
+
+
+static int atn_rifiutato = 0;
+
+static int ripartenza_cura(void)
+{
+
+    int m = circle_get_model();
+    return m == 4 || m == 5;
+}
+
+
+
+
+static int iec_crudo(unsigned int cmd, unsigned int a, unsigned int b)
+{
+    unsigned char cmdBuf[XUM_CMDBUF_SIZE];
+    unsigned char statusBuf[XUM_STATUSBUF_SIZE];
+    int prima = pazienza_ms_ora;
+    int esito = -1;
+
+    memset(cmdBuf, 0, sizeof(cmdBuf));
+    cmdBuf[0] = (unsigned char)cmd;
+    cmdBuf[1] = (unsigned char)a;
+    cmdBuf[2] = (unsigned char)b;
+    pazienza_metti(XUM_PAZIENZA_PASSO_MS);
+    if (giro_out(cmdBuf, (int)sizeof(cmdBuf)) == (int)sizeof(cmdBuf)
+     && giro_in(statusBuf, (int)sizeof(statusBuf), 0)
+            == (int)sizeof(statusBuf)
+     && XUM_GET_STATUS(statusBuf) == XUM1541_IO_READY) {
+        esito = XUM_GET_STATUS_VAL(statusBuf);
+    }
+    pazienza_metti(prima);
+    return esito;
+}
+
+
+
+static int linee_crude(void)
+{
+    return iec_crudo(XUM1541_IEC_POLL, 0, 0);
+}
+
+
+
+
+static int ripartenza_aspetta(void)
+{
+    unsigned long da = uj_fino_a - UJ_RIACCENSIONE_US;
+    unsigned long inizio = circle_get_ticks();
+    unsigned long presa = (drive_commodore != 0) ? RIPARTENZA_PRESA_US
+                                                 : UJ_RIACCENSIONE_US;
+    unsigned long t, visto_da = 0;
+    unsigned int libere = 0;
+    int visto = 0, l;
+
+    for (;;) {
+        t = circle_get_ticks() - da;
+        l = linee_crude();
+        if (l < 0) {
+
+            unsigned long ora = circle_get_ticks();
+            if ((long)(ora - uj_fino_a) < 0) {
+                circle_sleep((long)(uj_fino_a - ora));
+            }
+            xum_riga("RIPARTENZA: le linee non si leggono, aspettato a tempo");
+            return 1;
+        }
+        if (l & IEC_DATA) {
+            if (!visto) {
+                visto = 1;
+                visto_da = t;
+            }
+            libere = 0;
+        } else if (visto) {
+            if (++libere >= RIPARTENZA_LIBERO_N) {
+                circle_sleep(RIPARTENZA_MARGINE_US);
+                xum_riga("RIPARTENZA: DATA tenuto dal drive da %lu a %lu ms, "
+                         "poi lasciato", visto_da / 1000u, t / 1000u);
+                xum_diag("ripartenza: DATA tenuto dal drive, da e fino a (ms)",
+                         (int)(visto_da / 1000u), (int)(t / 1000u), 0);
+                return 1;
+            }
+        } else if (t >= presa) {
+            xum_riga("RIPARTENZA: DATA mai tenuto in %lu ms, si va",
+                     t / 1000u);
+            return 1;
+        }
+        if (t >= RIPARTENZA_TETTO_US
+         && circle_get_ticks() - inizio >= RIPOSO_ATTESA_US) {
+            xum_riga("RIPARTENZA: DATA ancora tenuto dopo %lu ms: il drive e' "
+                     "fermo, niente ATN", t / 1000u);
+            xum_diag("ripartenza: DATA tenuto oltre il tetto, drive fermo (ms)",
+                     (int)(t / 1000u), (int)(visto_da / 1000u), l);
+            log_message(xum_log, "xum1541: the drive held DATA for %lu ms "
+                                 "after a restart - it is stuck", t / 1000u);
+            bus_perso = 1;
+            bus_perso_da = circle_get_ticks();
+            atn_rifiutato = 1;
+            return 0;
+        }
+        circle_sleep(RIPARTENZA_PASSO_US);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+static int xum_pronto(void);
+static int atn_da_riposo_ok(void)
+{
+    unsigned long inizio;
+    unsigned int libere = 0;
+    int l;
+
+    if (!ripartenza_cura() || xum_pazienza_corta || drive_al_lavoro != 0
+     || scolo_attivo) {
+        return 1;
+    }
+    if (!xum_pronto()) {
+        return 1;
+    }
+    l = linee_crude();
+    if (l < 0 || !(l & IEC_DATA)) {
+        atn_rifiutato = 0;
+        return 1;
+    }
+    inizio = circle_get_ticks();
+    xum_riga("ATN: a riposo DATA e' tenuto (linee %02x): aspetto che lo "
+             "lascino", (unsigned int)l);
+    while (circle_get_ticks() - inizio < RIPOSO_ATTESA_US) {
+        circle_sleep(RIPARTENZA_PASSO_US);
+        l = linee_crude();
+        if (l < 0) {
+            return 1;
+        }
+        if (!(l & IEC_DATA)) {
+            if (++libere >= RIPARTENZA_LIBERO_N) {
+                circle_sleep(RIPARTENZA_MARGINE_US);
+                xum_riga("ATN: DATA lasciato dopo %lu ms",
+                         (circle_get_ticks() - inizio) / 1000u);
+                atn_rifiutato = 0;
+                return 1;
+            }
+        } else {
+            libere = 0;
+        }
+    }
+    xum_riga("ATN: DATA tenuto a riposo da %lu ms (linee %02x): un drive "
+             "fermo, l'ATN non parte",
+             (circle_get_ticks() - inizio) / 1000u, (unsigned int)l);
+    xum_diag("bus: DATA tenuto a riposo, un drive fermo (ms, linee)",
+             (int)((circle_get_ticks() - inizio) / 1000u), l, 0);
+    log_message(xum_log, "xum1541: DATA is held with the bus at rest - a "
+                         "drive is stuck: Reset Drive, or switch it off and "
+                         "on");
+    bus_perso = 1;
+    bus_perso_da = circle_get_ticks();
+    atn_rifiutato = 1;
+    return 0;
+}
+
+
+
+
+
+
+static int linea_osservata(void)
+{
+    unsigned long t0, t, tetto = LINEA_OSSERVATA_TETTO_US, primo = 0;
+    unsigned int prese = 0;
+    int prima, l = -1, k;
+
+    linea_presa_ms = -1;
+    linea_tenuta_ms = 0;
+    prima = linee_crude();
+    if (prima < 0) {
+        return -1;
+    }
+    if ((prima & (IEC_DATA | IEC_CLOCK)) == (IEC_DATA | IEC_CLOCK)) {
+        tetto = LINEA_OSSERVATA_CIECA_US;
+        linea_presa_ms = -2;
+    }
+    if (iec_crudo(XUM1541_IEC_SETRELEASE, IEC_RESET, 0) < 0) {
+        return -1;
+    }
+    t0 = circle_get_ticks();
+    for (;;) {
+        circle_sleep(RIPARTENZA_PASSO_US);
+        t = circle_get_ticks() - t0;
+        if (tetto == LINEA_OSSERVATA_TETTO_US) {
+            l = linee_crude();
+            if (l >= 0 && (l & (IEC_DATA | IEC_CLOCK))
+                              == (IEC_DATA | IEC_CLOCK)) {
+                if (prese++ == 0) {
+                    primo = t;
+                }
+                if (prese >= RIPARTENZA_LIBERO_N) {
+                    linea_presa_ms = (int)(primo / 1000u);
+                    circle_sleep(LINEA_OSSERVATA_DOPO_US);
+                    break;
+                }
+            } else {
+                prese = 0;
+            }
+        }
+        if (t >= tetto) {
+            break;
+        }
+    }
+
+
+    for (k = 0; k < 3; k++) {
+        if (iec_crudo(XUM1541_IEC_SETRELEASE, 0, IEC_RESET) >= 0) {
+            break;
+        }
+    }
+    linea_tenuta_ms = (int)((circle_get_ticks() - t0) / 1000u);
+    xum_riga("RESET: la linea tenuta %d ms, %s (linee prima %02x, durante "
+             "%02x)", linea_tenuta_ms,
+             linea_presa_ms >= 0 ? "presa dal drive"
+             : (linea_presa_ms == -1 ? "nessuno l'ha presa"
+                                     : "il bus era gia' tenuto"),
+             (unsigned int)prima, (unsigned int)(l < 0 ? 0 : l));
+    xum_diag("reset: linea osservata, presa dopo (ms, -1 mai, -2 cieca), "
+             "tenuta (ms), linee prima", linea_presa_ms, linea_tenuta_ms,
+             prima);
+    return (k == 3) ? -1 : 0;
+}
+
 static int xum_pronto(void)
 {
     unsigned long adesso;
 
     if (!xum_open) {
+        return 0;
+    }
+
+
+
+    if (drive_commodore != 0 && accensione_da_fare) {
+        accensione_da_fare = 0;
+        if (linea_come_sul_ferro()) {
+            xum_riga("ACCENSIONE: drive Commodore, la linea RESET come un "
+                     "Commodore appena acceso");
+            cbm_reset_linea();
+        } else {
+            accensione_mista();
+        }
+    }
+
+
+
+
+    if (muto_dice_no()) {
         return 0;
     }
 
@@ -635,7 +1161,9 @@ static int xum_pronto(void)
 
 
 
-    if (uj_fino_a != 0) {
+
+
+    if (uj_fino_a != 0 && !ripartenza_cura()) {
         if ((long)(adesso - uj_fino_a) < 0) {
             circle_sleep((long)(uj_fino_a - adesso));
             adesso = circle_get_ticks();
@@ -658,6 +1186,18 @@ static int xum_pronto(void)
         if (xum_parked) {
 
 
+            return 0;
+        }
+    }
+
+
+    if (uj_fino_a != 0 && ripartenza_cura()) {
+        int si = ripartenza_aspetta();
+
+        uj_fino_a = 0;
+        turbo_dopo_uj = 0;
+        xum_ultimo_uso = circle_get_ticks();
+        if (!si) {
             return 0;
         }
     }
@@ -1108,7 +1648,7 @@ static int xum_wait_status(void)
 
 
 
-        if (circle_get_ticks() - inizio > XUM_BUSY_TOTAL_US) {
+        if (circle_get_ticks() - inizio > xum_busy_tetto_us) {
             return xum_fallito("the drive never finished");
         }
 
@@ -1146,8 +1686,8 @@ static int xum_ioctl(unsigned int cmd, unsigned int addr, unsigned int secaddr)
     return xum_wait_status();
 }
 
-static int xum_write(unsigned char modeFlags, const unsigned char *data,
-                     unsigned int size)
+static int xum_write_dentro(unsigned char modeFlags,
+                            const unsigned char *data, unsigned int size)
 {
     unsigned char cmdBuf[XUM_CMDBUF_SIZE];
     unsigned int written = 0;
@@ -1199,6 +1739,43 @@ static int xum_write(unsigned char modeFlags, const unsigned char *data,
     }
 
     return (int)written;
+}
+
+
+
+
+static int xum_write(unsigned char modeFlags, const unsigned char *data,
+                     unsigned int size)
+{
+    int corta = xum_pazienza_corta && (modeFlags & XUM_WRITE_ATN);
+
+
+
+    int lunga = !corta && drive_al_lavoro != 0
+                && (modeFlags & XUM_WRITE_ATN) && turbo_fino_a == 0;
+    unsigned long t0 = 0;
+    int esito;
+
+    if (corta) {
+        pazienza_metti(XUM_PAZIENZA_RESET_MS);
+    } else if (lunga) {
+        pazienza_metti((int)XUM_PAZIENZA_LAVORO_MS);
+        xum_busy_tetto_us = (unsigned long)XUM_PAZIENZA_LAVORO_MS * 1000ul;
+        t0 = circle_get_ticks();
+    }
+    esito = xum_write_dentro(modeFlags, data, size);
+    if (corta || lunga) {
+        pazienza_metti(0);
+    }
+    if (lunga) {
+        xum_busy_tetto_us = XUM_BUSY_TOTAL_US;
+        xum_riga("il drive ha finito il comando %c dopo %lu ms (esito %d)",
+                 drive_al_lavoro, (circle_get_ticks() - t0) / 1000ul, esito);
+    }
+    if (modeFlags & XUM_WRITE_ATN) {
+        drive_al_lavoro = 0;
+    }
+    return esito;
 }
 
 static int xum_read(unsigned char mode, unsigned char *data, unsigned int size)
@@ -1265,6 +1842,7 @@ int CBMAPIDECL cbm_driver_open(CBM_FILE *f, int port)
     xum_zitto = 0;
     xum_parked = 0;
     xum_ultimo_uso = circle_get_ticks();
+    solo_fino_a = 0;
 
     *f = NULL;
 
@@ -1305,16 +1883,40 @@ int CBMAPIDECL cbm_driver_open(CBM_FILE *f, int port)
 
 
     if ((devInfo[2] & XUM1541_DOING_RESET) != 0) {
+
+
+        accensione_da_fare = 0;
         log_message(xum_log, "the previous command was cut short, clearing "
                              "the two stalls");
         xum_diag("open: previous command cut short, clearing stalls", 0, 0, 0);
         circle_xum1541_clear_halts();
+        xum_rimetti_in_passo();
+
+        riaccensione_da_aspettare("apertura: il firmware ha tirato la linea");
     }
 
     xum_diag("open: done", 0, 0, 0);
 
     xum_open = 1;
+    xum_non_sveglio = 0;
     *f = (CBM_FILE)&xum_handle_cookie;
+
+
+
+
+
+    if (drive_commodore != 0 && accensione_da_fare) {
+        accensione_da_fare = 0;
+        if (linea_come_sul_ferro()) {
+            xum_diag("open: drive Commodore, RESET della linea come all'accensione",
+                     0, 0, 0);
+            cbm_reset_linea();
+        } else {
+            xum_diag("open: Pi1541 + Commodore, il bus si guarda senza la linea",
+                     0, 0, 0);
+            accensione_mista();
+        }
+    }
 
     return 0;
 }
@@ -1355,6 +1957,7 @@ static void xum_sveglia(void)
     unsigned char devInfo[XUM_DEVINFO_SIZE];
     int len;
     int giro;
+    int sbloccato = 0;
 
     if (!xum_parked) {
         return;
@@ -1367,8 +1970,17 @@ static void xum_sveglia(void)
         if (len >= 3) {
             if ((devInfo[2] & XUM1541_DOING_RESET) != 0) {
                 circle_xum1541_clear_halts();
+                sbloccato = 1;
+
+                riaccensione_da_aspettare("risveglio: il firmware ha tirato la linea");
+            }
+
+
+            if (sbloccato) {
+                xum_rimetti_in_passo();
             }
             xum_parked = 0;
+            xum_non_sveglio = 0;
             c_risvegli++;
             if (giro > 0) {
                 log_message(xum_log, "xum1541: woke up at attempt %d",
@@ -1380,11 +1992,13 @@ static void xum_sveglia(void)
 
 
         circle_xum1541_clear_halts();
+        sbloccato = 1;
         circle_sleep(100000);
     }
 
     log_error(xum_log, "xum1541: the adapter did not wake up after the "
                        "bus reset - staying parked, will try again");
+    xum_non_sveglio = 1;
 }
 
 
@@ -1504,8 +2118,58 @@ static int  auto_leggi(unsigned char *fuori);
 static int  auto_eoi(void);
 static void auto_chiudi(void);
 static int  auto_serve(void);
+static int  auto_interrotto(void);
+static int  auto_da_parte(void);
+static void auto_rimetti(int prima);
 
 static void drive_scorda_tutti(void);
+
+
+
+static int comando_lungo(unsigned char c)
+{
+    return c == 'N' || c == 'V' || c == 'C' || c == 'S' || c == 'D';
+}
+
+static void comando_scorda(void)
+{
+    canale15_ascolta = 0;
+    comando_primo = 0;
+}
+
+static void comando_ascolta(unsigned char secadr)
+{
+    canale15_ascolta = ((secadr & 0x0f) == 15);
+    comando_primo = 0;
+}
+
+static void comando_guarda(const unsigned char *p, unsigned int n)
+{
+    unsigned int k;
+
+    if (!canale15_ascolta || comando_primo != 0 || p == NULL) {
+        return;
+    }
+    for (k = 0; k < n; k++) {
+        if (p[k] != ' ') {
+            comando_primo = p[k];
+            return;
+        }
+    }
+}
+
+
+
+static void comando_partito(void)
+{
+    if (canale15_ascolta && comando_lungo(comando_primo)) {
+        drive_al_lavoro = comando_primo;
+        xum_riga("il drive lavora al comando %c: la prossima frase sotto "
+                 "ATN lo aspetta fino a %u s", drive_al_lavoro,
+                 XUM_PAZIENZA_LAVORO_MS / 1000u);
+    }
+    comando_scorda();
+}
 
 int CBMAPIDECL cbm_listen(CBM_FILE f, unsigned char dev, unsigned char secadr)
 {
@@ -1513,8 +2177,16 @@ int CBMAPIDECL cbm_listen(CBM_FILE f, unsigned char dev, unsigned char secadr)
 
     (void)f;
     xum_riga("LISTEN %u,%u", dev, secadr);
+    if (auto_interrotto()) {
+        return 1;
+    }
+
+    if (bus_a_riposo && !atn_da_riposo_ok()) {
+        return 1;
+    }
     bus_a_riposo = 0;
     auto_nome_comincia(dev, secadr);
+    comando_ascolta(secadr);
 
     dataBuf[0] = 0x20 | dev;
     dataBuf[1] = 0x60 | secadr;
@@ -1525,9 +2197,15 @@ int CBMAPIDECL cbm_listen(CBM_FILE f, unsigned char dev, unsigned char secadr)
 int CBMAPIDECL cbm_talk(CBM_FILE f, unsigned char dev, unsigned char secadr)
 {
     unsigned char dataBuf[2];
+    int era_a_riposo;
 
     (void)f;
     xum_riga("TALK %u,%u", dev, secadr);
+    comando_scorda();
+    if (auto_interrotto()) {
+        return 1;
+    }
+    era_a_riposo = bus_a_riposo;
     bus_a_riposo = 0;
 
 
@@ -1536,6 +2214,12 @@ int CBMAPIDECL cbm_talk(CBM_FILE f, unsigned char dev, unsigned char secadr)
 
     if (auto_prova_al_talk(dev, secadr) == 0) {
         return 0;
+    }
+
+
+    if (era_a_riposo && !atn_da_riposo_ok()) {
+        bus_a_riposo = 1;
+        return 1;
     }
 
     dataBuf[0] = 0x40 | dev;
@@ -1553,9 +2237,21 @@ int CBMAPIDECL cbm_open(CBM_FILE f, unsigned char dev, unsigned char secadr,
 
     (void)f;
     xum_riga("OPEN %u,%u len %u", dev, secadr, (unsigned int)len);
+    if (auto_interrotto()) {
+        return 1;
+    }
+
+    if (bus_a_riposo && !atn_da_riposo_ok()) {
+        return 1;
+    }
     bus_a_riposo = 0;
     if (fname == NULL) {
         auto_apertura(dev, secadr);
+    }
+
+    comando_ascolta(secadr);
+    if (fname != NULL) {
+        comando_guarda((const unsigned char *)fname, (unsigned int)len);
     }
 
     dataBuf[0] = 0x20 | dev;
@@ -1563,6 +2259,7 @@ int CBMAPIDECL cbm_open(CBM_FILE f, unsigned char dev, unsigned char secadr,
 
     rc = xum_write(XUM1541_CBM | XUM_WRITE_ATN, dataBuf, 2) <= 0;
     if (rc != 0) {
+        comando_scorda();
         return rc;
     }
 
@@ -1570,12 +2267,15 @@ int CBMAPIDECL cbm_open(CBM_FILE f, unsigned char dev, unsigned char secadr,
     if (fname != NULL && len > 0) {
         if (xum_write(XUM1541_CBM, (const unsigned char *)fname,
                       (unsigned int)len) < 0) {
+            comando_scorda();
             return 1;
         }
         if (xum_write(XUM1541_CBM | XUM_WRITE_ATN,
                       (const unsigned char *)"\x3f", 1) <= 0) {
+            comando_scorda();
             return 1;
         }
+        comando_partito();
     }
 
     return 0;
@@ -1584,12 +2284,33 @@ int CBMAPIDECL cbm_open(CBM_FILE f, unsigned char dev, unsigned char secadr,
 int CBMAPIDECL cbm_close(CBM_FILE f, unsigned char dev, unsigned char secadr)
 {
     unsigned char dataBuf[2];
+    int era_a_riposo;
 
     (void)f;
     xum_riga("CLOSE %u,%u", dev, secadr);
+    comando_scorda();
+
+
+    if (atn_rifiutato) {
+        bus_a_riposo = 1;
+        auto_chiudi();
+        return 1;
+    }
+    era_a_riposo = bus_a_riposo;
     bus_a_riposo = 1;
     bus_perso = 0;
     auto_chiudi();
+
+
+
+
+    if (scolo_attivo && !scolo_dentro) {
+        return 0;
+    }
+
+    if (era_a_riposo && !atn_da_riposo_ok()) {
+        return 1;
+    }
 
     dataBuf[0] = 0x20 | dev;
     dataBuf[1] = 0xe0 | secadr;
@@ -1605,10 +2326,36 @@ int CBMAPIDECL cbm_unlisten(CBM_FILE f)
     dataBuf[0] = 0x3f;
 
     xum_riga("UNLISTEN");
+
+
+    if (atn_rifiutato) {
+        comando_scorda();
+        bus_a_riposo = 1;
+        return 1;
+    }
+
+
+
+    if (auto_serve()) {
+        comando_scorda();
+        return 0;
+    }
     bus_a_riposo = 1;
     bus_perso = 0;
     auto_nome_finito();
-    return xum_write(XUM1541_CBM | XUM_WRITE_ATN, dataBuf, 1) <= 0;
+
+
+    if (scolo_attivo && !scolo_dentro) {
+        comando_scorda();
+        return 0;
+    }
+
+    if (xum_write(XUM1541_CBM | XUM_WRITE_ATN, dataBuf, 1) <= 0) {
+        comando_scorda();
+        return 1;
+    }
+    comando_partito();
+    return 0;
 }
 
 int CBMAPIDECL cbm_untalk(CBM_FILE f)
@@ -1619,6 +2366,13 @@ int CBMAPIDECL cbm_untalk(CBM_FILE f)
     dataBuf[0] = 0x5f;
 
     xum_riga("UNTALK");
+    comando_scorda();
+
+
+    if (atn_rifiutato) {
+        bus_a_riposo = 1;
+        return 1;
+    }
     bus_a_riposo = 1;
 
 
@@ -1629,6 +2383,11 @@ int CBMAPIDECL cbm_untalk(CBM_FILE f)
         return 0;
     }
     bus_perso = 0;
+
+
+    if (scolo_attivo && !scolo_dentro) {
+        return 0;
+    }
     return xum_write(XUM1541_CBM | XUM_WRITE_ATN, dataBuf, 1) <= 0;
 }
 
@@ -1638,7 +2397,11 @@ int CBMAPIDECL cbm_raw_write(CBM_FILE f, const void *buf, size_t size)
 
     (void)f;
     xum_riga("WRITE %u", (unsigned int)size);
+    if (auto_interrotto()) {
+        return -1;
+    }
     auto_nome_pezzo((const unsigned char *)buf, (unsigned int)size);
+    comando_guarda((const unsigned char *)buf, (unsigned int)size);
     n = xum_write(XUM1541_CBM, (const unsigned char *)buf,
                   (unsigned int)size);
     if (n != (int)size) {
@@ -1726,13 +2489,39 @@ static int cbm_reset_linea(void)
 
 int CBMAPIDECL cbm_reset(CBM_FILE f)
 {
+    unsigned long t_linea;
+
     (void)f;
 
 
 
 
 
-    if (scolo_attivo) {
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    if (!reset_forza_linea && !scolo_attivo && turbo_a_meta_file()) {
+        svuota_il_turbo("RESET");
+    }
+    if (scolo_attivo && !linea_come_sul_ferro()) {
+        return 0;
+    }
+    if (scolo_attivo && !reset_forza_linea) {
+        linea_dopo_scolo = 1;
+        xum_riga("RESET della macchina durante uno svuotamento: la linea "
+                 "quando il drive ha finito il file");
         return 0;
     }
 
@@ -1785,12 +2574,35 @@ int CBMAPIDECL cbm_reset(CBM_FILE f)
 
 
 
-    if (!reset_forza_linea) {
-        if (!uj_al_posto_del_reset()) {
+    if (!reset_forza_linea && !linea_come_sul_ferro()) {
+        int rimesse;
+
+
+
+
+
+
+
+
+        xum_pazienza_corta = 1;
+        rimesse = uj_al_posto_del_reset();
+        xum_pazienza_corta = 0;
+        if (!rimesse) {
             xum_riga("RESET della macchina: la linea non si tocca "
                      "(nessuna unita' da rimettere a posto)");
         }
         return 0;
+    }
+
+
+
+
+
+
+    if (linea_come_sul_ferro() && !reset_forza_linea) {
+        xum_riga("RESET della macchina: drive Commodore, la linea come sul "
+                 "ferro");
+        turbo_lascia_per_la_linea();
     }
 
 
@@ -1828,6 +2640,32 @@ int CBMAPIDECL cbm_reset(CBM_FILE f)
 
     circle_xum1541_control_out(XUM1541_SHUTDOWN);
 
+    t_linea = circle_get_ticks();
+
+
+
+
+
+
+    if (ripartenza_cura()) {
+        if (linea_osservata() < 0) {
+            xum_parked = 1;
+            return xum_fallito("the adapter did not take the reset");
+        }
+        linea_ms_ultima = (unsigned long)(linea_presa_ms >= 0
+                                          ? linea_presa_ms : linea_tenuta_ms);
+        atn_rifiutato = 0;
+        if (linea_presa_ms != -1) {
+            riaccensione_da_aspettare("RESET della linea osservata");
+        } else {
+            solo_fino_a = 0;
+            xum_riga("RESET della linea: nessun drive l'ha presa in %d ms",
+                     linea_tenuta_ms);
+        }
+        xum_parked = 1;
+        accensione_da_fare = 0;
+        return 0;
+    }
     if (circle_xum1541_control_out(XUM1541_RESET) < 0) {
         xum_parked = 1;
         return xum_fallito("the adapter did not take the reset");
@@ -1835,9 +2673,70 @@ int CBMAPIDECL cbm_reset(CBM_FILE f)
 
 
 
+
+
+
+
+
+
+
+    linea_ms_ultima = (circle_get_ticks() - t_linea) / 1000u;
+    xum_diag("reset: la linea, millesimi nel firmware",
+             (int)linea_ms_ultima, 0, 0);
+    if (linea_ms_ultima < LINEA_DRIVE_ASPETTATO_MS) {
+        riaccensione_da_aspettare("RESET della linea");
+    } else if (linea_ms_ultima >= LINEA_FIRMWARE_ARRESO_MS) {
+        riaccensione_da_aspettare("RESET della linea: il firmware si e' "
+                                  "arreso, il bus non si e' liberato");
+    } else {
+        solo_fino_a = 0;
+        xum_riga("RESET della linea: il firmware ha aspettato i drive "
+                 "(%lu ms)", linea_ms_ultima);
+    }
+
+
+
     xum_parked = 1;
 
+    accensione_da_fare = 0;
+
     return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+static void accensione_mista(void)
+{
+    int esito;
+
+    xum_riga("ACCENSIONE: Pi1541 + Commodore, la linea no: una frase sotto "
+             "ATN con la pazienza corta");
+    xum_pazienza_corta = 1;
+    esito = cbm_listen(NULL, 30, 14);
+    cbm_unlisten(NULL);
+    xum_pazienza_corta = 0;
+    if (esito != 0 && (bus_perso || xum_zitto)) {
+        xum_riga("ACCENSIONE: il bus era fermo, la ripresa ha tirato la linea");
+        xum_diag("open: il bus era fermo, la ripresa ha tirato la linea",
+                 0, 0, 0);
+        bus_perso = 0;
+        bus_perso_da = 0;
+        xum_zitto = 0;
+        xum_zitto_fino_a = 0;
+    } else {
+        xum_riga("ACCENSIONE: il bus e' libero (%d)", esito);
+    }
+    bus_a_riposo = 1;
 }
 
 
@@ -2112,6 +3011,18 @@ static void turbo_traccia_versa(void)
     fflush(f);
     fsync(fileno(f));
     fclose(f);
+}
+
+
+
+
+
+static void turbo_traccia_guasto(const char *why)
+{
+    if (turbo_traccia_accesa && !turbo_traccia_subito) {
+        turbo_traccia("GUASTO: %s", why);
+        turbo_traccia_versa();
+    }
 }
 
 
@@ -2394,12 +3305,102 @@ static int drive_chi_sei(unsigned char dev)
 
 
 
-static int drive_va_col_turbo(unsigned char dev)
-{
-    int tipo = drive_chi_sei(dev);
 
+
+static int drive_va_col_turbo(int tipo)
+{
     return tipo == DRIVE_1541 || tipo == DRIVE_1570
         || tipo == DRIVE_1571 || tipo == DRIVE_1581;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define SOLO_VALE_US                (60u * 1000u * 1000u)
+static unsigned char solo_dev = 0;
+static int turbo_non_solo = 0;
+
+
+
+
+static int unita_sul_bus(unsigned char dev)
+{
+    unsigned char frase[2];
+    unsigned char via = 0x3f;
+
+    frase[0] = (unsigned char)(0x20 | (dev & 0x1f));
+    frase[1] = 0x60 | 14;
+    if (xum_write(XUM1541_CBM | XUM_WRITE_ATN, frase, 2) == 2) {
+        xum_write(XUM1541_CBM | XUM_WRITE_ATN, &via, 1);
+        return 1;
+    }
+    if (!xum_open || xum_zitto || bus_perso || turbo_scaduto()) {
+        return -1;
+    }
+    return 0;
+}
+
+
+
+static int altro_sul_bus(unsigned char dev)
+{
+    unsigned int u;
+
+    if (solo_fino_a != 0 && solo_dev == dev
+        && (long)(circle_get_ticks() - solo_fino_a) < 0) {
+        return 0;
+    }
+    solo_fino_a = 0;
+    for (u = 8; u <= 34; u++) {
+        unsigned char chi = (unsigned char)(u <= 30 ? u : u - 27);
+        int c;
+
+        if (chi == dev) {
+            continue;
+        }
+        c = unita_sul_bus(chi);
+        if (c < 0) {
+            xum_riga("BUS: non si e' potuto chiedere dell'unita' %u", chi);
+            return -1;
+        }
+        if (c > 0) {
+            xum_riga("BUS: c'e' anche l'unita' %u: il turbo no", chi);
+            return chi;
+        }
+    }
+    solo_dev = dev;
+    solo_fino_a = circle_get_ticks() + SOLO_VALE_US;
+    if (solo_fino_a == 0) {
+        solo_fino_a = 1;
+    }
+    xum_riga("BUS: l'unita' %u e' sola", dev);
+    return 0;
 }
 
 
@@ -2749,6 +3750,37 @@ static int scolo_blocchi = 0;
 static void turbo_meta_file_resetta(void);
 static int turbo_sess_chiudi_coda(void);
 
+
+
+static int turbo_a_meta_file(void)
+{
+    return sess.aperta && !sess.finita && !sess.rotta;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+static void turbo_riapri_il_canale(unsigned char dev, const char *nome,
+                                   int nomelen)
+{
+    turbo_traccia("il DOS e' ripartito: riapro il file per la strada di "
+                  "sempre");
+    if (cbm_open(NULL, dev, TURBO_SA_LETTURA, nome, (size_t)nomelen)) {
+        turbo_traccia("il file non si riapre");
+    }
+
+    bus_a_riposo = 1;
+    bus_perso = 0;
+}
+
 static int turbo_sess_apri(unsigned char dev, const char *nome, int nomelen,
                            int gia_aperto)
 {
@@ -2763,6 +3795,7 @@ static int turbo_sess_apri(unsigned char dev, const char *nome, int nomelen,
     memset(&sess, 0, sizeof(sess));
     sess.dev = dev;
     s2_conti_azzera();
+    turbo_non_solo = 0;
 
 
 
@@ -2848,6 +3881,29 @@ static int turbo_sess_apri(unsigned char dev, const char *nome, int nomelen,
 
 
 
+    turbo_non_solo = altro_sul_bus(dev);
+    if (turbo_non_solo != 0) {
+        if (turbo_non_solo > 0) {
+            snprintf(turbo_dice, sizeof(turbo_dice),
+                     "drive %d is on the bus too", turbo_non_solo);
+        } else {
+            snprintf(turbo_dice, sizeof(turbo_dice),
+                     "could not ask who is on the bus");
+        }
+        turbo_traccia("non e' solo sul bus (%d): il turbo no, si va come "
+                      "sempre", turbo_non_solo);
+        if (sess.nostro_canale) {
+            cbm_close(NULL, dev, TURBO_SA_LETTURA);
+            sess.nostro_canale = 0;
+        }
+        return -1;
+    }
+
+
+
+
+
+
 
 
 
@@ -2919,8 +3975,16 @@ static int turbo_sess_apri(unsigned char dev, const char *nome, int nomelen,
             s2_n = (unsigned int)sizeof(turbo_s2_1581);
             break;
         default:
-            snprintf(turbo_dice, sizeof(turbo_dice), "a %s, no turbo for it",
-                     drive_nome[dev & 15][0] ? drive_nome[dev & 15] : "?");
+
+            if (tipo == DRIVE_BOH) {
+                snprintf(turbo_dice, sizeof(turbo_dice),
+                         "the drive does not answer");
+            } else {
+                snprintf(turbo_dice, sizeof(turbo_dice),
+                         "a %s, no turbo for it",
+                         drive_nome[dev & 15][0] ? drive_nome[dev & 15]
+                                                 : "?");
+            }
             turbo_passo = TURBO_PASSO_ADATTATORE;
             if (sess.nostro_canale) {
                 cbm_close(NULL, dev, TURBO_SA_LETTURA);
@@ -2986,6 +4050,9 @@ static int turbo_sess_apri(unsigned char dev, const char *nome, int nomelen,
             cbm_close(NULL, dev, TURBO_SA_LETTURA);
         }
         turbo_lascia_pulito(dev);
+        if (gia_aperto) {
+            turbo_riapri_il_canale(dev, nome, nomelen);
+        }
         return -1;
     }
     turbo_traccia("U4 preso, prima di prendere il bus");
@@ -2996,12 +4063,22 @@ static int turbo_sess_apri(unsigned char dev, const char *nome, int nomelen,
 
         xum_riga("TURBO il drive non ha preso il bus");
         snprintf(turbo_dice, sizeof(turbo_dice), "drive never took the bus");
-        s2_esci();
-        sess.aperta = 0;
-        if (sess.nostro_canale) {
-            cbm_close(NULL, dev, TURBO_SA_LETTURA);
+
+
+
+
+
+
+
+
+
+
+        turbo_traccia("non ha preso il bus: e' dentro il nostro 6502, solo "
+                      "la linea lo tira fuori");
+        turbo_meta_file_resetta();
+        if (gia_aperto) {
+            turbo_riapri_il_canale(dev, nome, nomelen);
         }
-        turbo_lascia_pulito(dev);
         return -1;
     }
     turbo_passo = TURBO_PASSO_PARTITO;
@@ -3188,6 +4265,15 @@ static int uj_al_posto_del_reset(void)
         quante++;
         if (turbo_comando(u, (const unsigned char *)"UJ", 2) == 0) {
             risponde = 1;
+
+
+
+
+
+            uj_fino_a = circle_get_ticks() + UJ_RIACCENSIONE_US;
+            if (uj_fino_a == 0) {
+                uj_fino_a = 1;
+            }
         }
     }
     if (quante == 0 || !risponde) {
@@ -3276,6 +4362,7 @@ static int scolo_un_blocco(void)
     unsigned char cestino[TURBO_BLOCCO];
     unsigned long prima;
     int presi, ultimo;
+    int zitto;
 
     if (!scolo_attivo) {
         return 0;
@@ -3303,6 +4390,16 @@ static int scolo_un_blocco(void)
     }
 
     scolo_attivo = 0;
+
+
+
+
+
+
+
+
+    scolo_dentro = 1;
+    zitto = auto_da_parte();
     if (presi < 0) {
 
 
@@ -3318,6 +4415,19 @@ static int scolo_un_blocco(void)
     }
 
 
+
+    if (linea_dopo_scolo) {
+        linea_dopo_scolo = 0;
+        if (presi >= 0) {
+            xum_riga("RESET della macchina arrivato durante lo svuotamento: "
+                     "la linea adesso");
+            cbm_reset_linea();
+        }
+    }
+    auto_rimetti(zitto);
+    scolo_dentro = 0;
+
+
     turbo_traccia_accesa = 0;
     turbo_traccia_versa();
     return 0;
@@ -3328,6 +4438,12 @@ static int scolo_un_blocco(void)
 static void scolo_finisci(void)
 {
     while (scolo_attivo) {
+
+
+
+
+
+        bmc_giri[1]++;
         if (!scolo_un_blocco()) {
             break;
         }
@@ -3350,6 +4466,12 @@ static int turbo_sess_chiudi(void)
 
 
     if (!sess.finita && !sess.rotta) {
+
+
+
+
+
+
         scolo_comincia();
         return 0;
     }
@@ -3537,9 +4659,83 @@ int raspi_opencbm_get_veloce(void)
     return auto_veloce;
 }
 
+
+void raspi_opencbm_set_commodore(int si)
+{
+
+    drive_commodore = (si == 1 || si == 2) ? si : 0;
+}
+
+int raspi_opencbm_get_commodore(void)
+{
+    return drive_commodore;
+}
+
 static int auto_serve(void)
 {
     return auto_in_corso && !auto_zitto;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int muto_dice_no(void)
+{
+    unsigned long adesso;
+
+    if (muto_fino_a == 0 || scolo_dentro || auto_zitto) {
+        return 0;
+    }
+    adesso = circle_get_ticks();
+    if (!scolo_attivo && (long)(adesso - muto_fino_a) >= 0) {
+        muto_fino_a = 0;
+        return 0;
+    }
+
+
+    muto_fino_a = adesso + XUM_MUTO_US;
+    if (muto_fino_a == 0) {
+        muto_fino_a = 1;
+    }
+    return 1;
+}
+
+static int auto_interrotto(void)
+{
+    if (auto_serve()) {
+        xum_riga("VELOCE interrotto: la macchina parla al drive senza "
+                 "UNTALK");
+        turbo_traccia("la macchina parla al drive a meta' file: ha un "
+                      "caricatore suo, si svuota");
+        auto_chiudi();
+        muto_fino_a = circle_get_ticks() + XUM_MUTO_US;
+        if (muto_fino_a == 0) {
+            muto_fino_a = 1;
+        }
+    }
+    return muto_dice_no();
 }
 
 
@@ -3822,7 +5018,14 @@ static int auto_prova_al_talk(unsigned char dev, unsigned char secadr)
         turbo_traccia_versa();
         {
             char breve[32];
-            snprintf(breve, sizeof(breve), "FAST FAILED: %.17s", turbo_dice);
+
+            if (turbo_non_solo > 0) {
+                snprintf(breve, sizeof(breve), "FAST OFF: DRIVE %u ON BUS TOO",
+                         (unsigned int)turbo_non_solo & 31u);
+            } else {
+                snprintf(breve, sizeof(breve), "FAST FAILED: %.17s",
+                         turbo_dice);
+            }
             auto_avviso(breve);
         }
         return -1;
@@ -3885,6 +5088,7 @@ static int auto_riempi(void)
 
             turbo_traccia("ROTTO al blocco %d: %s", auto_blocchi_fatti + 1,
                           turbo_dice);
+            turbo_traccia_versa();
             {
                 char breve[32];
                 snprintf(breve, sizeof(breve), "FAST BROKE: %.19s",
@@ -4049,6 +5253,303 @@ static void auto_chiudi(void)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+#define UNITA_MAX                   32
+static unsigned int unita_vere = 0;
+static int reset_come[UNITA_MAX];
+static int reset_stato[UNITA_MAX];
+static int reset_tipo[UNITA_MAX];
+static int reset_linea_tirata = 0;
+#define RIPARTITO_NO_BUS            (-2)
+#define RIPARTITO_MUTO              (-1)
+#define RIPARTITO_NIENTE            0
+#define RIPARTITO_LINEA             1
+#define RIPARTITO_UJ                2
+#define RIPARTITO_NO                3
+#define RIPARTITO_PI1541_ELENCO     4
+#define RIPARTITO_LINEA_LUNGA       5
+
+
+
+static int sonda_corta(unsigned char u)
+{
+    int c;
+
+    xum_pazienza_corta = 1;
+    c = unita_sul_bus(u);
+    xum_pazienza_corta = 0;
+    if (c < 0) {
+        bus_perso = 0;
+        bus_perso_da = 0;
+        xum_zitto = 0;
+        xum_zitto_fino_a = 0;
+        bus_a_riposo = 1;
+    }
+    return c;
+}
+
+
+
+
+
+
+
+static void riarma_15(unsigned char u)
+{
+    cbm_listen(NULL, u, 15);
+    cbm_unlisten(NULL);
+}
+
+
+static int stato_e_tipo(unsigned char u, char *testo, unsigned int max)
+{
+    int stato;
+
+    riarma_15(u);
+    stato = turbo_stato(u, testo, max);
+
+    reset_stato[u & 31] = stato;
+    if (stato != 99) {
+        reset_tipo[u & 31] = drive_chi_sei(u);
+    }
+    return stato;
+}
+
+
+
+
+static int come_da_stato(int stato, const char *testo, int se_73)
+{
+    if (stato == 99) {
+        return RIPARTITO_MUTO;
+    }
+    if (strstr(testo, "PI1541") != NULL) {
+        return RIPARTITO_PI1541_ELENCO;
+    }
+    return stato == 73 ? se_73 : RIPARTITO_NO;
+}
+
+static int manda_uj(unsigned char u)
+{
+    if (turbo_comando(u, (const unsigned char *)"UJ", 2) != 0) {
+        return -1;
+    }
+
+    uj_fino_a = circle_get_ticks() + UJ_RIACCENSIONE_US;
+    if (uj_fino_a == 0) {
+        uj_fino_a = 1;
+    }
+    return 0;
+}
+
+
+
+
+
+
+#define LINEA_LUNGA_US              (500u * 1000u)
+static int linea_lunga(void)
+{
+    unsigned long t;
+
+    if (xum_ioctl(XUM1541_IEC_SETRELEASE, IEC_RESET, 0) < 0) {
+        return -1;
+    }
+    t = circle_get_ticks();
+    circle_sleep((long)LINEA_LUNGA_US);
+    if (xum_ioctl(XUM1541_IEC_SETRELEASE, 0, IEC_RESET) < 0) {
+        return -1;
+    }
+    xum_diag("reset: la linea tenuta dall'host, millesimi",
+             (int)((circle_get_ticks() - t) / 1000u), 0, 0);
+    riaccensione_da_aspettare("RESET lungo della linea");
+    return 0;
+}
+
+
+
+static unsigned int dopo_la_linea(unsigned int maschera, int se_73,
+                                  char *testo, unsigned int max)
+{
+    unsigned int u, no = 0;
+
+    for (u = 4; u <= 30; u++) {
+        int c, stato;
+
+        if (!(maschera & (1u << u))) {
+            continue;
+        }
+        c = sonda_corta((unsigned char)u);
+        if (c <= 0) {
+            reset_come[u] = (c == 0) ? RIPARTITO_NO_BUS : RIPARTITO_MUTO;
+            xum_riga("RIMETTI: unita' %u dopo la linea: %s", u,
+                     c == 0 ? "non c'e'" : "muta");
+            continue;
+        }
+        stato = stato_e_tipo((unsigned char)u, testo, max);
+        reset_come[u] = come_da_stato(stato, testo, se_73);
+        if (reset_come[u] == RIPARTITO_NO) {
+            no |= 1u << u;
+        }
+        xum_riga("RIMETTI: unita' %u: %d '%s' (come %d)", u, stato, testo,
+                 reset_come[u]);
+    }
+    return no;
+}
+
+static void riparti_tutti(unsigned char prima)
+{
+    unsigned int maschera = unita_vere | (1u << (prima & 31u));
+    unsigned int u, no;
+    int fermo = 0;
+    char testo[48];
+
+    for (u = 0; u < UNITA_MAX; u++) {
+        reset_come[u] = RIPARTITO_NIENTE;
+        reset_stato[u] = 99;
+        reset_tipo[u] = DRIVE_BOH;
+    }
+    reset_linea_tirata = 0;
+    linea_ms_ultima = 0;
+    maschera &= 0x7ffffff0u;
+    testo[0] = 0;
+
+    if (!linea_come_sul_ferro()) {
+
+        for (u = 4; u <= 30 && !fermo; u++) {
+            int c;
+
+            if (!(maschera & (1u << u))) {
+                continue;
+            }
+            c = sonda_corta((unsigned char)u);
+            if (c < 0) {
+                fermo = 1;
+                xum_riga("RIMETTI: l'unita' %u tiene fermo il bus: la linea",
+                         u);
+            } else if (c == 0) {
+                reset_come[u] = RIPARTITO_NO_BUS;
+            } else if (manda_uj((unsigned char)u) != 0) {
+                fermo = 1;
+                xum_riga("RIMETTI: l'unita' %u non prende UJ: la linea", u);
+            } else {
+                reset_come[u] = RIPARTITO_UJ;
+            }
+        }
+        if (!fermo) {
+            for (u = 4; u <= 30; u++) {
+                int stato;
+
+                if (reset_come[u] != RIPARTITO_UJ) {
+                    continue;
+                }
+                stato = stato_e_tipo((unsigned char)u, testo, sizeof(testo));
+                reset_come[u] = come_da_stato(stato, testo, RIPARTITO_UJ);
+                xum_riga("RIMETTI: unita' %u dopo UJ: %d '%s'", u, stato,
+                         testo);
+            }
+            return;
+        }
+        for (u = 0; u < UNITA_MAX; u++) {
+            reset_come[u] = RIPARTITO_NIENTE;
+        }
+    }
+
+
+
+
+
+
+
+    if (linea_come_sul_ferro()) {
+        for (u = 4; u <= 30; u++) {
+            if ((maschera & (1u << u)) && sonda_corta((unsigned char)u) > 0) {
+                int prima_della_linea;
+
+                riarma_15((unsigned char)u);
+                prima_della_linea = turbo_stato((unsigned char)u, testo,
+                                                sizeof(testo));
+                xum_riga("RIMETTI: prima della linea lo stato di %u: %d '%s'",
+                         u, prima_della_linea, testo);
+            }
+        }
+    }
+
+
+    if (cbm_reset_linea() == 0) {
+        reset_linea_tirata = 1;
+
+
+        if (ripartenza_cura()) {
+            reset_linea_tirata = linea_presa_ms >= 0 ? 3
+                               : (linea_presa_ms == -1 ? 4 : 5);
+        }
+    }
+    no = dopo_la_linea(maschera, RIPARTITO_LINEA, testo, sizeof(testo));
+
+
+
+
+
+
+
+
+    if (no != 0 && linea_come_sul_ferro() && !ripartenza_cura()) {
+        xum_riga("RIMETTI: la linea non ha fatto ripartire le unita' 0x%08x: "
+                 "la tengo %u ms", no, LINEA_LUNGA_US / 1000u);
+        if (linea_lunga() == 0) {
+            reset_linea_tirata = 2;
+            no = dopo_la_linea(no, RIPARTITO_LINEA_LUNGA, testo,
+                               sizeof(testo));
+        }
+    }
+
+
+    for (u = 4; u <= 30; u++) {
+        int stato;
+
+        if (!(no & (1u << u))) {
+            continue;
+        }
+        xum_riga("RIMETTI: unita' %u dice %d dopo la linea: UJ", u,
+                 reset_stato[u]);
+        if (manda_uj((unsigned char)u) == 0) {
+            stato = stato_e_tipo((unsigned char)u, testo, sizeof(testo));
+            reset_come[u] = come_da_stato(stato, testo, RIPARTITO_UJ);
+            xum_riga("RIMETTI: unita' %u dopo UJ: %d '%s' (come %d)", u,
+                     stato, testo, reset_come[u]);
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static int raspi_opencbm_rimetti_in_piedi_dentro(int unita, int *v, int n)
 {
     unsigned long t0 = circle_get_ticks();
@@ -4067,8 +5568,27 @@ static int raspi_opencbm_rimetti_in_piedi_dentro(int unita, int *v, int n)
         return 8;
     }
     v[0] = 1;
+    linea_ms_ultima = 0;
+    reset_linea_tirata = 0;
 
-    turbo_scadenza_metti(6u * 1000u * 1000u);
+
+
+
+
+
+
+    if (!scolo_attivo && turbo_a_meta_file()) {
+        svuota_il_turbo("RIMETTI");
+    }
+    if (scolo_attivo) {
+        scolo_finisci();
+        v[1] = 1;
+    }
+
+
+
+
+    turbo_scadenza_metti(20u * 1000u * 1000u);
 
 
     if (sess.aperta || auto_in_corso) {
@@ -4087,6 +5607,8 @@ static int raspi_opencbm_rimetti_in_piedi_dentro(int unita, int *v, int n)
     bus_a_riposo = 1;
     turbo_acceso = 0;
     xum_zitto = 0;
+    muto_fino_a = 0;
+    atn_rifiutato = 0;
     v[2] = 1;
 
 
@@ -4094,21 +5616,23 @@ static int raspi_opencbm_rimetti_in_piedi_dentro(int unita, int *v, int n)
     circle_xum1541_clear_halts();
     if (cbm_driver_open(&nuovo, 0) == 0) {
         v[3] = 1;
+        xum_rimetti_in_passo();
     }
 
 
     if (v[3]) {
-        if (cbm_reset_linea() == 0) {
-            v[4] = 1;
-        }
-
-
-        v[5] = turbo_stato((unsigned char)unita, testo, sizeof(testo));
 
 
 
 
-        v[8] = drive_chi_sei((unsigned char)unita);
+
+
+
+        riparti_tutti((unsigned char)unita);
+        v[4] = reset_linea_tirata;
+        v[5] = reset_stato[unita & 31];
+        v[8] = reset_tipo[unita & 31];
+        (void)testo;
     } else {
         v[5] = 99;
     }
@@ -4116,7 +5640,35 @@ static int raspi_opencbm_rimetti_in_piedi_dentro(int unita, int *v, int n)
     turbo_scadenza_togli();
 
     v[6] = (int)((circle_get_ticks() - t0) / 1000u);
-    v[7] = (v[3] && v[5] != 99) ? 1 : 0;
+
+    v[7] = (v[3] && (reset_come[unita & 31] == RIPARTITO_LINEA
+                     || reset_come[unita & 31] == RIPARTITO_UJ
+                     || reset_come[unita & 31] == RIPARTITO_PI1541_ELENCO
+                     || reset_come[unita & 31] == RIPARTITO_LINEA_LUNGA))
+           ? 1 : 0;
+
+
+    if (n > 11) {
+        v[9] = (int)linea_ms_ultima;
+        v[10] = reset_come[unita & 31];
+        v[11] = reset_linea_tirata;
+    }
+    if (reset_linea_tirata >= 3) {
+
+
+        log_message(xum_log, "xum1541: bus reset held %d ms by the host "
+                    "(Pi %d), %s (%d ms)", linea_tenuta_ms,
+                    circle_get_model(),
+                    reset_linea_tirata == 3 ? "a drive took it after"
+                    : (reset_linea_tirata == 4 ? "no drive took it"
+                                               : "the bus was already held"),
+                    linea_presa_ms);
+    } else {
+        log_message(xum_log, "xum1541: bus reset %s, %lu ms in the adapter",
+                    reset_linea_tirata ? "pulled"
+                                       : "not pulled (UJ to each drive)",
+                    linea_ms_ultima);
+    }
 
     log_message(xum_log, "xum1541: unit %d looks like a %s", unita,
                 drive_nome[unita & 15][0] ? drive_nome[unita & 15] : "?");
@@ -4133,7 +5685,276 @@ int raspi_opencbm_rimetti_in_piedi(int unita, int *v, int n)
     int zitto = auto_da_parte();
     int esito = raspi_opencbm_rimetti_in_piedi_dentro(unita, v, n);
     auto_rimetti(zitto);
+
+
+    if (esito == 9 && v != NULL && n > 11) {
+        esito = 12;
+    }
     return esito;
+}
+
+
+
+
+void raspi_opencbm_unita_vere(unsigned int maschera)
+{
+    if (maschera != unita_vere) {
+        solo_fino_a = 0;
+    }
+    unita_vere = maschera;
+}
+
+
+
+
+int raspi_opencbm_esito_unita(int unita, int *stato, int *tipo)
+{
+    if (unita < 0 || unita >= UNITA_MAX) {
+        return RIPARTITO_NIENTE;
+    }
+    if (stato != NULL) {
+        *stato = reset_stato[unita];
+    }
+    if (tipo != NULL) {
+        *tipo = reset_tipo[unita];
+    }
+    return reset_come[unita];
+}
+
+
+
+
+static void svuota_il_turbo(const char *perche)
+{
+    xum_riga("%s: un caricamento veloce a meta' file, lo svuoto", perche);
+    scolo_comincia();
+    auto_in_corso = 0;
+}
+
+
+
+
+
+
+
+void raspi_opencbm_prima_di_uscire(void)
+{
+    if (!xum_open) {
+        return;
+    }
+    if (!scolo_attivo && turbo_a_meta_file()) {
+        svuota_il_turbo("USCITA");
+    }
+    if (scolo_attivo) {
+        scolo_finisci();
+    }
+    linea_dopo_scolo = 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#ifndef RASPI_DIR_1541
+#define RASPI_DIR_1541              0
+#define RASPI_DIR_1571              1
+#define RASPI_DIR_1581              2
+#endif
+#define DIR_SA_BUFFER               13
+#if DIR_SA_BUFFER < 2 || DIR_SA_BUFFER > 13
+#error "U1 e B-P del 1541 vogliono un canale da 2 a 13 (ROM $CDD2): col 14 il drive dice 70,NO CHANNEL"
+#endif
+
+
+#define DIR_SA_TESTO2(x)            #x
+#define DIR_SA_TESTO(x)             DIR_SA_TESTO2(x)
+#define DIR_SCADENZA                (8u * 1000u * 1000u)
+
+static int dir_dev = -1;
+static int dir_zitto = 0;
+
+
+
+static void dir_rimetti_il_bus(void)
+{
+    cbm_untalk(NULL);
+    cbm_unlisten(NULL);
+    bus_a_riposo = 1;
+    bus_perso = 0;
+}
+
+static void dir_finisci(void)
+{
+    dir_dev = -1;
+    turbo_scadenza_togli();
+    auto_rimetti(dir_zitto);
+}
+
+void raspi_opencbm_dir_chiudi(void)
+{
+    if (dir_dev < 0) {
+        return;
+    }
+    turbo_scadenza_metti(DIR_SCADENZA);
+    if (!bus_a_riposo) {
+        dir_rimetti_il_bus();
+    }
+    cbm_close(NULL, (unsigned char)dir_dev, DIR_SA_BUFFER);
+    xum_riga("DIRECTORY: canale %d chiuso", DIR_SA_BUFFER);
+    dir_finisci();
+}
+
+
+
+
+
+
+
+
+
+int raspi_opencbm_dir_apri(int unita, char *stato, int stato_max)
+{
+    char testo[48];
+    int tipo, codice;
+
+    if (stato != NULL && stato_max > 0) {
+        stato[0] = 0;
+    }
+    if (dir_dev >= 0) {
+        raspi_opencbm_dir_chiudi();
+    }
+    if (unita < 4 || unita > 30) {
+        return -3;
+    }
+    if (!raspi_opencbm_available()) {
+        return -1;
+    }
+    if (sess.aperta || auto_in_corso || scolo_attivo || !bus_a_riposo
+        || bus_perso || xum_zitto) {
+        xum_riga("DIRECTORY: bus occupato, non comincio");
+        return -2;
+    }
+
+    dir_zitto = auto_da_parte();
+    dir_dev = unita;
+    turbo_scadenza_metti(DIR_SCADENZA);
+    xum_riga("DIRECTORY: unita' %d", unita);
+
+    tipo = drive_chi_sei((unsigned char)unita);
+    if (tipo == DRIVE_BOH) {
+        dir_rimetti_il_bus();
+        dir_finisci();
+        return -3;
+    }
+
+    turbo_scadenza_metti(DIR_SCADENZA);
+    if (cbm_open(NULL, (unsigned char)unita, DIR_SA_BUFFER, "#", 1)) {
+        dir_rimetti_il_bus();
+        dir_finisci();
+        return -3;
+    }
+
+    bus_a_riposo = 1;
+
+    codice = turbo_stato((unsigned char)unita, testo, sizeof(testo));
+    if (codice >= 20) {
+        if (stato != NULL && stato_max > 0) {
+            snprintf(stato, (size_t)stato_max, "%s", testo);
+        }
+        raspi_opencbm_dir_chiudi();
+        return -3;
+    }
+
+    if (tipo == DRIVE_1581) {
+        return RASPI_DIR_1581;
+    }
+    if (tipo == DRIVE_1570 || tipo == DRIVE_1571) {
+        return RASPI_DIR_1571;
+    }
+    return RASPI_DIR_1541;
+}
+
+
+
+int raspi_opencbm_dir_settore(int traccia, int settore, unsigned char *buf,
+                              char *stato, int stato_max)
+{
+    char cmd[32];
+    char testo[48];
+    unsigned char dev;
+    int n, codice;
+
+    if (stato != NULL && stato_max > 0) {
+        stato[0] = 0;
+    }
+    if (dir_dev < 0 || buf == NULL) {
+        return 99;
+    }
+    dev = (unsigned char)dir_dev;
+    turbo_scadenza_metti(DIR_SCADENZA);
+
+    n = snprintf(cmd, sizeof(cmd),
+                 "U1:" DIR_SA_TESTO(DIR_SA_BUFFER) " 0 %d %d",
+                 traccia, settore);
+    if (turbo_comando(dev, (const unsigned char *)cmd, (unsigned int)n)) {
+        dir_rimetti_il_bus();
+        return 99;
+    }
+    codice = turbo_stato(dev, testo, sizeof(testo));
+    if (stato != NULL && stato_max > 0) {
+        snprintf(stato, (size_t)stato_max, "%s", testo);
+    }
+    if (codice >= 20) {
+        return codice;
+    }
+
+    n = snprintf(cmd, sizeof(cmd), "B-P" DIR_SA_TESTO(DIR_SA_BUFFER) " 0");
+    if (turbo_comando(dev, (const unsigned char *)cmd, (unsigned int)n)) {
+        dir_rimetti_il_bus();
+        return 99;
+    }
+    if (cbm_talk(NULL, dev, DIR_SA_BUFFER)) {
+        dir_rimetti_il_bus();
+        return 99;
+    }
+    n = cbm_raw_read(NULL, buf, 256);
+    cbm_untalk(NULL);
+    if (n != 256) {
+        if (stato != NULL && stato_max > 0) {
+            snprintf(stato, (size_t)stato_max, "%d BYTES OF 256,%02d,%02d",
+                     n < 0 ? 0 : n, traccia, settore);
+        }
+        return 99;
+    }
+    return 0;
 }
 
 
@@ -4462,19 +6283,60 @@ static int raspi_opencbm_turbo_prova_dentro(int unita, char *nome, int nome_max,
 
     turbo_traccia("prima di chiedere al drive chi e'");
     tipo_drive = drive_chi_sei((unsigned char)unita);
-    turbo_traccia("l'unita' %d e' un %s", unita,
-                  drive_nome[unita & 15][0] ? drive_nome[unita & 15] : "?");
-    if (!drive_va_col_turbo((unsigned char)unita)) {
-        v[0] = 6;
+
+
+
+
+    if (tipo_drive == DRIVE_BOH) {
+        turbo_traccia("l'unita' %d non risponde alla domanda", unita);
+    } else {
+        turbo_traccia("l'unita' %d e' un %s", unita,
+                      drive_nome[unita & 15][0] ? drive_nome[unita & 15]
+                                                : "?");
+    }
+    if (!drive_va_col_turbo(tipo_drive)) {
+        v[0] = (tipo_drive == DRIVE_BOH) ? 8 : 6;
         v[11] = TURBO_PASSO_ADATTATORE;
-        snprintf(dove, (size_t)dove_max, "a %s, no turbo for it",
-                 drive_nome[unita & 15][0] ? drive_nome[unita & 15] : "?");
+        if (tipo_drive == DRIVE_BOH) {
+            snprintf(dove, (size_t)dove_max, "Drive %d does not answer.",
+                     unita);
+        } else {
+            snprintf(dove, (size_t)dove_max, "a %s, no turbo for it",
+                     drive_nome[unita & 15][0] ? drive_nome[unita & 15]
+                                               : "?");
+        }
         turbo_scadenza_togli();
         conti_rimetti();
         turbo_traccia_accesa = 0;
         turbo_traccia_versa();
         turbo_traccia_chiudi();
         return n < 16 ? n : 16;
+    }
+
+
+
+    {
+        int altro = altro_sul_bus((unsigned char)unita);
+
+        if (altro != 0) {
+            v[0] = 7;
+            v[11] = TURBO_PASSO_ADATTATORE;
+            if (altro > 0) {
+                snprintf(dove, (size_t)dove_max, "drive %d is on the bus too",
+                         altro);
+            } else {
+                snprintf(dove, (size_t)dove_max,
+                         "could not ask who is on the bus");
+            }
+            turbo_traccia("non e' solo sul bus (%d): il turbo non si prova",
+                          altro);
+            turbo_scadenza_togli();
+            conti_rimetti();
+            turbo_traccia_accesa = 0;
+            turbo_traccia_versa();
+            turbo_traccia_chiudi();
+            return n < 16 ? n : 16;
+        }
     }
 
     turbo_traccia("prima di leggere il direttorio");
@@ -4490,6 +6352,13 @@ static int raspi_opencbm_turbo_prova_dentro(int unita, char *nome, int nome_max,
                                  : "no directory came back");
         turbo_scadenza_togli();
         conti_rimetti();
+
+
+
+
+        turbo_traccia_accesa = 0;
+        turbo_traccia_versa();
+        turbo_traccia_chiudi();
         return n < 16 ? n : 16;
     }
     turbo_passo = TURBO_PASSO_NOME;
@@ -4630,8 +6499,25 @@ void raspi_opencbm_molla(void)
     int zitto = auto_da_parte();
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     int guasto = (sess.aperta || auto_in_corso || bus_perso || xum_zitto
-                  || xum_parked);
+                  || xum_non_sveglio
+                  || (xum_parked && circle_get_model() < 4));
 
 
 
@@ -4645,6 +6531,7 @@ void raspi_opencbm_molla(void)
 
     xum_via_libera(TURBO_SCADENZA_MOLLA);
 
+    muto_fino_a = 0;
 
 
 
@@ -4653,6 +6540,16 @@ void raspi_opencbm_molla(void)
 
 
 
+
+
+
+
+
+
+
+    if (!scolo_attivo && turbo_a_meta_file()) {
+        svuota_il_turbo("MOLLA");
+    }
     if (scolo_attivo) {
         xum_riga("MOLLA: c'e' un file da svuotare, lo lascio finire");
         auto_scorda();
@@ -4663,6 +6560,9 @@ void raspi_opencbm_molla(void)
         auto_rimetti(zitto);
         return;
     }
+
+
+    scolo_attivo = 0;
 
     if (sess.aperta || auto_in_corso) {
 
@@ -4699,7 +6599,11 @@ void raspi_opencbm_molla(void)
         xum_riga("MOLLA: l'adattatore era in guai, lo rimetto in piedi");
         cbm_driver_close(NULL);
         circle_xum1541_clear_halts();
-        cbm_driver_open(&nuovo, 0);
+        if (cbm_driver_open(&nuovo, 0) == 0) {
+
+
+            xum_rimetti_in_passo();
+        }
         bus_perso = 0;
         xum_zitto = 0;
         xum_zitto_fino_a = 0;
@@ -4728,6 +6632,30 @@ void raspi_opencbm_molla(void)
 
     turbo_scadenza_togli();
     auto_rimetti(zitto);
+}
+
+
+
+
+
+
+static void turbo_lascia_per_la_linea(void)
+{
+    scolo_attivo = 0;
+    if (sess.aperta || auto_in_corso) {
+        s2_esci();
+        sess.aperta = 0;
+        sess.finita = 0;
+        sess.rotta = 0;
+        auto_in_corso = 0;
+    }
+    auto_scorda();
+    sess.nostro_canale = 0;
+    turbo_acceso = 0;
+    turbo_sporcato = 0;
+    turbo_dopo_uj = 0;
+    uj_fino_a = 0;
+    bus_a_riposo = 1;
 }
 
 

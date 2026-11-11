@@ -685,6 +685,11 @@ int generic_crt_attach(FILE *fd, uint8_t *rawcart)
             goto exiterror;
         }
 
+        if ((offset + chip.size) > CART_ROM_SIZE) {
+            log_error(LOG_DEFAULT, "CHIP at $%04x with size $%04x does not fit into the cartridge ROM", chip.start, chip.size);
+            goto exiterror;
+        }
+
         if (crt_read_chip(cart_rom + offset, 0, &chip, fd)) {
             goto exiterror;
         }
@@ -898,6 +903,11 @@ int generic_snapshot_read_module(snapshot_t *s)
     }
 
     snapshot_module_close(m);
+
+    export_res.exrom = generic_ram_blocks | generic_rom_blocks;
+    if (export_add(&export_res) < 0) {
+        return -1;
+    }
 
     /* update memory mapping to use only the saved blocks */
     mem_cart_blocks = generic_ram_blocks | generic_rom_blocks;

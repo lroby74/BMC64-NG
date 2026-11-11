@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include "kernel.h"
+#include "screenshot/screenshot.h"
 
 #include <errno.h>
 #include <math.h>
@@ -24,6 +25,7 @@
 #include <circle/gpiopin.h>
 #include <circle/usb/usbdevice.h>
 #include <circle/usb/usbfloppydevice.h>
+#include <circle/usb/usbstandardhub.h>
 #include <circle/bcm2835.h>
 #include <circle/bcmpropertytags.h>
 #include <circle/machineinfo.h>
@@ -34,6 +36,7 @@
 
 extern "C" {
 #include "third_party/common/usb_gamepad_defaults.h"
+#include "third_party/common/gamepad_menu_navigation.h"
 #include "uscitaaudio.h"
 #include "usblog.h"
 }
@@ -102,7 +105,8 @@ void circle_snd_azzera_conti(void) {
 #define TICKS_PER_SECOND 1000000L
 
 // A global to control whether our special VICE CIA port changes
-// should take effect. Only set when gpio_outputs_enabled is allowed.
+
+
 int raspi_userport_enabled;
 
 
@@ -481,10 +485,17 @@ extern volatile unsigned bmc_mouse_lunghezza;
 extern volatile unsigned char bmc_mouse_ultimo[8];
 extern volatile int bmc_mouse_rotella;
 
+extern "C" void bmc_wic64_menu_aperto(void) __attribute__((weak));
+
 void circle_usb_nota_menu(void) {
   static unsigned presi = ~0u, scartati = ~0u;
   usblog_circle("all'apertura del menu");
   netlog_circle("all'apertura del menu");
+
+
+  if (bmc_wic64_menu_aperto != nullptr) {
+    bmc_wic64_menu_aperto();
+  }
   const unsigned p = bmc_mouse_presi, s = bmc_mouse_scartati;
   if (p == presi && s == scartati) {
     return;
@@ -576,6 +587,18 @@ void circle_hide_fbl(int layer) {
   static_kernel->circle_hide_fbl(layer);
 }
 
+
+
+int circle_take_screenshot(int stage, int maximum_width, int layer, int x,
+                           int y, int width, int height, int format,
+                           char *name, int name_size) {
+  return static_kernel->TakeScreenshot(stage, maximum_width, layer, x, y,
+                                       width, height, format, name,
+                                       name_size);
+}
+
+uint64_t circle_get_ticks64(void) { return CTimer::GetClockTicks64(); }
+
 void circle_present_fbl(uint32_t ready_mask, int sync) {
 
   int dove_prima = bmc_dove;
@@ -598,6 +621,11 @@ void circle_update_palette_fbl(int layer) {
 
 void circle_set_stretch_fbl(int layer, double hstretch, double vstretch, int hintstr, int vintstr, int use_hintstr, int use_vintstr) {
   static_kernel->circle_set_stretch_fbl(layer, hstretch, vstretch, hintstr, vintstr, use_hintstr, use_vintstr);
+}
+
+
+void circle_set_scale_fbl(int layer, int percent) {
+  static_kernel->circle_set_scale_fbl(layer, percent);
 }
 
 void circle_set_center_offset(int layer, int cx, int cy) {
@@ -876,8 +904,11 @@ unsigned circle_gpu_mhz(int quale, int massimo) {
 
 
 
+
+
+
 unsigned circle_get_gpu_mhz(void) {
-  return s_bmc_core_mhz;
+  return s_bmc_v3d_mhz != 0 ? s_bmc_v3d_mhz : s_bmc_core_mhz;
 }
 
 
@@ -1036,13 +1067,443 @@ CKernel::CKernel(void)
 
   fbl[FB_LAYER_UI].SetLayer(3);
   fbl[FB_LAYER_UI].SetTransparency(true);
-
-  if (circle_gpio_outputs_enabled()) {
-     raspi_userport_enabled = 1;
-  }
 }
 
 static void bmc_panico(void);
+
+#if RASPPI >= 5
+#include <circle/bcm2712.h>
+#include <circle/gpioclock.h>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define VENTOLA_PIEDINO 45
+#define VENTOLA_CANALE 3
+#define VENTOLA_RANGE 2078
+#define PWM1_GLOBALE (ARM_PWM1_BASE + 0x00)
+#define PWM1_CANALE(c) (ARM_PWM1_BASE + 0x14 + (c) * 0x10)
+#define PWM1_RANGE(c) (ARM_PWM1_BASE + 0x18 + (c) * 0x10)
+#define PWM1_FASE(c) (ARM_PWM1_BASE + 0x1C + (c) * 0x10)
+#define PWM1_DUTY(c) (ARM_PWM1_BASE + 0x20 + (c) * 0x10)
+#define PWM1_SET_UPDATE (1U << 31)
+
+#define PWM1_CANALE_VENTOLA ((1U << 8) | (1U << 3) | 1U)
+
+
+
+
+
+static int ventola_gradino(int gradino, unsigned milli) {
+  static const unsigned soglia[4] = { 50000, 60000, 67500, 75000 };
+  while (gradino < 4 && milli >= soglia[gradino]) {
+    gradino++;
+  }
+  while (gradino > 0 && milli + 5000 < soglia[gradino - 1]) {
+    gradino--;
+  }
+  return gradino;
+}
+
+
+static unsigned ventola_duty_gradino(int gradino) {
+  static const unsigned livello[5] = { 0, 75, 125, 175, 250 };
+  const unsigned ns = (livello[gradino] * 41565U + 254U) / 255U;
+  return (ns + 10U) / 20U;
+}
+
+
+static unsigned ventola_duty_percento(int percento) {
+  return (VENTOLA_RANGE * (unsigned)percento + 50U) / 100U;
+}
+
+
+static CGPIOPin s_bmc_ventola;
+static int s_ventola_attiva = 0;
+static volatile int s_ventola_scelta = -1;
+static volatile int s_ventola_cambiata = 0;
+static int s_ventola_gradino = 0;
+static unsigned s_ventola_duty = 0;
+static volatile unsigned s_ventola_milli = 0;
+static const char *s_ventola_perche = "no: non e' un Pi 5 B";
+
+
+
+static unsigned bmc_temperatura_milli(void) {
+  CBcmPropertyTags Tags;
+  TPropertyTagTemperature Tag;
+  Tag.nTemperatureId = TEMPERATURE_ID;
+  if (!Tags.GetTag(PROPTAG_GET_TEMPERATURE, &Tag, sizeof Tag, 4)) {
+    return 0;
+  }
+  return Tag.nValue;
+}
+
+static void ventola_scrivi_duty(unsigned duty) {
+  write32(PWM1_DUTY(VENTOLA_CANALE), duty);
+  write32(PWM1_GLOBALE, read32(PWM1_GLOBALE) | PWM1_SET_UPDATE);
+  s_ventola_duty = duty;
+}
+
+
+
+static void bmc_ventola_aggiorna(unsigned milli) {
+  if (!s_ventola_attiva) {
+    return;
+  }
+  const int scelta = s_ventola_scelta;
+  unsigned duty;
+  if (scelta < 0) {
+    if (milli != 0) {
+      s_ventola_gradino = ventola_gradino(s_ventola_gradino, milli);
+    }
+    duty = ventola_duty_gradino(s_ventola_gradino);
+  } else {
+    duty = ventola_duty_percento(scelta);
+  }
+  if (duty != s_ventola_duty) {
+    ventola_scrivi_duty(duty);
+  }
+}
+
+
+static void bmc_ventola_se_cambiata(void) {
+  if (s_ventola_cambiata) {
+    s_ventola_cambiata = 0;
+    DataMemBarrier();
+    bmc_ventola_aggiorna(s_ventola_milli);
+  }
+}
+
+static void bmc_ventola_pi5(int scelta) {
+  const unsigned piedino = CKernelOptions::Get()->GetGPIOFanPin();
+  if (circle_board_type() != 0x17) {
+    return;
+  }
+  if (piedino != 0 && piedino != VENTOLA_PIEDINO) {
+    s_ventola_perche = "di Circle (gpiofanpin= su un altro piedino)";
+    return;
+  }
+  CGPIOClock *orologio =
+      new CGPIOClock(GPIOClockPWM1, GPIOClockSourceXOscillator);
+  if (orologio == nullptr || !orologio->Start(1)) {
+
+    s_bmc_ventola.AssignPin(VENTOLA_PIEDINO);
+    s_bmc_ventola.SetMode(GPIOModeOutput, FALSE);
+    s_bmc_ventola.Write(LOW);
+    s_ventola_perche = "accesa sempre: il clock della PWM1 non parte";
+    printf("boot: ventola del Pi 5 accesa sempre: il clock della PWM1 non "
+           "parte\r\n");
+    return;
+  }
+  s_ventola_scelta = scelta;
+  s_ventola_milli = bmc_temperatura_milli();
+  if (scelta < 0) {
+    s_ventola_gradino = ventola_gradino(0, s_ventola_milli);
+  }
+  write32(PWM1_CANALE(VENTOLA_CANALE), PWM1_CANALE_VENTOLA);
+  write32(PWM1_RANGE(VENTOLA_CANALE), VENTOLA_RANGE);
+  write32(PWM1_FASE(VENTOLA_CANALE), 0);
+  ventola_scrivi_duty(scelta < 0 ? ventola_duty_gradino(s_ventola_gradino)
+                                 : ventola_duty_percento(scelta));
+  write32(PWM1_GLOBALE, read32(PWM1_GLOBALE) | (1U << VENTOLA_CANALE) |
+                            PWM1_SET_UPDATE);
+  s_bmc_ventola.AssignPin(VENTOLA_PIEDINO);
+  s_bmc_ventola.SetMode(GPIOModeAlternateFunction0);
+  s_bmc_ventola.SetPullMode(GPIOPullModeDown);
+  s_ventola_attiva = 1;
+  printf("boot: ventola del Pi 5 sulla PWM1 (piedino 45, canale 3): %s, "
+         "duty %u su %u\r\n", scelta < 0 ? "Auto" : "a mano",
+         s_ventola_duty, VENTOLA_RANGE);
+}
+
+
+int circle_ventola_presente(void) {
+  return s_ventola_attiva;
+}
+
+int circle_ventola_scelta(void) {
+  return s_ventola_scelta;
+}
+
+void circle_ventola_scegli(int scelta) {
+  s_ventola_scelta = scelta < 0 ? -1 : scelta > 100 ? 100 : scelta;
+  DataMemBarrier();
+  s_ventola_cambiata = 1;
+}
+
+void circle_ventola_diag(char *riga, unsigned dim) {
+  if (!s_ventola_attiva) {
+    snprintf(riga, dim, "%s", s_ventola_perche);
+    return;
+  }
+  char come[24];
+  const int scelta = s_ventola_scelta;
+  if (scelta < 0) {
+    snprintf(come, sizeof(come), "Auto, gradino %d", s_ventola_gradino);
+  } else {
+    snprintf(come, sizeof(come), "%d%%", scelta);
+  }
+  const unsigned milli = s_ventola_milli;
+  const unsigned duty = read32(PWM1_DUTY(VENTOLA_CANALE));
+  snprintf(riga, dim,
+           "%s a %u,%u C; PWM1 canale 3: ctrl 0x%x range %u duty %u "
+           "(%u%%), globale 0x%08x",
+           come, milli / 1000, (milli % 1000) / 100,
+           (unsigned)read32(PWM1_CANALE(VENTOLA_CANALE)),
+           (unsigned)read32(PWM1_RANGE(VENTOLA_CANALE)), duty,
+           (duty * 100 + VENTOLA_RANGE / 2) / VENTOLA_RANGE,
+           (unsigned)read32(PWM1_GLOBALE));
+}
+#endif
+
+#if RASPPI == 4
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define VENTOLA_GPIO_PIEDINO 14
+#define VENTOLA_GPIO_PERIODO_US 40000U
+
+
+static bool ventola_gpio_modello(void) {
+  return circle_board_type() == 0x11;
+}
+
+
+
+
+static int ventola_gradino(int gradino, unsigned milli) {
+  static const unsigned soglia[4] = { 50000, 60000, 67500, 75000 };
+  while (gradino < 4 && milli >= soglia[gradino]) {
+    gradino++;
+  }
+  while (gradino > 0 && milli + 5000 < soglia[gradino - 1]) {
+    gradino--;
+  }
+  return gradino;
+}
+
+
+static unsigned ventola_gpio_millesimi_gradino(int gradino) {
+  static const unsigned livello[5] = { 0, 75, 125, 175, 250 };
+  return (livello[gradino] * 1000U + 127U) / 255U;
+}
+
+
+static unsigned ventola_gpio_millesimi_percento(int percento) {
+  return (unsigned)percento * 10U;
+}
+
+
+static CGPIOPin s_bmc_ventola;
+static CUserTimer *s_ventola_gpio_timer = nullptr;
+static int s_ventola_attiva = 0;
+static int s_ventola_gpio_piedino = 0;
+static volatile int s_ventola_scelta = -1;
+static volatile int s_ventola_cambiata = 0;
+static int s_ventola_gradino = 0;
+static volatile unsigned s_ventola_gpio_voluti = 0;
+static unsigned s_ventola_gpio_fissati = 0;
+static volatile int s_ventola_gpio_spinta = 0;
+static volatile int s_ventola_gpio_alto = 0;
+static volatile unsigned s_ventola_milli = 0;
+static const char *s_ventola_perche = "no: non partita";
+
+
+
+static unsigned bmc_temperatura_milli(void) {
+  CBcmPropertyTags Tags;
+  TPropertyTagTemperature Tag;
+  Tag.nTemperatureId = TEMPERATURE_ID;
+  if (!Tags.GetTag(PROPTAG_GET_TEMPERATURE, &Tag, sizeof Tag, 4)) {
+    return 0;
+  }
+  return Tag.nValue;
+}
+
+static void ventola_gpio_scrivi(int alto) {
+  s_ventola_gpio_alto = alto;
+  if (s_ventola_gpio_piedino) {
+    s_bmc_ventola.Write(alto ? HIGH : LOW);
+  }
+}
+
+
+
+
+static void ventola_gpio_tic(CUserTimer *timer, void *) {
+  const unsigned m = s_ventola_gpio_voluti;
+  if (m == 0U || m >= 1000U) {
+    ventola_gpio_scrivi(m >= 1000U);
+    timer->Start(VENTOLA_GPIO_PERIODO_US);
+    return;
+  }
+  const unsigned acceso = (VENTOLA_GPIO_PERIODO_US / 1000U) * m;
+  if (!s_ventola_gpio_alto) {
+    ventola_gpio_scrivi(1);
+    timer->Start(acceso);
+  } else {
+    ventola_gpio_scrivi(0);
+    timer->Start(VENTOLA_GPIO_PERIODO_US - acceso);
+  }
+}
+
+
+
+
+static void bmc_ventola_aggiorna(unsigned milli) {
+  if (!s_ventola_attiva) {
+    return;
+  }
+  const int scelta = s_ventola_scelta;
+  unsigned m;
+  if (scelta < 0) {
+    if (milli != 0) {
+      s_ventola_gradino = ventola_gradino(s_ventola_gradino, milli);
+    }
+    m = ventola_gpio_millesimi_gradino(s_ventola_gradino);
+  } else {
+    m = ventola_gpio_millesimi_percento(scelta);
+  }
+  if (m != 0U && s_ventola_gpio_fissati == 0U && !s_ventola_gpio_spinta) {
+    s_ventola_gpio_spinta = 1;
+    s_ventola_gpio_voluti = 1000U;
+    return;
+  }
+  s_ventola_gpio_spinta = 0;
+  s_ventola_gpio_fissati = m;
+  s_ventola_gpio_voluti = m;
+}
+
+
+static void bmc_ventola_se_cambiata(void) {
+  if (s_ventola_cambiata) {
+    s_ventola_cambiata = 0;
+    DataMemBarrier();
+    bmc_ventola_aggiorna(s_ventola_milli);
+  }
+}
+
+static void bmc_ventola_gpio14(int scelta, CInterruptSystem *interruzioni,
+                               bool seriale, bool dpi) {
+  if (!ventola_gpio_modello()) {
+    s_ventola_perche = "no: solo sul Pi 4 B";
+    return;
+  }
+  if (CKernelOptions::Get()->GetGPIOFanPin() != 0) {
+    s_ventola_perche = "di Circle (gpiofanpin= nel cmdline.txt)";
+    return;
+  }
+  if (dpi) {
+    s_ventola_perche = "no: col DPI il GPIO 14 e' un filo del colore";
+    return;
+  }
+  s_ventola_gpio_timer =
+      new CUserTimer(interruzioni, ventola_gpio_tic, nullptr);
+  if (s_ventola_gpio_timer == nullptr || !s_ventola_gpio_timer->Initialize()) {
+    s_ventola_perche = "no: il timer di sistema non parte";
+    return;
+  }
+  if (!seriale) {
+    s_bmc_ventola.AssignPin(VENTOLA_GPIO_PIEDINO);
+    s_bmc_ventola.SetMode(GPIOModeOutput, FALSE);
+    s_bmc_ventola.Write(LOW);
+    s_ventola_gpio_piedino = 1;
+  }
+  s_ventola_scelta = scelta;
+  s_ventola_milli = bmc_temperatura_milli();
+  if (scelta < 0) {
+    s_ventola_gradino = ventola_gradino(0, s_ventola_milli);
+  }
+  s_ventola_attiva = 1;
+  bmc_ventola_aggiorna(s_ventola_milli);
+  s_ventola_gpio_timer->Start(VENTOLA_GPIO_PERIODO_US);
+  printf("boot: ventola sul GPIO 14 (PWM software a 25 Hz): %s, %u "
+         "millesimi%s\r\n", scelta < 0 ? "Auto" : "a mano",
+         (unsigned)s_ventola_gpio_voluti,
+         seriale ? "; il piedino resta al seriale (enable_serial=1)" : "");
+}
+
+
+int circle_ventola_presente(void) {
+  return s_ventola_attiva;
+}
+
+int circle_ventola_scelta(void) {
+  return s_ventola_scelta;
+}
+
+void circle_ventola_scegli(int scelta) {
+  s_ventola_scelta = scelta < 0 ? -1 : scelta > 100 ? 100 : scelta;
+  DataMemBarrier();
+  s_ventola_cambiata = 1;
+}
+
+void circle_ventola_diag(char *riga, unsigned dim) {
+  if (!s_ventola_attiva) {
+    snprintf(riga, dim, "%s", s_ventola_perche);
+    return;
+  }
+  char come[24];
+  const int scelta = s_ventola_scelta;
+  if (scelta < 0) {
+    snprintf(come, sizeof(come), "Auto, gradino %d", s_ventola_gradino);
+  } else {
+    snprintf(come, sizeof(come), "%d%%", scelta);
+  }
+  const unsigned milli = s_ventola_milli;
+  const unsigned m = s_ventola_gpio_voluti;
+  snprintf(riga, dim,
+           "%s a %u,%u C; GPIO 14 %s, PWM software 25 Hz: %u,%u%%%s",
+           come, milli / 1000, (milli % 1000) / 100,
+           s_ventola_gpio_piedino ? "nostro" : "al seriale, non toccato",
+           m / 10, m % 10,
+           s_ventola_gpio_spinta ? " (la spinta della partenza)" : "");
+}
+#endif
 
 bool CKernel::Initialize(void) {
   if (!ViceStdioApp::Initialize()) {
@@ -1050,6 +1511,15 @@ bool CKernel::Initialize(void) {
   }
 
   CLogger::Get()->RegisterPanicHandler(bmc_panico);
+#if RASPPI >= 5
+
+  bmc_ventola_pi5(mViceOptions.Ventola());
+#endif
+#if RASPPI == 4
+
+  bmc_ventola_gpio14(mViceOptions.Ventola(), &mInterrupt,
+                     mViceOptions.SerialEnabled(), mViceOptions.DPIEnabled());
+#endif
 
 
 
@@ -1147,6 +1617,41 @@ static unsigned long entry_start = 0;
 static long invoked;
 #endif
 
+
+
+
+
+
+
+static BmxGamepadMenuNavigation
+    gamepad_menu_navigation[MAX_USB_DEVICES];
+
+static void handle_gamepad_menu_directions(unsigned device, int menu_active,
+                                           uint32_t current_directions) {
+  static const long direction_keys[4] = {
+      KEYCODE_Up, KEYCODE_Down, KEYCODE_Left, KEYCODE_Right};
+  uint32_t pressed_directions;
+  uint32_t released_directions;
+
+  bmx_gamepad_menu_navigation_update(
+      &gamepad_menu_navigation[device], menu_active, current_directions,
+      &pressed_directions, &released_directions);
+
+
+
+
+  for (unsigned direction = 0; direction < 4; direction++) {
+    if ((released_directions & (UINT32_C(1) << direction)) != 0U) {
+      emu_ui_key_interrupt(direction_keys[direction], 0);
+    }
+  }
+  for (unsigned direction = 0; direction < 4; direction++) {
+    if ((pressed_directions & (UINT32_C(1) << direction)) != 0U) {
+      emu_ui_key_interrupt(direction_keys[direction], 1);
+    }
+  }
+}
+
 // Interrupt handler. Make this quick.
 void CKernel::GamePadStatusHandler(unsigned nDeviceIndex,
                                    const TGamePadState *pState) {
@@ -1181,6 +1686,13 @@ if (static_kernel->circle_get_ticks() - entry_start >= entry_delay) {
     return;
   }
 
+
+
+  if (emu_gamepad_button_capture_report(nDeviceIndex, pState->buttons,
+                                        pState->nbuttons)) {
+    return;
+  }
+
   int ui_activated = emu_is_ui_activated();
 
   unsigned b = pState->buttons;
@@ -1201,6 +1713,19 @@ if (static_kernel->circle_get_ticks() - entry_start >= entry_delay) {
   if ((usb_pref == USB_PREF_HAT || usb_pref == USB_PREF_HAT_AND_PADDLES) &&
         pState->nhats > 0) {
     int dpad = pState->hats[0];
+
+    uint32_t menu_directions = 0U;
+    if (dpad == 0) {
+      menu_directions = BMX_GAMEPAD_MENU_UP;
+    } else if (dpad == 4) {
+      menu_directions = BMX_GAMEPAD_MENU_DOWN;
+    } else if (dpad == 6) {
+      menu_directions = BMX_GAMEPAD_MENU_LEFT;
+    } else if (dpad == 2) {
+      menu_directions = BMX_GAMEPAD_MENU_RIGHT;
+    }
+    handle_gamepad_menu_directions(nDeviceIndex, ui_activated,
+                                   menu_directions);
     bool has_changed =
         (prev_buttons[nDeviceIndex] != b) || (prev_dpad[nDeviceIndex] != dpad);
 
@@ -1215,32 +1740,12 @@ if (static_kernel->circle_get_ticks() - entry_start >= entry_delay) {
     }
 
     if (has_changed) {
-      int old_dpad = prev_dpad[nDeviceIndex];
       prev_buttons[nDeviceIndex] = b;
       prev_dpad[nDeviceIndex] = dpad;
 
-      // If the UI is activated, route to the menu.
+
+
       if (ui_activated) {
-        if (dpad == 0 && old_dpad != 0) {
-          emu_ui_key_interrupt(KEYCODE_Up, 1);
-        } else if (dpad != 0 && old_dpad == 0) {
-          emu_ui_key_interrupt(KEYCODE_Up, 0);
-        }
-        if (dpad == 4 && old_dpad != 4) {
-          emu_ui_key_interrupt(KEYCODE_Down, 1);
-        } else if (dpad != 4 && old_dpad == 4) {
-          emu_ui_key_interrupt(KEYCODE_Down, 0);
-        }
-        if (dpad == 6 && old_dpad != 6) {
-          emu_ui_key_interrupt(KEYCODE_Left, 1);
-        } else if (dpad != 6 && old_dpad == 6) {
-          emu_ui_key_interrupt(KEYCODE_Left, 0);
-        }
-        if (dpad == 2 && old_dpad != 2) {
-          emu_ui_key_interrupt(KEYCODE_Right, 1);
-        } else if (dpad != 2 && old_dpad == 2) {
-          emu_ui_key_interrupt(KEYCODE_Right, 0);
-        }
         handle_button_function(true, nDeviceIndex, b);
         return;
       }
@@ -1291,44 +1796,29 @@ if (static_kernel->circle_get_ticks() - entry_start >= entry_delay) {
     int a_right = pState->axes[axis_x].value > mx + tx;
     int a_up = pState->axes[axis_y].value < my - ty;
     int a_down = pState->axes[axis_y].value > my + ty;
+
+    uint32_t menu_directions =
+        (a_up ? BMX_GAMEPAD_MENU_UP : 0U) |
+        (a_down ? BMX_GAMEPAD_MENU_DOWN : 0U) |
+        (a_left ? BMX_GAMEPAD_MENU_LEFT : 0U) |
+        (a_right ? BMX_GAMEPAD_MENU_RIGHT : 0U);
+    handle_gamepad_menu_directions(nDeviceIndex, ui_activated,
+                                   menu_directions);
     bool has_changed = (prev_buttons[nDeviceIndex] != b) ||
                        (prev_axes_dirs[nDeviceIndex][0] != a_up) ||
                        (prev_axes_dirs[nDeviceIndex][1] != a_down) ||
                        (prev_axes_dirs[nDeviceIndex][2] != a_left) ||
                        (prev_axes_dirs[nDeviceIndex][3] != a_right);
     if (has_changed) {
-      int prev_a_up = prev_axes_dirs[nDeviceIndex][0];
-      int prev_a_down = prev_axes_dirs[nDeviceIndex][1];
-      int prev_a_left = prev_axes_dirs[nDeviceIndex][2];
-      int prev_a_right = prev_axes_dirs[nDeviceIndex][3];
       prev_axes_dirs[nDeviceIndex][0] = a_up;
       prev_axes_dirs[nDeviceIndex][1] = a_down;
       prev_axes_dirs[nDeviceIndex][2] = a_left;
       prev_axes_dirs[nDeviceIndex][3] = a_right;
       prev_buttons[nDeviceIndex] = b;
-      // If the UI is activated, route to the menu.
+
+
 
       if (ui_activated) {
-        if (a_up && !prev_a_up) {
-          emu_ui_key_interrupt(KEYCODE_Up, 1);
-        } else if (!a_up && prev_a_up) {
-          emu_ui_key_interrupt(KEYCODE_Up, 0);
-        }
-        if (a_down && !prev_a_down) {
-          emu_ui_key_interrupt(KEYCODE_Down, 1);
-        } else if (!a_down && prev_a_down) {
-          emu_ui_key_interrupt(KEYCODE_Down, 0);
-        }
-        if (a_left && !prev_a_left) {
-          emu_ui_key_interrupt(KEYCODE_Left, 1);
-        } else if (!a_left && prev_a_left) {
-          emu_ui_key_interrupt(KEYCODE_Left, 0);
-        }
-        if (a_right && !prev_a_right) {
-          emu_ui_key_interrupt(KEYCODE_Right, 1);
-        } else if (!a_right && prev_a_right) {
-          emu_ui_key_interrupt(KEYCODE_Right, 0);
-        }
         handle_button_function(true, nDeviceIndex, b);
         return;
       }
@@ -1347,16 +1837,63 @@ if (static_kernel->circle_get_ticks() - entry_start >= entry_delay) {
       value |= emu_add_button_values(nDeviceIndex, b);
       emu_set_joy_usb_interrupt(nDeviceIndex, value);
     }
-  } else if (prev_buttons[nDeviceIndex] != b) {
-    prev_buttons[nDeviceIndex] = b;
-    handle_button_function(ui_activated, nDeviceIndex, b);
+  } else {
 
-    if (!ui_activated) {
-      emu_set_joy_usb_interrupt(nDeviceIndex,
-                                emu_add_button_values(nDeviceIndex, b));
+
+    handle_gamepad_menu_directions(nDeviceIndex, ui_activated, 0U);
+    if (prev_buttons[nDeviceIndex] != b) {
+      prev_buttons[nDeviceIndex] = b;
+      handle_button_function(ui_activated, nDeviceIndex, b);
+
+      if (!ui_activated) {
+        emu_set_joy_usb_interrupt(nDeviceIndex,
+                                  emu_add_button_values(nDeviceIndex, b));
+      }
     }
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1611,6 +2148,77 @@ extern "C" void circle_usb_restituisci(void) {
 #endif
 }
 
+
+
+
+
+
+
+
+
+
+
+
+extern "C" void circle_usb_spegni_per_riavvio(void) {
+  static_kernel->circle_usb_spegni_per_riavvio();
+}
+
+void CKernel::circle_usb_spegni_per_riavvio() {
+#if RASPPI == 4
+  const unsigned ms = mViceOptions.UsbSpegniRiavvio();
+  if (ms == 0) {
+    return;
+  }
+  if (!::circle_usb_presta()) {
+    usblog_riga("usb_spegni_riavvio: il core 0 non presta la USB, porte accese");
+    return;
+  }
+  usblog_riga("usb_spegni_riavvio: porte spente per %u ms prima del riavvio", ms);
+
+  unsigned porte = 0;
+  for (unsigned n = 8; n >= 1; n--) {
+    CUSBStandardHub *hub =
+        (CUSBStandardHub *)CDeviceNameService::Get()->GetDevice("uhub", n, FALSE);
+    if (hub != 0) {
+      porte += hub->PowerOffAllPorts();
+    }
+  }
+  porte += mUSBHCII.PowerOffUSB3Ports();
+  printf("[USB] usb_spegni_riavvio: %u porte spente, %u ms\n", porte, ms);
+  circle_sleep((long)ms * 1000L);
+#endif
+}
+
+
+
+
+
+
+
+extern "C" int circle_usb_spegni_ms(void) {
+  return static_kernel->circle_usb_spegni_ms();
+}
+
+extern "C" void circle_usb_spegni_imposta(int ms) {
+  static_kernel->circle_usb_spegni_imposta(ms);
+}
+
+int CKernel::circle_usb_spegni_ms() {
+#if RASPPI == 4
+  return (int)mViceOptions.UsbSpegniRiavvio();
+#else
+  return -1;
+#endif
+}
+
+void CKernel::circle_usb_spegni_imposta(int ms) {
+#if RASPPI == 4
+  mViceOptions.SetUsbSpegniRiavvio(ms < 0 ? 0 : (unsigned)ms);
+#else
+  (void)ms;
+#endif
+}
+
 void CKernel::UpdateUSBPlugAndPlay() {
   if (mUSBHCII.UpdatePlugAndPlay()) {
     SetupUSBKeyboard();
@@ -1724,6 +2332,86 @@ static const char *nome_dove_en(int d) {
   }
 }
 
+
+
+
+
+
+
+
+
+
+
+#define BMC_ALIM_IGNOTA 0xFFFFFFFFU
+static volatile unsigned s_bmc_alimentazione = BMC_ALIM_IGNOTA;
+static volatile unsigned s_bmc_firmware = 0;
+
+extern "C" unsigned bmc_alimentazione_chiedi(void) {
+  CBcmPropertyTags Tags;
+  TPropertyTagSimple Tag;
+  Tag.nValue = 0;
+  if (!Tags.GetTag(PROPTAG_GET_THROTTLED, &Tag, sizeof Tag, 4)) {
+    return BMC_ALIM_IGNOTA;
+  }
+  return Tag.nValue;
+}
+
+
+extern "C" unsigned bmc_firmware_versione(void) {
+  if (s_bmc_firmware == 0) {
+    CBcmPropertyTags Tags;
+    TPropertyTagSimple Tag;
+    if (Tags.GetTag(PROPTAG_GET_FIRMWARE_REVISION, &Tag, sizeof Tag)) {
+      s_bmc_firmware = Tag.nValue;
+    }
+  }
+  return s_bmc_firmware;
+}
+
+extern "C" const char *bmc_alimentazione_it(unsigned v) {
+  if (v == BMC_ALIM_IGNOTA) {
+    return "non si sa";
+  }
+  if (v & (1U << 0)) {
+    return "SOTTOTENSIONE ADESSO";
+  }
+  if (v & (1U << 16)) {
+    return "sottotensione dall'accensione";
+  }
+  return "nessuna sottotensione";
+}
+
+static const char *bmc_alimentazione_en(unsigned v) {
+  if (v == BMC_ALIM_IGNOTA) {
+    return "unknown";
+  }
+  if (v & (1U << 0)) {
+    return "UNDER-VOLTAGE NOW";
+  }
+  if (v & (1U << 16)) {
+    return "under-voltage since boot";
+  }
+  return "no under-voltage";
+}
+
+
+
+
+
+
+
+
+
+
+static void bmc_alimentazione_aggiorna(void) {
+
+
+
+
+
+  s_bmc_alimentazione = bmc_alimentazione_chiedi();
+}
+
 static void scatola_a_schermo(unsigned long ora, unsigned long fermo_da,
                               unsigned long suono_prima,
                               unsigned long schermo_prima, int blocco) {
@@ -1764,6 +2452,12 @@ static void scatola_a_schermo(unsigned long ora, unsigned long fermo_da,
                               : (bmc_lucchetto == 1 ? "core 0"
                                  : (bmc_lucchetto == 2 ? "core 1" : "other")),
            usb_chiesta_dal_core1 ? "yes" : "no");
+  snprintf(r[n++], sizeof(r[0]), "power     : %s",
+           bmc_alimentazione_en(s_bmc_alimentazione));
+  snprintf(r[n++], sizeof(r[0]), "firmware  : %u", s_bmc_firmware);
+
+
+
   snprintf(r[n++], sizeof(r[0]), "%s",
            blocco == BLOCCO_SCRITTO ? "BLOCCO.TXT: written to the SD card"
            : blocco == BLOCCO_ERRORE ? "BLOCCO.TXT: WRITE ERROR"
@@ -1818,18 +2512,187 @@ static void bmc_panico(void) {
 static volatile unsigned s_bmc_temperatura = 0;
 static volatile unsigned s_bmc_arm_hz = 0;
 
+
+
+
+
+
+
+
+
+static unsigned bmc_v3d_misurata_mhz(void) {
+  CBcmPropertyTags Tags;
+  TPropertyTagClockRate Tag;
+  Tag.nClockId = 5;
+  if (Tags.GetTag(PROPTAG_GET_CLOCK_RATE_MEASURED, &Tag, sizeof Tag, 4) &&
+      Tag.nRate != 0) {
+    return Tag.nRate / 1000000;
+  }
+  return CMachineInfo::Get()->GetClockRate(5) / 1000000;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static void bmc_sensori_aggiorna(void) {
   static unsigned long letti = 0;
   const unsigned long ora = circle_get_ticks();
+#if RASPPI >= 4
+  bmc_ventola_se_cambiata();
+#endif
   if (letti != 0 && ora - letti < 1000000UL) {
     return;
   }
   letti = ora;
+#if RASPPI >= 4
+
+
+
+  {
+    const unsigned milli = bmc_temperatura_milli();
+    s_bmc_temperatura = (milli + 500) / 1000;
+    if (milli != 0) {
+      s_ventola_milli = milli;
+    }
+    bmc_ventola_aggiorna(milli);
+
+
+    if (!s_ventola_attiva && CKernelOptions::Get()->GetGPIOFanPin() != 0) {
+      CCPUThrottle::Get()->Update();
+
+
+
+    }
+  }
+#else
   s_bmc_temperatura = CCPUThrottle::Get()->GetTemperature();
+#endif
   s_bmc_arm_hz = CMachineInfo::Get()->GetClockRate(CLOCK_ID_ARM);
 
   s_bmc_core_mhz = CMachineInfo::Get()->GetClockRate(CLOCK_ID_CORE) / 1000000;
-  s_bmc_v3d_mhz = CMachineInfo::Get()->GetClockRate(5) / 1000000;
+
+
+
+  static unsigned v3d_giri = 0;
+  if (v3d_giri++ % 10 == 0 || s_bmc_v3d_mhz == 0) {
+    s_bmc_v3d_mhz = bmc_v3d_misurata_mhz();
+    bmc_alimentazione_aggiorna();
+  }
 }
 
 static void cane_da_guardia(void) {
@@ -1840,6 +2703,13 @@ static void cane_da_guardia(void) {
   static unsigned long settori_visti = 0;
   static int scritto = 0;
   static int a_schermo = 0;
+
+
+
+
+  if (!BMC64_SCATOLA_NERA) {
+    return;
+  }
   unsigned long ora = circle_get_ticks();
 
   if (ora - controllato < 1000000UL) {
@@ -1958,7 +2828,9 @@ static void cane_da_guardia(void) {
       "core 2 (suono)      : %lu giri, +%lu da quando il core 1 e' fermo\r\n"
       "core 3 (schermo)    : %lu giri, +%lu da quando il core 1 e' fermo\r\n"
       "lucchetto di Circle : %s\r\n"
-      "USB chiesta dal c.1 : %s\r\n",
+      "USB chiesta dal c.1 : %s\r\n"
+      "alimentazione       : %s (0x%08x)\r\n"
+      "firmware            : %u\r\n",
       ora / 1000, (ora - fermo_da) / 1000,
       nome_dove(bmc_dove), bmc_dove, giri_visti,
       bmc_giri[2], bmc_giri[2] - suono_prima,
@@ -1967,7 +2839,9 @@ static void cane_da_guardia(void) {
                          : (bmc_lucchetto == 1 ? "preso dal core 0"
                             : (bmc_lucchetto == 2 ? "preso dal core 1"
                                : "preso da un altro core")),
-      usb_chiesta_dal_core1 ? "si" : "no");
+      usb_chiesta_dal_core1 ? "si" : "no",
+      bmc_alimentazione_it(s_bmc_alimentazione), s_bmc_alimentazione,
+      s_bmc_firmware);
   if (n > 0 && n < (int)sizeof(t) - 256 && panico &&
       bmc_assert_testo[0] != '\0') {
     n += snprintf(t + n, sizeof(t) - n, "ASSERT FALLITO      : %s\r\n",
@@ -2036,12 +2910,15 @@ static void cane_da_guardia(void) {
 
 
   {
-    static char d[1100];
+    static char d[1300];
     int k = snprintf(d, sizeof(d),
                      "\r\n*** BMC64 STOPPED: %s (guardiano, BLOCCO.TXT) ***\r\n"
-                     "    fermo da %lu ms, dove: %s\r\n",
+                     "    fermo da %lu ms, dove: %s\r\n"
+                     "    alimentazione: %s (0x%08x), firmware %u\r\n",
                      panico ? "panico di Circle" : "l'emulatore non avanza",
-                     (ora - fermo_da) / 1000, nome_dove(bmc_dove));
+                     (ora - fermo_da) / 1000, nome_dove(bmc_dove),
+                     bmc_alimentazione_it(s_bmc_alimentazione),
+                     s_bmc_alimentazione, s_bmc_firmware);
     const int coda = n < 900 ? n : 900;
     int da = n - coda;
     while (da < n && da > 0 && t[da - 1] != '\n') {
@@ -2789,6 +3666,13 @@ void CKernel::MouseStatusHandler(unsigned nButtons, int deltaX, int deltaY,
 
 
 
+
+  if (ui_mouse_rapporto(&nButtons, &prev_buttons, deltaX, deltaY, nWheelMove)) {
+    return;
+  }
+
+
+
   emu_spinner_mouse(nButtons, nWheelMove);
 
   emu_mouse_move(deltaX, deltaY);
@@ -2828,6 +3712,19 @@ void CKernel::MouseStatusHandler(unsigned nButtons, int deltaX, int deltaY,
   }
   prev_buttons = nButtons;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void CKernel::KeyStatusHandlerRaw(unsigned char ucModifiers,
                                   const unsigned char RawKeys[6],
@@ -2871,6 +3768,30 @@ void CKernel::KeyStatusHandlerRaw(unsigned char ucModifiers,
 
   emu_modificatori_grezzi(mod_uniti);
 
+
+
+
+
+
+  if (emu_wants_raw_keyboard()) {
+    merged_mod_states = mod_uniti;
+    if (!(mod_uniti & 0x02)) {
+      uiLeftShift = false;
+    }
+    if (!(mod_uniti & 0x20)) {
+      uiRightShift = false;
+    }
+    for (unsigned i = 1; i < MAX_KEY_CODES; i++) {
+      bool stato_unito = false;
+      for (unsigned d = 0; d < MAX_USB_DEVICES; d++) {
+        stato_unito |= key_states[d][i];
+      }
+      merged_key_states[i] = stato_unito;
+    }
+    emu_set_raw_keyboard(posto, ucModifiers, RawKeys);
+    return;
+  }
+
   // Compare previous to present and handle press/release that come from
   // modifier keys.
   int v = 1;
@@ -2897,6 +3818,9 @@ void CKernel::KeyStatusHandlerRaw(unsigned char ucModifiers,
         break;
       case 3: // LeftSuper
         emu_key_pressed(KEYCODE_LeftSuper);
+        break;
+      case 7:
+        emu_key_pressed(KEYCODE_RightSuper);
         break;
       case 2: // LeftAlt
         emu_key_pressed(KEYCODE_LeftAlt);
@@ -2929,6 +3853,9 @@ void CKernel::KeyStatusHandlerRaw(unsigned char ucModifiers,
         break;
       case 3: // LeftSuper
         emu_key_released(KEYCODE_LeftSuper);
+        break;
+      case 7: // RightSuper
+        emu_key_released(KEYCODE_RightSuper);
         break;
       case 2: // LeftAlt
         emu_key_released(KEYCODE_LeftAlt);
@@ -3161,6 +4088,12 @@ void CKernel::circle_check_gpio() {
 // Reset the state of the GPIO pins.
 // Needed when switching to and from GPIO_CONFIG_USERPORT
 void CKernel::circle_reset_gpio(int gpio_config) {
+
+
+
+  raspi_userport_enabled =
+      gpio_config == GPIO_CONFIG_USERPORT && circle_gpio_outputs_enabled();
+
   switch (gpio_config) {
     case GPIO_CONFIG_NAV_JOY:
     case GPIO_CONFIG_KYB_JOY:
@@ -3397,6 +4330,18 @@ void CKernel::circle_hide_fbl(int layer) {
   fbl[layer].Hide();
 }
 
+
+
+
+int CKernel::TakeScreenshot(int stage, int maximum_width, int layer, int x,
+                            int y, int width, int height, int format,
+                            char *name, int name_size) {
+  if (layer != FB_LAYER_VIC && layer != FB_LAYER_VDC) return 0;
+  return bmx::screenshot::Take(fbl[layer], stage, maximum_width, x, y, width,
+                               height, format, name,
+                               name_size > 0 ? (size_t)name_size : 0);
+}
+
 void CKernel::circle_present_fbl(uint32_t ready_mask, int sync) {
   PresentFrameBufferLayers(ready_mask, sync);
 }
@@ -3429,6 +4374,10 @@ void CKernel::circle_update_palette_fbl(int layer) {
 
 void CKernel::circle_set_stretch_fbl(int layer, double hstretch, double vstretch, int hintstr, int vintstr, int use_hintstr, int use_vintstr) {
   fbl[layer].SetStretch(hstretch, vstretch, hintstr, vintstr, use_hintstr, use_vintstr);
+}
+
+void CKernel::circle_set_scale_fbl(int layer, int percent) {
+  fbl[layer].SetScalePercent(percent);
 }
 
 void CKernel::circle_set_center_offset(int layer, int cx, int cy) {

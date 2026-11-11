@@ -52,6 +52,15 @@ int tvout_applica(int acceso);
 
 int porta_vga_leggi(void);
 int porta_vga_scrivi(int porta);
+
+
+int cmdline_cifra(const char *chiave);
+
+
+
+
+int risoluzione_hdmi_leggi(void);
+int switch_voce_risoluzione(int voglio_1080);
 #define KEY_LEN 32
 #define VALUE_LEN 96
 #define DESC_LEN 64
@@ -107,6 +116,21 @@ int overclock_stock_mhz(void);
 int gpuclock_apply(int level, int pi_model);
 int gpuclock_current(void);
 void gpuclock_di_serie(int pi_model, unsigned *core, unsigned *v3d);
+
+
+
+#define OCX_AUTO (-32768)
+struct ocx_valori {
+   int volt;
+   int temp;
+   int core;
+   int v3d;
+};
+void ocx_limiti(int pi_model, int *core_min, int *core_max, int *v3d_min,
+                int *v3d_max);
+void ocx_current(struct ocx_valori *v);
+int ocx_valido(const struct ocx_valori *v, int pi_model, int cpu_livello);
+int ocx_apply(const struct ocx_valori *v, int pi_model);
 
 
 int vidtrial_pending(void);

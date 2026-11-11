@@ -386,7 +386,9 @@ int c128gmod2_bin_save(const char *filename)
         return -1;
     }
 
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
 
     return 0;
 }
@@ -420,7 +422,9 @@ int c128gmod2_crt_save(const char *filename)
         data += GMOD2_BANK_SIZE;
     }
 
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -469,7 +473,7 @@ int c128gmod2_flush_eeprom(void)
 
 void c128gmod2_detach(void)
 {
-    if (c128gmod2_flash_write && flashrom_state->flash_dirty) {
+    if (c128gmod2_flash_write && flashrom_state && flashrom_state->flash_dirty) {
         c128gmod2_flush_image();
     }
 

@@ -167,6 +167,10 @@ static volatile int update_thread_priority = 1;
 
 static int set_relative_speed(int val, void *param)
 {
+
+    if (val < -100000 || val > 100000) {
+        return -1;
+    }
     if (val == 0) {
         val = 100;
         log_warning(vsync_log, "Setting speed to 0 is no longer supported - use warp instead.");

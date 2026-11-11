@@ -36,6 +36,10 @@ public:
 
 	boolean Initialize (boolean bWaitForActivate);
 
+
+
+	int RestartAutoNegotiation (void);
+
 	void Process (void);
 
 	// returns 0, if net device is not available yet

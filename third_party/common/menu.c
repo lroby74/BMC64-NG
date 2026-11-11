@@ -52,10 +52,15 @@
 #include "menu_keyset.h"
 #include "menu_switch.h"
 #include "menu_gpio.h"
+#include "ui_geometry.h"
+#include "menu_quick_access.h"
+#include "keymap_editor.h"
+#include "menu_text_layout.h"
 #include "overlay.h"
 #include "raspi_util.h"
 #include "ui.h"
 #include "usb_gamepad_defaults.h"
+#include "wic64/config.h"
 
 extern void reboot(void);
 
@@ -80,7 +85,9 @@ static int salva_prima_di_uscire(void) {
   }
   uscita_avvisata = 1;
   if (ui_enabled) {
-    ui_error("REU or EasyFlash file NOT saved. Choose again to quit anyway.");
+
+
+    ui_error("Cartridge file NOT saved. Choose again to quit anyway.");
   } else {
     overlay_avviso("NOT SAVED - AGAIN TO QUIT");
   }
@@ -106,6 +113,7 @@ static void prima_del_reset(const char *cosa) {
 static void riavvia(void) {
   if (salva_prima_di_uscire() == 0) {
     prima_del_reset("riavvio: mezzo secondo alla scheda, poi il reset");
+    circle_usb_spegni_per_riavvio();
     reboot();
   }
 }
@@ -130,6 +138,7 @@ void menu_modo_sicuro(void) {
   switch_safe();
   emux_prepare_shutdown();
   prima_del_reset("modo video sicuro (C= + F7): mezzo secondo alla scheda, poi il reset");
+  circle_usb_spegni_per_riavvio();
   reboot();
 }
 
@@ -144,7 +153,7 @@ void menu_modo_sicuro(void) {
 
 
 
-#define VERSIONE_BMC64_NG "1.3"
+#define VERSIONE_BMC64_NG "1.4"
 
 #ifdef RASPI_LITE
 #define VARIANT_STRING "-Lite"
@@ -178,6 +187,10 @@ const char *bmc64_version_string(void) {
 #define GPU_MSG "The new GPU clock only takes effect after a restart. " \
                 "config.txt will be rewritten. Reboot now?"
 
+#define OCX_MSG "Takes effect after a restart. If the Pi no longer " \
+                "starts, delete the BMC64-OCEXTRA block in config.txt. " \
+                "Reboot now?"
+
 
 
 
@@ -210,6 +223,13 @@ const char *bmc64_version_string(void) {
                             "chosen port after a restart. HDMI 1: no CRT " \
                             "shader. C128 with Two HDMI: the VIC-II goes " \
                             "there, the VDC to the other one. Reboot now?"
+
+
+#define USB_SPEGNI_MSG "At every restart the USB ports are switched off " \
+                       "for this long, so the devices start again from " \
+                       "scratch. Reboot now?"
+#define USB_SPEGNI_OFF_MSG "At every restart the USB ports stay " \
+                           "powered, as by default. Reboot now?"
 
 
 
@@ -268,6 +288,8 @@ struct menu_item *port_1_menu_item;
 struct menu_item *port_2_menu_item;
 struct menu_item *port_3_menu_item;
 struct menu_item *port_4_menu_item;
+
+struct menu_item *port_v8_menu_item[MAX_JOY_PORTS - 4];
 int usb_pref[MAX_USB_DEVICES];
 int usb_x_axis[MAX_USB_DEVICES];
 int usb_y_axis[MAX_USB_DEVICES];
@@ -286,6 +308,13 @@ static int real_drive_wanted[4];
 static struct menu_item *realdrive_log_item = NULL;
 static struct menu_item *realdrive_respiro_item = NULL;
 static struct menu_item *realdrive_veloce_item = NULL;
+
+static struct menu_item *realdrive_commodore_item = NULL;
+
+
+
+static int drive_commodore_cmdline = -1;
+static int drive_commodore_da_settings = 0;
 
 
 
@@ -397,6 +426,15 @@ unsigned int gpio_bindings[NUM_GPIO_PINS];
 struct menu_item *drive_sounds_item;
 struct menu_item *drive_sounds_vol_item;
 struct menu_item *audio_out_item;
+#if RASPPI >= 4
+static struct menu_item *ventola_item;
+#endif
+
+
+static struct menu_item *usb_spegni_item;
+static const int usb_spegni_scelte_ms[] = { 0, 1000, 1500, 2000, 3000, 5000 };
+#define USB_SPEGNI_SCELTE \
+  ((int)(sizeof(usb_spegni_scelte_ms) / sizeof(usb_spegni_scelte_ms[0])))
 struct menu_item *tape_sounds_item;
 struct menu_item *tape_sounds_vol_item;
 
@@ -427,6 +465,12 @@ static int vidtrial_armed = 0;
 static const char *overclock_label(int level);
 void show_overclock_menu(void);
 void show_gpuclock_menu(void);
+void show_ocx_menu(void);
+
+
+static struct menu_item *ocx_volt_item, *ocx_temp_item;
+static struct menu_item *ocx_core_item, *ocx_v3d_item;
+static struct ocx_valori ocx_scelti;
 struct menu_item *tape_reset_with_machine_item;
 struct menu_item *vkbd_transparency_item;
 
@@ -439,6 +483,65 @@ struct menu_item *saturation_item[2];
 
 struct menu_item *warp_item;
 struct menu_item *reset_confirm_item;
+
+
+
+
+static struct menu_item *screenshot_stage_item, *screenshot_size_item;
+static struct menu_item *screenshot_format_item;
+
+static void screenshot_refresh_sizes(void) {
+  if (!screenshot_size_item) return;
+  int saved = screenshot_size_item->choice_ints[screenshot_size_item->value];
+  int dw, dh, fw, fh, sw, sh, tw, th;
+  circle_get_fbl_dimensions(FB_LAYER_UI, &dw, &dh, &fw, &fh, &sw, &sh, &tw, &th);
+  const int widths[] = {320, 640, 800, 1024, 1280, 1600, 1920, 2560, 3840};
+  screenshot_size_item->num_choices = 1;
+  strcpy(screenshot_size_item->choices[0], "Original (HDMI limit)");
+  screenshot_size_item->choice_ints[0] = 0;
+  screenshot_size_item->value = 0;
+  if (saved > dw) saved = dw;
+  for (unsigned i = 0; i < sizeof(widths) / sizeof(widths[0]); ++i) {
+    if (widths[i] > dw) continue;
+    int n = screenshot_size_item->num_choices++;
+    snprintf(screenshot_size_item->choices[n], MAX_MENU_STR, "%d px wide", widths[i]);
+    screenshot_size_item->choice_ints[n] = widths[i];
+    if (saved && widths[i] <= saved) screenshot_size_item->value = n;
+  }
+}
+
+static int crt_shader_preview_layer(void);
+
+
+
+extern void vsync_suspend_speed_eval(void) __attribute__((weak));
+
+static void take_local_screenshot(void) {
+  char nome[64];
+  screenshot_refresh_sizes();
+
+  int index = crt_shader_preview_layer() == FB_LAYER_VDC ? 1 : 0;
+  const struct CanvasState *c = &canvas_state[index];
+  int result = circle_take_screenshot(screenshot_stage_item->value,
+      screenshot_size_item->choice_ints[screenshot_size_item->value],
+      index == 0 ? FB_LAYER_VIC : FB_LAYER_VDC,
+      c->extra_offscreen_border_left, c->first_displayed_line * c->raster_skip,
+      c->gfx_w + 2 * c->max_border_w, c->gfx_h + 2 * c->max_border_h,
+      screenshot_format_item->value, nome, sizeof(nome));
+  overlay_avviso(result > 0 ? "SCREENSHOT TAKEN" : "SCREENSHOT FAILED");
+  if (vsync_suspend_speed_eval) vsync_suspend_speed_eval();
+}
+
+static void screenshot_from_menu(struct menu_item *item) {
+  (void)item;
+  ui_pop_all_and_toggle();
+
+
+
+  circle_hide_fbl(FB_LAYER_UI);
+  emu_quick_func_interrupt(BTN_ASSIGN_SCREENSHOT);
+}
+struct menu_item *menu_mouse_item;
 struct menu_item *drive_flush_item;
 
 static struct menu_item *switch_timer_item;
@@ -447,6 +550,8 @@ struct menu_item *active_display_item;
 struct menu_item *secondo_hdmi_item;
 struct menu_item *hdmi_principale_item;
 static struct menu_item *porta_vga_item;
+
+static struct menu_item *risoluzione_item;
 
 
 
@@ -471,6 +576,8 @@ static struct menu_item *wifi_connect_item;
 static struct menu_item *wifi_psk_item;
 
 static struct menu_item *spinner_sens_item;
+
+static struct menu_item *autofire_item[2];
 extern void emu_spinner_set_sensitivity(int percento);
 
 
@@ -478,6 +585,16 @@ static char wifi_country_saved[3] = "US";
 static struct menu_item *network_address_mode_item;
 static struct menu_item *network_static_item[4];
 static struct menu_item *timezone_dst_item;
+
+static struct menu_item *ntp_enabled_item, *ntp_server_item;
+static struct menu_item *ntp_fallback_item, *ntp_interval_item;
+static struct menu_item *ntp_status_item, *ntp_time_item, *ntp_synced_item;
+
+
+static struct menu_item *wic64_enable_item, *wic64_server_item;
+static struct menu_item *wic64_timezone_item, *wic64_timeout_item, *wic64_log_item;
+static struct menu_item *wic64_reporting_item, *wic64_ssid_item, *wic64_rssi_item;
+static bmx_wic64_config wic64_config = BMX_WIC64_CONFIG_DEFAULT;
 static struct menu_item *smb_password_item;
 static struct menu_item *network_modem_item;
 static struct menu_item *network_modem_baud_item;
@@ -597,6 +714,11 @@ static const char *network_status_label(int status) {
 static struct menu_item *temperatura_item;
 
 
+static struct menu_item *riga_macchina_item;
+static int riga_macchina_altezza = -1;
+static void aggiorna_riga_macchina(void);
+
+
 
 
 
@@ -664,6 +786,165 @@ static void aggiorna_ora(void) {
   riga_ora(ora_item->name, MAX_MENU_STR, valida, locale);
 }
 
+
+
+
+static void ntp_metti(struct menu_item *item, const char *testo) {
+  if (item == NULL) return;
+  snprintf(item->str_value, sizeof(item->str_value), "%s", testo);
+  snprintf(item->displayed_value, sizeof(item->displayed_value), "%s", testo);
+}
+
+static void ntp_riga_ora(char *riga, size_t n, int valida, unsigned locale) {
+  int anno;
+  unsigned mese, giorno, sec;
+  if (!valida) {
+    snprintf(riga, n, "Not set");
+    return;
+  }
+  civile_da_giorni((long)(locale / 86400U), &anno, &mese, &giorno);
+  sec = locale % 86400U;
+  snprintf(riga, n, "%04d-%02u-%02u %02u:%02u:%02u", anno, mese, giorno,
+           sec / 3600, (sec / 60) % 60, sec % 60);
+}
+
+static const char *ntp_nome_stato(int stato) {
+  static const char *const nomi[5] = {"Off", "Waiting for network",
+                                      "Synchronizing", "Synchronized",
+                                      "Last sync failed"};
+  return stato >= 0 && stato < 5 ? nomi[stato] : "?";
+}
+
+static void aggiorna_ntp(void) {
+  char riga[MAX_MENU_STR];
+  unsigned ultimo = 0, locale = 0;
+  int stato;
+  if (ntp_status_item == NULL) return;
+  stato = circle_ntp_stato(NULL, 0, &ultimo);
+  ntp_metti(ntp_status_item, ntp_nome_stato(stato));
+  ntp_riga_ora(riga, sizeof(riga), circle_get_local_time(&locale), locale);
+  ntp_metti(ntp_time_item, riga);
+  if (ultimo == 0) {
+    ntp_metti(ntp_synced_item, "Never");
+  } else {
+    ntp_riga_ora(riga, sizeof(riga), 1, ultimo);
+    ntp_metti(ntp_synced_item, riga);
+  }
+}
+
+static void ntp_copia_testo(struct menu_item *item, const char *valore) {
+  int n = 0;
+  while (valore[n] != '\0' && valore[n] != '\n' && valore[n] != '\r' &&
+         n < item->max_length && n < (int)sizeof(item->str_value) - 1) {
+    item->str_value[n] = valore[n];
+    n++;
+  }
+  item->str_value[n] = '\0';
+  item->value = n;
+}
+
+
+
+
+
+
+extern void bmc_wic64_ssid(const char *ssid) __attribute__((weak));
+static int save_settings();
+static void wic64_ssid_vero(void) {
+  if (bmc_wic64_ssid != NULL && wifi_ssid_item != NULL) {
+    bmc_wic64_ssid(wifi_ssid_item->str_value);
+  }
+}
+
+static void set_wic64_timezone_choices(void) {
+  wic64_timezone_item->num_choices = 32;
+  wic64_timezone_item->value = wic64_config.timezone;
+  for (unsigned i = 0; i < 32; ++i) {
+    snprintf(wic64_timezone_item->choices[i], sizeof wic64_timezone_item->choices[i],
+             "%s", emux_wic64_timezone_name(i));
+    wic64_timezone_item->choice_disabled[i] = 0;
+
+
+    for (unsigned j = 0; j < i; ++j) {
+      if (!strcmp(wic64_timezone_item->choices[i], wic64_timezone_item->choices[j])) {
+        wic64_timezone_item->choice_disabled[i] = 1;
+        if (wic64_config.timezone == (int)i)
+          wic64_timezone_item->value = j;
+        break;
+      }
+    }
+  }
+}
+
+static void wic64_voci_dal_config(void) {
+  if (wic64_enable_item == NULL) return;
+  wic64_enable_item->value = wic64_config.enabled;
+  ntp_copia_testo(wic64_server_item, wic64_config.server);
+  set_wic64_timezone_choices();
+  wic64_timeout_item->value = wic64_config.timeout;
+  wic64_log_item->value = wic64_config.loglevel;
+  wic64_reporting_item->value = wic64_config.reporting.real;
+  ntp_copia_testo(wic64_ssid_item, wic64_config.reporting.ssid);
+  wic64_rssi_item->value = wic64_config.reporting.rssi;
+}
+
+static int apply_wic64_config(int persist) {
+  bmx_wic64_config previous, desired = wic64_config;
+  int result;
+  desired.enabled = wic64_enable_item->value;
+  snprintf(desired.server, sizeof desired.server, "%s", wic64_server_item->str_value);
+  desired.timezone = wic64_timezone_item->value;
+  desired.timeout = wic64_timeout_item->value;
+  desired.loglevel = wic64_log_item->value;
+  desired.reporting.real = wic64_reporting_item->value;
+  desired.reporting.rssi = wic64_rssi_item->value;
+  snprintf(desired.reporting.ssid, sizeof desired.reporting.ssid, "%s", wic64_ssid_item->str_value);
+  if (!bmx_wic64_config_valid(&desired)) {
+    ui_error("Invalid WiC64 settings"); return 2;
+  }
+  if (emux_get_wic64_config(&previous) != 0) {
+    ui_error("WiC64 unavailable"); return 1;
+  }
+  wic64_ssid_vero();
+  result = emux_apply_wic64(&desired);
+  if (result != 0) {
+    ui_error(result == 5 ? "Userport already in use" : "WiC64 apply failed");
+    return result;
+  }
+  bmx_wic64_config saved = wic64_config;
+  wic64_config = desired;
+  if (persist && save_settings()) {
+    wic64_config = saved;
+    if (emux_apply_wic64(&previous) != 0)
+      ui_error("Save and WiC64 restore failed");
+    else ui_error("Problem saving WiC64 config");
+    return 6;
+  }
+  ui_info("WiC64 settings applied");
+  return 0;
+}
+
+
+
+static void wic64_leggi(const char *name, const char *value) {
+  char valore[BMX_WIC64_SERVER_SIZE];
+  snprintf(valore, sizeof valore, "%s", value);
+  valore[strcspn(valore, "\r\n")] = '\0';
+  bmx_wic64_config_parse(&wic64_config, name, valore);
+}
+
+
+static void wic64_dopo_il_caricamento(void) {
+  int result;
+  if (!emux_wic64_supported()) return;
+  wic64_voci_dal_config();
+  wic64_ssid_vero();
+  result = emux_apply_wic64(&wic64_config);
+  if (result != 0) {
+    printf("[WIC] le impostazioni di settings.txt non si applicano: %d\n", result);
+  }
+}
+
 void menu_update_network_status(void);
 
 static void network_status_changed(void) {
@@ -694,9 +975,11 @@ void menu_update_temperatura(void) {
   mai = 0;
   ultimo = adesso;
   riga_cpu(temperatura_item->name, MAX_MENU_STR, circle_get_gpu_mhz());
+  aggiorna_riga_macchina();
   if (ora_item != NULL) {
     aggiorna_ora();
   }
+  aggiorna_ntp();
 }
 
 
@@ -1059,6 +1342,19 @@ static const struct crt_preset_binding s_crt_preset_bindings[] = {
 static char s_crt_preset_paths[MAX_CHOICES][MAX_STR_VAL_LEN];
 static int s_crt_preset_applied_choice = CRT_PRESET_CURRENT_CHOICE;
 
+
+
+
+
+#define CRT_PRESET_SALVATO_CORRENTE "*"
+static int s_crt_modified;
+static int s_crt_baseline[CRT_PRESET_FIELD_COUNT];
+static struct menu_item *s_crt_save_name;
+static char s_crt_prompt_name[MAX_MENU_STR];
+static char s_crt_pending_name[MAX_MENU_STR];
+static char s_crt_saved_name[MAX_STR_VAL_LEN];
+static int s_crt_saved_name_letto;
+
 static int unit;
 static int joyswap;
 static int statusbar_forced;
@@ -1076,6 +1372,7 @@ static char usb_x_name[MAX_USB_DEVICES][16];
 static char usb_y_name[MAX_USB_DEVICES][16];
 static char usb_x_t_name[MAX_USB_DEVICES][16];
 static char usb_y_t_name[MAX_USB_DEVICES][16];
+static char usb_mapping_name[MAX_USB_DEVICES][16];
 
 
 const int num_d81_ext = 1;
@@ -1148,6 +1445,98 @@ static char last_iec_dir[4][256];
 static int usb1_mounted;
 static int usb2_mounted;
 static int usb3_mounted;
+
+
+
+
+
+
+static struct menu_item *default_disk_image_item;
+static struct menu_item *default_disk_drive_item;
+static char default_disk_image[MAX_STR_VAL_LEN];
+static int default_disk_drive = 8;
+
+static const char *menu_basename(const char *path) {
+  const char *slash;
+  if (path == NULL || path[0] == '\0') {
+    return "None";
+  }
+  slash = strrchr(path, '/');
+  return slash == NULL ? path : slash + 1;
+}
+
+static void set_button_display(struct menu_item *item, const char *value) {
+  if (item == NULL) {
+    return;
+  }
+  strncpy(item->displayed_value, value, MAX_DSP_VAL_LEN - 1);
+  item->displayed_value[MAX_DSP_VAL_LEN - 1] = '\0';
+  item->prefer_str = 1;
+}
+
+static void default_disk_set_image(const char *path) {
+  snprintf(default_disk_image, sizeof default_disk_image, "%s",
+           path == NULL ? "" : path);
+  if (default_disk_image_item != NULL) {
+    snprintf(default_disk_image_item->str_value,
+             sizeof default_disk_image_item->str_value, "%s",
+             default_disk_image);
+    set_button_display(default_disk_image_item,
+                       menu_basename(default_disk_image));
+  }
+}
+
+static void default_disk_set_drive(int drive) {
+  int i;
+  if (drive != DEFAULT_DISK_DRIVE_NONE && (drive < 8 || drive > 11)) {
+    return;
+  }
+  default_disk_drive = drive;
+  if (default_disk_drive_item == NULL) {
+    return;
+  }
+  for (i = 0; i < default_disk_drive_item->num_choices; i++) {
+    if (default_disk_drive_item->choice_ints[i] == drive) {
+      default_disk_drive_item->value = i;
+      return;
+    }
+  }
+}
+
+
+static void default_disk_reset(void) {
+  default_disk_set_drive(8);
+  default_disk_set_image("");
+}
+
+const char *menu_default_disk_image(void) { return default_disk_image; }
+
+int menu_default_disk_drive(void) { return default_disk_drive; }
+
+
+
+int menu_default_disk_prepare_volume(void) {
+  int usb = -1;
+  int *mounted = NULL;
+  if (strncmp(default_disk_image, "USB:", 4) == 0) {
+    usb = 0;
+    mounted = &usb1_mounted;
+  } else if (strncmp(default_disk_image, "USB2:", 5) == 0) {
+    usb = 1;
+    mounted = &usb2_mounted;
+  } else if (strncmp(default_disk_image, "USB3:", 5) == 0) {
+    usb = 2;
+    mounted = &usb3_mounted;
+  }
+  if (mounted == NULL || *mounted) {
+    return 1;
+  }
+  if (!circle_mount_usb(usb)) {
+    return 0;
+  }
+  *mounted = 1;
+  return 1;
+}
 
 // Temp storage for full path name concatenations.
 
@@ -1507,6 +1896,9 @@ static void usb_segna_montata(int usb, int montata) {
 
 
 
+
+
+
 #define RICERCA_MAX 30
 static char ricerca_testo[RICERCA_MAX + 1];
 static char ricerca_bozza[RICERCA_MAX + 1];
@@ -1527,12 +1919,33 @@ static struct menu_item *ricerca_item_primo;
 static char ricerca_scelto[MAX_STR_VAL_LEN];
 static int ricerca_scelto_dir = -1;
 
+
+
+
+static int ricerca_da_rifare;
+static int ricerca_pos = -1;
+
 static void ricerca_spegni(void) {
   ricerca_dentro = 0;
   ricerca_testo[0] = '\0';
   ricerca_bozza[0] = '\0';
   ricerca_riga = 0;
   ricerca_sul_primo = 0;
+  ricerca_da_rifare = 0;
+  ricerca_pos = -1;
+}
+
+
+
+static void ricerca_testo_da(const char *s) {
+  size_t n;
+
+  strncpy(ricerca_testo, s, RICERCA_MAX);
+  ricerca_testo[RICERCA_MAX] = '\0';
+  n = strlen(ricerca_testo);
+  while (n > 0 && ricerca_testo[n - 1] == ' ') {
+    ricerca_testo[--n] = '\0';
+  }
 }
 
 
@@ -1783,7 +2196,11 @@ static void list_files(struct menu_item *parent,
     if (riga != NULL) {
       riga->sub_id = MENU_SUB_SEARCH;
       ricerca_item_riga = riga;
+      if (ricerca_pos >= 0 && ricerca_pos <= riga->value) {
+        riga->value = ricerca_pos;
+      }
     }
+    ricerca_pos = -1;
   }
 
   // When we are picking dirs, include a button to select the current dir.
@@ -1925,6 +2342,9 @@ static void list_files(struct menu_item *parent,
   assert(files_root.first_child == NULL);
 }
 
+static int files_left_right_listener(struct menu_item* parent,
+                                     struct menu_item* current, int right);
+
 static void files_cursor_listener(struct menu_item* parent,
                                   int new_pos) {
 
@@ -1950,6 +2370,22 @@ static int hdmi_principale_adesso(void) {
   return circle_fb_display_chiesto() == 1 ? 1 : 0;
 }
 
+
+
+static int usb_spegni_indice(int ms) {
+  int migliore = 1;
+  if (ms <= 0) {
+    return 0;
+  }
+  for (int i = 2; i < USB_SPEGNI_SCELTE; i++) {
+    if (abs(usb_spegni_scelte_ms[i] - ms) <
+        abs(usb_spegni_scelte_ms[migliore] - ms)) {
+      migliore = i;
+    }
+  }
+  return migliore;
+}
+
 static void rimetti_voci_riavvio(int pos) {
   if (audio_out_item != NULL && pos != audio_out_item->render_index) {
     audio_out_item->value = circle_uscita_audio();
@@ -1957,6 +2393,16 @@ static void rimetti_voci_riavvio(int pos) {
   if (hdmi_principale_item != NULL &&
       pos != hdmi_principale_item->render_index) {
     hdmi_principale_item->value = hdmi_principale_adesso();
+  }
+
+  if (risoluzione_item != NULL &&
+      pos != risoluzione_item->render_index &&
+      risoluzione_hdmi_leggi() >= 0) {
+    risoluzione_item->value = risoluzione_hdmi_leggi();
+  }
+
+  if (usb_spegni_item != NULL && pos != usb_spegni_item->render_index) {
+    usb_spegni_item->value = usb_spegni_indice(circle_usb_spegni_ms());
   }
 }
 
@@ -1971,6 +2417,66 @@ static void chiedi_riavvio_voce(struct menu_item *item) {
                      item->id == MENU_AUDIO_OUT ? AUDIO_OUT_MSG
                                                 : HDMI_PRINCIPALE_MSG,
                      item->value, item->id);
+}
+
+
+
+
+
+
+static void usb_spegni_chiedi(struct menu_item *item) {
+  char titolo[MAX_MENU_STR];
+
+  if (item->value == 0) {
+    snprintf(titolo, sizeof(titolo), "Reboot, USB always on?");
+  } else {
+    snprintf(titolo, sizeof(titolo), "Reboot, USB off %s?",
+             item->choices[item->value]);
+  }
+  ui_confirm_wrapped(titolo, item->value == 0 ? USB_SPEGNI_OFF_MSG
+                                              : USB_SPEGNI_MSG,
+                     item->value, MENU_USB_SPEGNI);
+}
+
+static void usb_spegni_applica(int indice) {
+  char numero[8];
+  int ms;
+
+  if (indice < 0 || indice >= USB_SPEGNI_SCELTE) {
+    indice = 0;
+  }
+  ms = usb_spegni_scelte_ms[indice];
+  snprintf(numero, sizeof(numero), "%d", ms);
+  if (cmdline_opzione("usb_spegni_riavvio", ms ? numero : NULL) != 0) {
+    rimetti_voci_riavvio(-1);
+    ui_error("Cannot write the card");
+    return;
+  }
+  circle_usb_spegni_imposta(ms);
+  printf("[USB] USB Off at Restart: %d ms, riavvio\n", ms);
+  riavvia();
+}
+
+
+
+
+
+static void risoluzione_chiedi(struct menu_item *item) {
+  char titolo[MAX_MENU_STR];
+  const int adesso = risoluzione_hdmi_leggi();
+  int id;
+  if (item->value == adesso) {
+    return;
+  }
+  id = switch_voce_risoluzione(item->value);
+  if (id < 0) {
+    item->value = adesso;
+    ui_error("No such profile for this machine");
+    return;
+  }
+  snprintf(titolo, sizeof(titolo), "Reboot for %s?",
+           item->choices[item->value]);
+  ui_confirm_wrapped(titolo, SWITCH_MSG, id, MENU_SWITCH_MACHINE);
 }
 
 static void main_menu_cursor_listener(struct menu_item* parent, int new_pos) {
@@ -2001,6 +2507,7 @@ static struct menu_item *show_files(DirType dir_type, FileFilter filter,
 
   const int da_se = ricerca_da_se;
   ricerca_da_se = 0;
+  ricerca_da_rifare = 0;
   if (!da_se) {
     ricerca_spegni();
   }
@@ -2015,6 +2522,7 @@ static struct menu_item *show_files(DirType dir_type, FileFilter filter,
   file_root->value = dir_type;
 
   file_root->cursor_listener_func = files_cursor_listener;
+  file_root->left_right_listener_func = files_left_right_listener;
 
   if (lista_col_nome_nuovo(menu_id)) {
     struct menu_item *file_name_item = ui_menu_add_text_field(
@@ -2342,6 +2850,18 @@ static void show_about() {
 
   ui_menu_add_button(MENU_FONT_TEST, about_root,
                      "https://github.com/randyrossi/bmc64");
+
+
+
+  ui_menu_add_divider(about_root);
+  ui_menu_add_button(MENU_TEXT, about_root, "With code from BMX by kdre76:");
+  ui_menu_add_button(MENU_TEXT, about_root, "  KMS video, V3D, CRT shaders,");
+  ui_menu_add_button(MENU_TEXT, about_root, "  audio, SuperCPU, WiFi fixes,");
+  ui_menu_add_button(MENU_TEXT, about_root, "  keymap editor, mouse, menu");
+  ui_menu_add_button(MENU_TEXT, about_root, "  features, Quick Access,");
+  ui_menu_add_button(MENU_TEXT, about_root, "  screenshots, WiC64, gamepad");
+  ui_menu_add_button(MENU_TEXT, about_root, "  mapping, overclocking");
+  ui_menu_add_button(MENU_TEXT, about_root, "https://baremetalx.de");
 }
 
 
@@ -2424,6 +2944,9 @@ static void show_font_test() {
 static void show_license() {
   int i;
   struct menu_item *license_root = ui_push_menu(-1, -1);
+
+  license_root->scroll_text_first_row = 0;
+  license_root->scroll_text_end_row = 100000;
   for (i = 0; i < 510; i++) {
     ui_menu_add_button(MENU_TEXT, license_root, license[i]);
   }
@@ -2840,6 +3363,21 @@ static void ui_set_hotkeys() {
 
 
 
+static int machine_supports_mouse_type(void) {
+  switch (emux_machine_class) {
+  case BMC64_MACHINE_CLASS_C64:
+  case BMC64_MACHINE_CLASS_SCPU64:
+  case BMC64_MACHINE_CLASS_C128:
+  case BMC64_MACHINE_CLASS_VIC20:
+  case BMC64_MACHINE_CLASS_PLUS4:
+    return 1;
+  default:
+    return 0;
+  }
+}
+
+
+
 static int is_mouse_device(int device) {
    return device == JOYDEV_MOUSE || device == JOYDEV_MOUSE_MICROMYS;
 }
@@ -2876,7 +3414,23 @@ static void set_need_mouse() {
    emux_set_int(Setting_Mouse, need_mouse);
 }
 
-// Sets joydev port 'p' (1-4) to JOYDEV_* value 'value' and makes sure
+
+static struct menu_item *voce_della_porta(int indice) {
+   switch (indice) {
+      case 0:
+         return port_1_menu_item;
+      case 1:
+         return port_2_menu_item;
+      case 2:
+         return port_3_menu_item;
+      case 3:
+         return port_4_menu_item;
+      default:
+         return port_v8_menu_item[indice - 4];
+   }
+}
+
+
 // all other ports get the mouse turned off if this port got a mouse.
 static void set_joy_item_to_value(int p, int value) {
     joydevs[p-1].device = value;
@@ -2885,19 +3439,7 @@ static void set_joy_item_to_value(int p, int value) {
       for (int l = 0; l < MAX_JOY_PORTS; l++) {
          if (l == (p-1)) continue;
 
-         struct menu_item* other;
-         switch (l) {
-            case 0:
-               other = port_1_menu_item; break;
-            case 1:
-               other = port_2_menu_item; break;
-            case 2:
-               other = port_3_menu_item; break;
-            case 3:
-               other = port_4_menu_item; break;
-            default:
-               assert(0);
-         }
+         struct menu_item* other = voce_della_porta(l);
          if (other && is_vice_mouse_type(other->choice_ints[other->value])) {
            emux_set_joy_port_device(l+1, JOYDEV_NONE);
            joydevs[l].device = JOYDEV_NONE;
@@ -2943,6 +3485,9 @@ void ui_set_joy_items() {
       dst = port_3_menu_item;
     } else if (joydevs[joydev].port == 4) {
       dst = port_4_menu_item;
+    } else if (joydevs[joydev].port >= 5 &&
+               joydevs[joydev].port <= MAX_JOY_PORTS) {
+      dst = port_v8_menu_item[joydevs[joydev].port - 5];
     } else {
       continue;
     }
@@ -2971,6 +3516,11 @@ void ui_set_joy_items() {
   }
   if (port_4_menu_item) {
      set_joy_item_to_value(4, validated_port_choice(port_4_menu_item));
+  }
+  for (i = 5; i <= MAX_JOY_PORTS; i++) {
+     if (port_v8_menu_item[i - 5]) {
+        set_joy_item_to_value(i, validated_port_choice(port_v8_menu_item[i - 5]));
+     }
   }
   set_need_mouse();
 }
@@ -3180,8 +3730,155 @@ static void next_integer_scaling(int layer,
   }
 }
 
+
+
+
+
+
+
+
+
+static struct menu_quick_access_state quick_access_state;
+static struct menu_item *quick_access_folder_item;
+static struct menu_item *quick_access_slot_items[MENU_QUICK_ACCESS_SLOT_COUNT];
+static struct menu_quick_access_slot quick_access_pending_target;
+
+static void quick_access_set_slot_display(struct menu_item *item, int slot,
+                                          int disable_when_empty) {
+  const struct menu_quick_access_slot *assignment;
+  struct menu_item *root = ui_menu_root();
+  struct menu_item *target = NULL;
+  char fitted[MAX_DSP_VAL_LEN];
+  char path[MAX_STR_VAL_LEN];
+
+  if (item == NULL) return;
+  assignment = menu_quick_access_get(&quick_access_state, slot);
+  if (assignment != NULL && assignment->id != MENU_ID_DO_NOTHING) {
+    target = menu_quick_access_find(root, assignment->id,
+                                    assignment->sub_id, 0);
+  }
+
+  if (target != NULL &&
+      menu_quick_access_format_path(root, target, path, sizeof path)) {
+    menu_quick_access_fit_path(path, fitted, sizeof fitted);
+    snprintf(item->str_value, sizeof item->str_value, "%s", path);
+    snprintf(item->displayed_value, sizeof item->displayed_value, "%s",
+             fitted);
+    item->disabled = disable_when_empty && target->disabled;
+  } else {
+    snprintf(item->str_value, sizeof item->str_value, "%s",
+             "<Not assigned>");
+    snprintf(item->displayed_value, sizeof item->displayed_value, "%s",
+             "<Not assigned>");
+    item->disabled = disable_when_empty;
+  }
+  item->prefer_str = 1;
+}
+
+static void quick_access_refresh_slot_items(void) {
+  int slot;
+  for (slot = 0; slot < MENU_QUICK_ACCESS_SLOT_COUNT; ++slot) {
+    quick_access_set_slot_display(quick_access_slot_items[slot], slot, 1);
+  }
+}
+
+static void build_quick_access_menu(struct menu_item *root) {
+  int slot;
+
+  menu_quick_access_init(&quick_access_state);
+  quick_access_pending_target.id = MENU_ID_DO_NOTHING;
+  quick_access_pending_target.sub_id = MENU_SUB_NONE;
+  quick_access_folder_item = ui_menu_add_folder(root, "Quick Access...");
+  quick_access_folder_item->id = MENU_QUICK_ACCESS_FOLDER;
+  for (slot = 0; slot < MENU_QUICK_ACCESS_SLOT_COUNT; ++slot) {
+    char label[16];
+    snprintf(label, sizeof label, "Slot %d", slot + 1);
+    quick_access_slot_items[slot] = ui_menu_add_button(
+        menu_quick_access_menu_id_for_slot(slot), quick_access_folder_item,
+        label);
+    quick_access_set_slot_display(quick_access_slot_items[slot], slot, 1);
+  }
+}
+
+void menu_quick_access_try_assign(struct menu_item *item) {
+  struct menu_item *picker;
+  struct menu_item *picker_item;
+  struct menu_item *root = ui_menu_root();
+  char path[MAX_STR_VAL_LEN];
+  int slot;
+
+  if (item == NULL || item->disabled ||
+      !menu_quick_access_item_supported(item) ||
+      !menu_quick_access_format_path(root, item, path, sizeof path)) {
+    return;
+  }
+
+  quick_access_pending_target.id = item->id;
+  quick_access_pending_target.sub_id = item->sub_id;
+  picker = ui_push_menu(32, 7);
+  if (picker == NULL) {
+    quick_access_pending_target.id = MENU_ID_DO_NOTHING;
+    quick_access_pending_target.sub_id = MENU_SUB_NONE;
+    return;
+  }
+
+  picker_item = ui_menu_add_button(MENU_TEXT, picker,
+                                   "Assign to Quick Access");
+  picker_item->disabled = 1;
+  ui_menu_add_divider(picker);
+  for (slot = 0; slot < MENU_QUICK_ACCESS_SLOT_COUNT; ++slot) {
+    char label[16];
+    snprintf(label, sizeof label, "Slot %d", slot + 1);
+    picker_item = ui_menu_add_button(
+        menu_quick_access_menu_id_for_slot(slot), picker, label);
+    picker_item->sub_id = MENU_SUB_QUICK_ACCESS_ASSIGN;
+    quick_access_set_slot_display(picker_item, slot, 0);
+  }
+  ui_set_cur_pos(2);
+}
+
+static int quick_access_setting_slot(const char *name) {
+  int slot;
+  char expected[24];
+  if (name == NULL) return -1;
+  for (slot = 0; slot < MENU_QUICK_ACCESS_SLOT_COUNT; ++slot) {
+    snprintf(expected, sizeof expected, "quick_slot_%d", slot + 1);
+    if (strcmp(name, expected) == 0) return slot;
+  }
+  return -1;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static int save_settings() {
   FILE *fp;
+  int i;
   const char *settings_filename;
   switch (emux_machine_class) {
   case BMC64_MACHINE_CLASS_C64:
@@ -3238,8 +3935,20 @@ static int save_settings() {
   if (port_4_menu_item) {
     fprintf(fp, "port_4=%d\n", port_4_menu_item->value);
   }
+  for (i = 5; i <= MAX_JOY_PORTS; i++) {
+
+    if (port_v8_menu_item[i - 5] && port_v8_menu_item[i - 5]->value != 0) {
+      fprintf(fp, "port_%d=%d\n", i, port_v8_menu_item[i - 5]->value);
+    }
+  }
   if (spinner_sens_item) {
     fprintf(fp, "spinner_sensitivity=%d\n", spinner_sens_item->value);
+  }
+
+  for (i = 0; i < 2; i++) {
+    if (autofire_item[i]) {
+      fprintf(fp, "autofire_%d=%d\n", i + 1, autofire_item[i]->value);
+    }
   }
 
   for (int k = 0;k < MAX_USB_DEVICES; k++) {
@@ -3266,6 +3975,7 @@ static int save_settings() {
     for (int i = 0; i < MAX_USB_BUTTONS; i++) {
       fprintf(fp, "usb_btn_%d=%d\n", k, usb_button_assignments[k][i]);
     }
+    fprintf(fp, "usb_mapping_%d=%d\n", k, menu_usb_mapping_mode(k));
   }
   fprintf(fp, "hotkey_cf1=%d\n", hotkey_cf1_item->value);
   fprintf(fp, "hotkey_cf3=%d\n", hotkey_cf3_item->value);
@@ -3275,6 +3985,12 @@ static int save_settings() {
   fprintf(fp, "hotkey_tf3=%d\n", hotkey_tf3_item->value);
   fprintf(fp, "hotkey_tf5=%d\n", hotkey_tf5_item->value);
   fprintf(fp, "hotkey_tf7=%d\n", hotkey_tf7_item->value);
+
+  if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
+    int prg_modo = BMX_AUTOSTART_PRG_DISK;
+    emux_get_int(Setting_AutostartPrgMode, &prg_modo);
+    fprintf(fp, "autostart_prg_mode=%d\n", prg_modo);
+  }
   // Can't change the 'overlay_*' names, legacy.
   fprintf(fp, "overlay=%d\n", statusbar_item->value);
   fprintf(fp, "overlay_padding=%d\n", statusbar_padding_item->value);
@@ -3282,6 +3998,24 @@ static int save_settings() {
   fprintf(fp, "vkbd_trans=%d\n", vkbd_transparency_item->value);
   fprintf(fp, "tapereset=%d\n", tape_reset_with_machine_item->value);
   fprintf(fp, "reset_confirm=%d\n", reset_confirm_item->value);
+  fprintf(fp, "screenshot_stage=%d\n", screenshot_stage_item->value);
+  fprintf(fp, "screenshot_width=%d\n",
+          screenshot_size_item->choice_ints[screenshot_size_item->value]);
+  fprintf(fp, "screenshot_format=%d\n", screenshot_format_item->value);
+  fprintf(fp, "menu_scale=%d\n", ui_get_menu_scale_percent());
+  fprintf(fp, "menu_row_gap=%d\n", ui_get_menu_row_gap());
+  fprintf(fp, "menu_mouse=%d\n", menu_mouse_item->value);
+  fprintf(fp, "browser_tail_delay=%d\n", ui_get_browser_tail_delay());
+
+  for (int slot = 0; slot < MENU_QUICK_ACCESS_SLOT_COUNT; ++slot) {
+    const struct menu_quick_access_slot *assignment =
+        menu_quick_access_get(&quick_access_state, slot);
+    const char *id_name = assignment != NULL
+                              ? menu_quick_access_id_name(assignment->id)
+                              : NULL;
+    fprintf(fp, "quick_slot_%d=%s\n", slot + 1,
+            id_name != NULL ? id_name : "");
+  }
   if (drive_flush_item != NULL) {
     fprintf(fp, "drive_flush=%d\n", drive_flush_item->value);
   }
@@ -3298,6 +4032,23 @@ static int save_settings() {
   }
   if (timezone_dst_item != NULL) {
     fprintf(fp, "timezone_dst=%d\n", timezone_dst_item->value);
+  }
+  if (ntp_enabled_item != NULL) {
+    fprintf(fp, "ntp_enabled=%d\n", ntp_enabled_item->value);
+    fprintf(fp, "ntp_server=%s\n", ntp_server_item->str_value);
+    fprintf(fp, "ntp_fallback=%s\n", ntp_fallback_item->str_value);
+    fprintf(fp, "ntp_interval_min=%d\n",
+            ntp_interval_item->choice_ints[ntp_interval_item->value]);
+  }
+  if (emux_wic64_supported()) {
+    fprintf(fp, "wic64=%d\n", wic64_config.enabled);
+    fprintf(fp, "wic64_server=%s\n", wic64_config.server);
+    fprintf(fp, "wic64_timezone=%d\n", wic64_config.timezone);
+    fprintf(fp, "wic64_timeout=%d\n", wic64_config.timeout);
+    fprintf(fp, "wic64_log=%d\n", wic64_config.loglevel);
+    fprintf(fp, "wic64_reporting=%d\n", wic64_config.reporting.real);
+    fprintf(fp, "wic64_ssid=%s\n", wic64_config.reporting.ssid);
+    fprintf(fp, "wic64_rssi=%d\n", wic64_config.reporting.rssi);
   }
   if (smb_password_item != NULL && smb_password_item->str_value[0] != '\0') {
     fprintf(fp, "smb_password=%s\n", smb_password_item->str_value);
@@ -3336,6 +4087,12 @@ static int save_settings() {
      fprintf(fp, "v_stretch_1=%d\n", v_stretch_item[1]->value);
   }
 
+
+  if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
+    fprintf(fp, "default_disk_image=%s\n", default_disk_image);
+    fprintf(fp, "default_disk_drive=%d\n", default_disk_drive);
+  }
+
   int drive_type;
 
   emux_get_int_1(Setting_DriveNType, &drive_type, 8);
@@ -3362,6 +4119,8 @@ static int save_settings() {
   if (realdrive_veloce_item != NULL) {
     fprintf(fp, "real_drive_fast=%d\n", realdrive_veloce_item->value);
   }
+
+
   if (realdrive_respiro_item != NULL) {
     fprintf(fp, "real_drive_pause=%d\n",
             realdrive_respiro_item->choice_ints[realdrive_respiro_item->value]);
@@ -3416,6 +4175,15 @@ static int save_settings() {
      fprintf (fp, "custom_gpio=%d,%d\n", i, gpio_bindings[i]);
   }
 
+
+
+  if (s_crt_preset_item != NULL) {
+    fprintf(fp, "crt_preset=%s\n",
+            s_crt_preset_applied_choice > CRT_PRESET_CURRENT_CHOICE &&
+                    s_crt_preset_applied_choice < s_crt_preset_item->num_choices
+                ? s_crt_preset_item->choices[s_crt_preset_applied_choice]
+                : CRT_PRESET_SALVATO_CORRENTE);
+  }
   fprintf(fp,"s_curvature=%d\n", s_curvature_item->value);
   fprintf(fp,"s_curvature_x=%d\n", s_curvature_x_item->value);
   fprintf(fp,"s_curvature_y=%d\n", s_curvature_y_item->value);
@@ -3531,11 +4299,124 @@ static void ui_set_joy_devs() {
   if (port_4_menu_item) {
     joydevs[3].device = validated_port_choice(port_4_menu_item);
   }
+
+  for (int i = 5; i <= MAX_JOY_PORTS; i++) {
+    if (port_v8_menu_item[i - 5]) {
+      joydevs[i - 1].device = validated_port_choice(port_v8_menu_item[i - 5]);
+    }
+  }
+}
+
+
+
+
+
+static struct menu_item *menu_scala_item;
+static struct menu_item *menu_righe_item;
+
+static void menu_scala_cambiata(struct menu_item *item) {
+  if (!ui_set_menu_scale_percent(item->value)) {
+    item->value = ui_get_menu_scale_percent();
+  }
+}
+
+static void menu_righe_cambiate(struct menu_item *item) {
+  if (!ui_set_menu_row_gap(item->value)) {
+    item->value = ui_get_menu_row_gap();
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static struct menu_item *invio_coda_item;
+
+static void invio_coda_allinea(void) {
+  int i;
+  if (invio_coda_item == NULL) {
+    return;
+  }
+  for (i = 0; i < invio_coda_item->num_choices; i++) {
+    if (invio_coda_item->choice_ints[i] == ui_get_browser_tail_delay()) {
+      invio_coda_item->value = i;
+    }
+  }
+}
+
+static void invio_coda_cambiato(struct menu_item *item) {
+  if (item->value >= 0 && item->value < item->num_choices) {
+    ui_set_browser_tail_delay(item->choice_ints[item->value]);
+  }
 }
 
 static int load_settings() {
 
   int tmp_value;
+  const bmx_wic64_config wic64_di_serie = BMX_WIC64_CONFIG_DEFAULT;
+  wic64_config = wic64_di_serie;
 
   emux_get_int(Setting_DriveSoundEmulation, &drive_sounds_item->value);
   emux_get_int(Setting_DriveSoundEmulationVolume, &drive_sounds_vol_item->value);
@@ -3561,10 +4442,12 @@ static int load_settings() {
   }
 
   // Default pot values for buttons
-  pot_x_high_value = 192;
-  pot_x_low_value = 64;
-  pot_y_high_value = 192;
-  pot_y_low_value = 64;
+
+
+  pot_x_high_value = 255;
+  pot_x_low_value = 0;
+  pot_y_high_value = 255;
+  pot_y_low_value = 0;
 
   FILE *fp;
   switch (emux_machine_class) {
@@ -3598,14 +4481,23 @@ static int load_settings() {
     load_wifi_settings();
   }
 
-  if (fp == NULL)
+  if (fp == NULL) {
+
+    int zeri[MAX_USB_DEVICES] = {0};
+    menu_usb_mapping_finish_load(zeri, zeri, zeri);
     return 0;
+  }
 
   char name_value[256];
   size_t len;
   int value;
   int usb_btn_i[MAX_USB_DEVICES];
   memset(usb_btn_i, 0, sizeof(usb_btn_i));
+
+
+  int usb_modo_letto[MAX_USB_DEVICES] = {0};
+  int usb_modo[MAX_USB_DEVICES] = {0};
+  int usb_mappa_letta[MAX_USB_DEVICES] = {0};
 
   while (1) {
     char *line = fgets(name_value, 255, fp);
@@ -3636,10 +4528,28 @@ static int load_settings() {
       port_3_menu_item->value = value;
     } else if (port_4_menu_item && strcmp(name, "port_4") == 0) {
       port_4_menu_item->value = value;
+    } else if (strncmp(name, "port_", 5) == 0 && atoi(name + 5) >= 5 &&
+               atoi(name + 5) <= MAX_JOY_PORTS) {
+      if (port_v8_menu_item[atoi(name + 5) - 5]) {
+        port_v8_menu_item[atoi(name + 5) - 5]->value = value;
+      }
+    } else if (strcmp(name, "default_disk_image") == 0) {
+
+      default_disk_set_image(value_str);
+    } else if (strcmp(name, "default_disk_drive") == 0) {
+      default_disk_set_drive(value);
     } else if (spinner_sens_item && strcmp(name, "spinner_sensitivity") == 0) {
       if (value >= 0 && value < spinner_sens_item->num_choices) {
         spinner_sens_item->value = value;
         emu_spinner_set_sensitivity(spinner_sens_item->choice_ints[value]);
+      }
+    } else if (strcmp(name, "autofire_1") == 0 ||
+               strcmp(name, "autofire_2") == 0) {
+
+      int p = name[9] - '1';
+      if (autofire_item[p] != NULL && value >= 0 && value <= 2) {
+        autofire_item[p]->value = value;
+        emux_set_autofire(p + 1, value);
       }
     } else if (palette_item[0] != NULL && strcmp(name, "palette") == 0) {
 
@@ -3697,8 +4607,49 @@ static int load_settings() {
       hotkey_tf5_item->value = value;
     } else if (strcmp(name, "hotkey_tf7") == 0) {
       hotkey_tf7_item->value = value;
+    } else if (strcmp(name, "menu_scale") == 0) {
+
+      if (ui_set_menu_scale_percent(value)) {
+        menu_scala_item->value = value;
+      }
+    } else if (strcmp(name, "menu_row_gap") == 0) {
+      if (ui_set_menu_row_gap(value)) {
+        menu_righe_item->value = value;
+      }
+    } else if (strcmp(name, "browser_tail_delay") == 0) {
+      ui_set_browser_tail_delay(value);
+      invio_coda_allinea();
+    } else if (strcmp(name, "menu_mouse") == 0) {
+      menu_mouse_item->value = value ? 1 : 0;
+      ui_set_menu_mouse_enabled(menu_mouse_item->value);
+    } else if (quick_access_setting_slot(name) >= 0) {
+
+      int quick_slot = quick_access_setting_slot(name);
+      int quick_id;
+      struct menu_item *target = NULL;
+      if (menu_quick_access_id_from_name(value_str, &quick_id)) {
+        target = menu_quick_access_find(ui_menu_root(), quick_id,
+                                        MENU_SUB_NONE, 0);
+      }
+      if (target != NULL) {
+        menu_quick_access_set(&quick_access_state, quick_slot, quick_id,
+                              MENU_SUB_NONE);
+      }
     } else if (strcmp(name, "reset_confirm") == 0) {
       reset_confirm_item->value = value;
+    } else if (strcmp(name, "screenshot_stage") == 0) {
+
+      screenshot_stage_item->value =
+          value >= SCREENSHOT_EMULATOR && value <= SCREENSHOT_SCREEN
+              ? value : SCREENSHOT_CRT;
+    } else if (strcmp(name, "screenshot_width") == 0) {
+      screenshot_size_item->choice_ints[0] = value > 0 ? value : 0;
+      screenshot_size_item->value = 0;
+      screenshot_refresh_sizes();
+    } else if (strcmp(name, "screenshot_format") == 0) {
+      screenshot_format_item->value = value == SCREENSHOT_FORMAT_PPM
+                                          ? SCREENSHOT_FORMAT_PPM
+                                          : SCREENSHOT_FORMAT_PNG;
     } else if (strcmp(name, "drive_flush") == 0) {
       if (drive_flush_item != NULL && value >= 0 &&
           value < drive_flush_item->num_choices) {
@@ -3769,6 +4720,23 @@ static int load_settings() {
       if (value >= 0 && value <= 2) {
         timezone_dst_item->value = value;
       }
+    } else if (ntp_enabled_item != NULL && strcmp(name, "ntp_enabled") == 0) {
+
+      ntp_enabled_item->value = value ? 1 : 0;
+    } else if (ntp_server_item != NULL && strcmp(name, "ntp_server") == 0) {
+      ntp_copia_testo(ntp_server_item, value_str);
+    } else if (ntp_fallback_item != NULL &&
+               strcmp(name, "ntp_fallback") == 0) {
+      ntp_copia_testo(ntp_fallback_item, value_str);
+    } else if (ntp_interval_item != NULL &&
+               strcmp(name, "ntp_interval_min") == 0) {
+      for (int k = 0; k < ntp_interval_item->num_choices; k++) {
+        if (ntp_interval_item->choice_ints[k] == value) {
+          ntp_interval_item->value = k;
+        }
+      }
+    } else if (strncmp(name, "wic64", 5) == 0) {
+      wic64_leggi(name, value_str);
     } else if (smb_password_item != NULL &&
                strcmp(name, "smb_password") == 0) {
       int n = 0;
@@ -3802,6 +4770,13 @@ static int load_settings() {
           campo->value = n;
         }
       }
+    } else if (strcmp(name, "autostart_prg_mode") == 0) {
+
+
+      if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU &&
+          (value == BMX_AUTOSTART_PRG_RAM || value == BMX_AUTOSTART_PRG_DISK)) {
+        emux_set_int(Setting_AutostartPrgMode, value);
+      }
     } else if (strcmp(name, "drive_type_8") == 0) {
       emux_set_int_1(Setting_DriveNType, value, 8);
     } else if (strcmp(name, "drive_type_9") == 0) {
@@ -3831,6 +4806,17 @@ static int load_settings() {
     } else if (strcmp(name, "real_drive_log") == 0) {
       if (realdrive_log_item != NULL) {
         realdrive_log_item->value = value ? 1 : 0;
+      }
+    } else if (strcmp(name, "real_drive_commodore") == 0) {
+
+
+
+
+
+
+      if (realdrive_commodore_item != NULL && value &&
+          drive_commodore_cmdline < 0) {
+        drive_commodore_da_settings = 1;
       }
     } else if (strncmp(name, "real_drive_", 11) == 0) {
       int u = atoi(name + 11);
@@ -3958,6 +4944,10 @@ static int load_settings() {
       use_scaling_params_item[0]->value = value;
     } else if (strcmp(name, "use_int_scaling_1") == 0 && emux_machine_class == BMC64_MACHINE_CLASS_C128) {
       use_scaling_params_item[1]->value = value;
+    } else if (strcmp(name, "crt_preset") == 0) {
+
+      snprintf(s_crt_saved_name, sizeof(s_crt_saved_name), "%s", value_str);
+      s_crt_saved_name_letto = 1;
     } else if (strcmp(name, "s_curvature") == 0) {
       s_curvature_item->value = value;
     } else if (strcmp(name, "s_curvature_x") == 0) {
@@ -4113,7 +5103,11 @@ static int load_settings() {
       }
     } else {
       for (int k=0; k < MAX_USB_DEVICES; k++) {
-       if (strcmp(name, usb_btn_name[k]) == 0) {
+       if (strcmp(name, usb_mapping_name[k]) == 0) {
+         usb_modo_letto[k] = 1;
+         usb_modo[k] = value;
+       } else if (strcmp(name, usb_btn_name[k]) == 0) {
+         usb_mappa_letta[k] = 1;
          if (value >= NUM_BUTTON_ASSIGNMENTS) {
             value = NUM_BUTTON_ASSIGNMENTS - 1;
          }
@@ -4124,19 +5118,38 @@ static int load_settings() {
          }
        } else if (strcmp(name, usb_pref_name[k]) == 0) {
          usb_pref[k] = value;
+         usb_mappa_letta[k] = 1;
        } else if (strcmp(name, usb_x_name[k]) == 0) {
          usb_x_axis[k] = value;
+         usb_mappa_letta[k] = 1;
        } else if (strcmp(name, usb_y_name[k]) == 0) {
          usb_y_axis[k] = value;
+         usb_mappa_letta[k] = 1;
        } else if (strcmp(name, usb_x_t_name[k]) == 0) {
          usb_x_thresh[k] = ((float)value) / 100.0f;
+         usb_mappa_letta[k] = 1;
        } else if (strcmp(name, usb_y_t_name[k]) == 0) {
          usb_y_thresh[k] = ((float)value) / 100.0f;
+         usb_mappa_letta[k] = 1;
        }
       }
     }
   }
   fclose(fp);
+  quick_access_refresh_slot_items();
+  menu_usb_mapping_finish_load(usb_modo_letto, usb_modo, usb_mappa_letta);
+  wic64_dopo_il_caricamento();
+
+
+
+  if (pot_x_high_value == 192 && pot_x_low_value == 64) {
+    pot_x_high_value = 255;
+    pot_x_low_value = 0;
+  }
+  if (pot_y_high_value == 192 && pot_y_low_value == 64) {
+    pot_y_high_value = 255;
+    pot_y_low_value = 0;
+  }
 
 
 
@@ -4318,7 +5331,319 @@ void menu_autostart_nome(char *nome) {
   }
 }
 
+
+
+
+
+
+
+
+#define TEXT_FILE_VIEW_MAX_BYTES 8192U
+#define TEXT_FILE_VIEW_MAX_ROWS 256U
+#define TEXT_FILE_VIEW_TRUNCATION_MARKER "[File truncated]"
+
+static int menu_file_item_to_dir_index(struct menu_item *item);
+
+static int add_text_viewer_row(struct menu_item *root, const char *text,
+                               unsigned *row_count, unsigned max_rows) {
+  if (row_count != NULL && *row_count >= max_rows) {
+    return 0;
+  }
+  if (ui_menu_add_button(MENU_TEXT, root, text) == NULL) {
+    return 0;
+  }
+  if (row_count != NULL) {
+    (*row_count)++;
+  }
+  return 1;
+}
+
+
+
+static int byte_in_una_riga(const char *p) {
+  int n = strlen(p);
+  if (n <= MAX_MENU_STR - 1) {
+    return n;
+  }
+  n = MAX_MENU_STR - 1;
+  while (n > 0 && ((unsigned char)p[n] & 0xC0) == 0x80) {
+    n--;
+  }
+  return n;
+}
+
+static int add_text_viewer_segment(struct menu_item *root, const char *start,
+                                   int len, unsigned *row_count,
+                                   unsigned max_rows) {
+  char segment[MAX_MENU_STR];
+  if (len >= MAX_MENU_STR) {
+    len = MAX_MENU_STR - 1;
+  }
+  memcpy(segment, start, len);
+  segment[len] = 0;
+  return add_text_viewer_row(root, segment, row_count, max_rows);
+}
+
+static int add_text_viewer_line(struct menu_item *root, char *line,
+                                unsigned *row_count, unsigned max_rows) {
+  int len;
+  char *p;
+
+  len = strlen(line);
+  while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+    line[--len] = 0;
+  }
+  for (p = line; *p; p++) {
+    if (*p == '\t') {
+      *p = ' ';
+    }
+  }
+
+  p = line;
+  while (*p && isspace((unsigned char)*p)) {
+    p++;
+  }
+  if (!*p) {
+    return add_text_viewer_row(root, "", row_count, max_rows);
+  }
+
+  while (*p) {
+    int take;
+    int break_at;
+
+    while (*p && isspace((unsigned char)*p)) {
+      p++;
+    }
+    if (!*p) {
+      break;
+    }
+    take = byte_in_una_riga(p);
+    if (p[take] == '\0') {
+      return add_text_viewer_row(root, p, row_count, max_rows);
+    }
+    break_at = take;
+    while (break_at > 0 && !isspace((unsigned char)p[break_at])) {
+      break_at--;
+    }
+    if (break_at > 0) {
+      take = break_at;
+    }
+    if (!add_text_viewer_segment(root, p, take, row_count, max_rows)) {
+      return 0;
+    }
+    p += take;
+  }
+  return 1;
+}
+
+static int text_file_extension_supported(const char *name) {
+  static const char *const extensions[] = {
+    ".txt", ".md", ".nfo", ".log", ".ini", ".cfg", ".conf", ".csv",
+    ".json", ".xml", ".html", ".htm", ".css", ".js", ".mjs", ".vkm",
+  };
+  const char *extension;
+  unsigned i;
+
+  if (name == NULL) {
+    return 0;
+  }
+  extension = strrchr(name, '.');
+  if (extension == NULL || extension == name) {
+    return 0;
+  }
+  for (i = 0; i < sizeof extensions / sizeof extensions[0]; i++) {
+    if (strcasecmp(extension, extensions[i]) == 0) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static void sanitize_text_file_contents(char *text, size_t length) {
+  size_t i;
+
+  for (i = 0; i < length; i++) {
+    unsigned char character = (unsigned char)text[i];
+    if (character < 0x20 && character != '\n' && character != '\r' &&
+        character != '\t') {
+      text[i] = '?';
+    } else if (character == 0x7f) {
+      text[i] = '?';
+    }
+  }
+}
+
+
+static int testo_utf8_valido(const unsigned char *t, size_t n) {
+  size_t i = 0;
+  while (i < n) {
+    unsigned char c = t[i];
+    size_t seguono;
+    size_t k;
+    if (c < 0x80) {
+      i++;
+      continue;
+    } else if (c >= 0xC2 && c <= 0xDF) {
+      seguono = 1;
+    } else if (c >= 0xE0 && c <= 0xEF) {
+      seguono = 2;
+    } else if (c >= 0xF0 && c <= 0xF4) {
+      seguono = 3;
+    } else {
+      return 0;
+    }
+    for (k = 1; k <= seguono; k++) {
+      if (i + k >= n || (t[i + k] & 0xC0) != 0x80) {
+        return 0;
+      }
+    }
+    i += seguono + 1;
+  }
+  return 1;
+}
+
+
+
+static char *latin1_in_utf8(const char *t, size_t n) {
+  char *u = (char *)malloc(n * 2 + 1);
+  size_t i;
+  size_t j = 0;
+  if (u == NULL) {
+    return NULL;
+  }
+  for (i = 0; i < n; i++) {
+    unsigned char c = (unsigned char)t[i];
+    if (c < 0x80) {
+      u[j++] = (char)c;
+    } else if (c < 0xA0) {
+      u[j++] = '?';
+    } else {
+      u[j++] = (char)(0xC0 | (c >> 6));
+      u[j++] = (char)(0x80 | (c & 0x3F));
+    }
+  }
+  u[j] = '\0';
+  return u;
+}
+
+static int show_text_file_if_supported(struct menu_item *item) {
+  static const char empty_file_message[] = "[Empty file]";
+  unsigned row_count = 0;
+  int dir_index;
+  int truncated;
+  char path[300];
+  char *line;
+  char *text;
+  FILE *fp;
+  size_t i;
+  size_t length;
+  struct menu_item *viewer_root;
+
+  if (item == NULL || item->type != BUTTON ||
+      item->sub_id != MENU_SUB_PICK_FILE ||
+      !text_file_extension_supported(item->str_value)) {
+    return 0;
+  }
+
+  dir_index = menu_file_item_to_dir_index(item);
+  if (dir_index < 0) {
+    ui_error("Cannot open text file");
+    return 1;
+  }
+  snprintf(path, sizeof path, "%s",
+           fullpath((DirType)dir_index, item->str_value));
+
+  fp = fopen(path, "rb");
+  if (fp == NULL) {
+    ui_error("Cannot open text file");
+    return 1;
+  }
+
+  text = (char *)malloc(TEXT_FILE_VIEW_MAX_BYTES + 1U);
+  if (text == NULL) {
+    fclose(fp);
+    ui_error("Out of memory");
+    return 1;
+  }
+
+  length = fread(text, 1, TEXT_FILE_VIEW_MAX_BYTES, fp);
+  if (ferror(fp)) {
+    fclose(fp);
+    free(text);
+    ui_error("Cannot read text file");
+    return 1;
+  }
+  truncated = fgetc(fp) != EOF;
+  if (ferror(fp)) {
+    fclose(fp);
+    free(text);
+    ui_error("Cannot read text file");
+    return 1;
+  }
+  fclose(fp);
+
+  sanitize_text_file_contents(text, length);
+  text[length] = '\0';
+  if (!testo_utf8_valido((const unsigned char *)text, length)) {
+    char *u = latin1_in_utf8(text, length);
+    if (u != NULL) {
+      free(text);
+      text = u;
+      length = strlen(text);
+    }
+  }
+
+  viewer_root = ui_push_menu(-1, -1);
+  if (viewer_root == NULL) {
+    free(text);
+    return 1;
+  }
+  viewer_root->sub_id = MENU_SUB_TEXT_CONTENTS;
+  viewer_root->left_right_listener_func = files_left_right_listener;
+  ui_menu_add_button(MENU_TEXT, viewer_root, item->str_value);
+  ui_menu_add_divider(viewer_root);
+
+  if (length == 0U) {
+    add_text_viewer_row(viewer_root, empty_file_message, &row_count,
+                        TEXT_FILE_VIEW_MAX_ROWS);
+  } else {
+    line = text;
+    for (i = 0; i < length; i++) {
+      if (text[i] != '\n') {
+        continue;
+      }
+      text[i] = '\0';
+      if (!add_text_viewer_line(viewer_root, line, &row_count,
+                                TEXT_FILE_VIEW_MAX_ROWS - 1U)) {
+        truncated = 1;
+        break;
+      }
+      line = text + i + 1U;
+    }
+    if (i == length && line < text + length &&
+        !add_text_viewer_line(viewer_root, line, &row_count,
+                              TEXT_FILE_VIEW_MAX_ROWS - 1U)) {
+      truncated = 1;
+    }
+  }
+
+  if (truncated) {
+    add_text_viewer_row(viewer_root, TEXT_FILE_VIEW_TRUNCATION_MARKER,
+                        &row_count, TEXT_FILE_VIEW_MAX_ROWS);
+  }
+
+
+
+
+  free(text);
+  return 1;
+}
+
 static void select_file(struct menu_item *item) {
+
+  if (show_text_file_if_supported(item)) {
+    return;
+  }
   switch (item->id) {
 
      case MENU_REU_ATTACH_IMAGE_FILE:
@@ -4369,6 +5694,11 @@ static void select_file(struct menu_item *item) {
        } else {
          ui_pop_all_and_toggle();
        }
+       return;
+     case MENU_DEFAULT_DISK_FILE:
+
+       default_disk_set_image(fullpath(DIR_DISKS, item->str_value));
+       ui_pop_menu();
        return;
      case MENU_DISK_FILE: {
 
@@ -4590,6 +5920,7 @@ static int menu_file_item_to_dir_index(struct menu_item *item) {
   case MENU_LOAD_SNAP_FILE:
   case MENU_SAVE_SNAP_FILE:
     return DIR_SNAPS;
+  case MENU_DEFAULT_DISK_FILE:
   case MENU_DISK_FILE:
   case MENU_IDE64_IMAGE_1_FILE:
   case MENU_IDE64_IMAGE_2_FILE:
@@ -4693,6 +6024,7 @@ static struct menu_item *relist_files_after_dir_change(struct menu_item *item) {
   case MENU_SAVE_SNAP_FILE:
     root = show_files(DIR_SNAPS, FILTER_SNAP, item->id, 1);
     break;
+  case MENU_DEFAULT_DISK_FILE:
   case MENU_DISK_FILE:
   case MENU_IDE64_IMAGE_1_FILE:
   case MENU_IDE64_IMAGE_2_FILE:
@@ -4857,6 +6189,287 @@ static void enter_dir(struct menu_item *item) {
 
 
 
+
+
+
+
+
+static void menu_autostart_numero(DirType dir_type, char *nome,
+                                  unsigned int numero) {
+  char *dove;
+
+  modello_secondo_immagine(nome, 8);
+  dove = fullpath(dir_type, nome);
+  ui_info("Starting...");
+  if (emux_autostart_file_n(dove, numero) < 0) {
+    ui_pop_menu();
+    ui_error("Failed to autostart:\n%s", dove);
+  } else {
+    ui_pop_all_and_toggle();
+  }
+}
+
+static void autostart_image_content_entry(struct menu_item *item) {
+  menu_autostart_numero((DirType)item->sub_id, item->str_value,
+                        (unsigned int)item->value);
+}
+
+static struct menu_item *add_image_content_line(struct menu_item *root,
+                                                const char *line,
+                                                int petscii) {
+  struct menu_item *item =
+      ui_menu_add_button(MENU_ID_DO_NOTHING, root, line != NULL ? line : "");
+  if (item != NULL) {
+    item->name_petscii = petscii;
+  }
+  return item;
+}
+
+struct contenuti_immagine {
+  struct menu_item *root;
+  DirType dir_type;
+  const char *nome;
+};
+
+
+
+static void riga_contenuti_immagine(int tipo, unsigned int numero,
+                                    const char *testo, void *ctx) {
+  struct contenuti_immagine *c = (struct contenuti_immagine *)ctx;
+  struct menu_item *item = add_image_content_line(c->root, testo, tipo != 2);
+  if (item == NULL || tipo != 1) {
+    return;
+  }
+  item->sub_id = c->dir_type;
+  item->value = (int)numero;
+  item->on_value_changed = autostart_image_content_entry;
+  snprintf(item->str_value, sizeof item->str_value, "%s", c->nome);
+}
+
+static void show_image_contents(DirType dir_type, const char *name) {
+  char percorso[256];
+  char titolo[300];
+  struct menu_item *root;
+  struct contenuti_immagine c;
+
+  snprintf(percorso, sizeof percorso, "%s", fullpath(dir_type, (char *)name));
+  root = ui_push_menu(-1, -1);
+  if (root == NULL) {
+    return;
+  }
+  root->sub_id = MENU_SUB_IMAGE_CONTENTS;
+  root->left_right_listener_func = files_left_right_listener;
+  snprintf(titolo, sizeof titolo, "Contents: %s", name);
+  add_image_content_line(root, titolo, 0);
+  ui_menu_add_divider(root);
+  c.root = root;
+  c.dir_type = dir_type;
+  c.nome = name;
+  if (emux_image_contents(percorso, riga_contenuti_immagine, &c) < 0) {
+    add_image_content_line(root, "(Cannot read image contents)", 0);
+  }
+
+
+
+
+
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+static int prima_unita_vera(void) {
+  int u;
+  for (u = 8; u <= 11; u++) {
+    if (emux_is_real_drive(u)) {
+      return u;
+    }
+  }
+  return 8;
+}
+
+struct righe_dir_xum {
+  struct menu_item *root;
+  int righe;
+};
+
+static void riga_dir_xum(int tipo, unsigned int numero, const char *testo,
+                         void *ctx) {
+  struct righe_dir_xum *c = (struct righe_dir_xum *)ctx;
+  (void)numero;
+  add_image_content_line(c->root, testo, tipo != 2);
+  c->righe++;
+
+
+
+
+
+
+
+
+
+
+}
+
+static void show_xum_directory(void) {
+  struct menu_item *root;
+  struct righe_dir_xum c;
+  char titolo[48];
+  char perche[64];
+  int unita[4];
+  int quante = 0;
+  int u, k, esito, fermato;
+
+
+
+
+  for (u = 8; u <= 11; u++) {
+    if (emux_is_real_drive(u)) {
+      unita[quante++] = u;
+    }
+  }
+  if (quante == 0) {
+    unita[quante++] = 8;
+  }
+  root = ui_push_menu(-1, -1);
+  if (root == NULL) {
+    return;
+  }
+  root->sub_id = MENU_SUB_IMAGE_CONTENTS;
+  root->left_right_listener_func = files_left_right_listener;
+  for (k = 0; k < quante; k++) {
+    if (k > 0) {
+      ui_menu_add_divider(root);
+    }
+    snprintf(titolo, sizeof titolo, "Directory of drive %d on XUM1541",
+             unita[k]);
+    add_image_content_line(root, titolo, 0);
+    ui_menu_add_divider(root);
+    c.root = root;
+    c.righe = 0;
+    perche[0] = '\0';
+    fermato = 0;
+    esito = emux_real_drive_directory(unita[k], riga_dir_xum, &c, perche,
+                                      (int)sizeof perche, &fermato);
+    if (esito == -1) {
+      add_image_content_line(root, "No adapter plugged in.", 0);
+    } else if (esito == -2) {
+      add_image_content_line(root, "The bus is busy: try again, or", 0);
+      add_image_content_line(root, "use Reset Drive on XUM1541.", 0);
+    } else if (esito == -3) {
+      add_image_content_line(root, "The drive does not answer.", 0);
+      if (perche[0] != '\0') {
+        add_image_content_line(root, perche, 0);
+      }
+    } else if (esito < 0) {
+      add_image_content_line(root, "Cannot read the directory:", 0);
+      add_image_content_line(root, perche[0] != '\0' ? perche : "no answer",
+                             0);
+    } else if (fermato) {
+      add_image_content_line(root, "Stopped by the drive:", 0);
+      add_image_content_line(root, perche, 0);
+    }
+
+
+
+
+  }
+}
+
+
+
+
+
+
+
+static int files_left_right_listener(struct menu_item* parent,
+                                     struct menu_item* current, int right) {
+  if (parent->sub_id == MENU_SUB_IMAGE_CONTENTS ||
+      parent->sub_id == MENU_SUB_TEXT_CONTENTS) {
+    if (!right) {
+      ui_pop_menu();
+    }
+    return 1;
+  }
+
+  if (current == NULL || current->disabled || current->type != BUTTON) {
+    return 0;
+  }
+
+  if (!right) {
+    if (strcmp(current_dir_names[parent->value], "/") != 0) {
+      up_dir(current);
+    }
+    return 1;
+  }
+
+  if (current->sub_id == MENU_SUB_ENTER_DIR) {
+    enter_dir(current);
+    return 1;
+  }
+
+  if (current->sub_id == MENU_SUB_PICK_FILE &&
+      current->str_value[0] != '\0') {
+    show_image_contents((DirType)parent->value, current->str_value);
+    return 1;
+  }
+
+  return 0;
+}
+
+
+
+
+static void ricerca_campo_scritto(struct menu_item *cur) {
+  if (cur == NULL || cur->sub_id != MENU_SUB_SEARCH || !ricerca_riga ||
+      cur != ricerca_item_riga) {
+    return;
+  }
+  strncpy(ricerca_bozza, cur->str_value, RICERCA_MAX);
+  ricerca_bozza[RICERCA_MAX] = '\0';
+  ricerca_pos = cur->value;
+  ricerca_da_rifare = 1;
+}
+
+
+
+
+
+static void ricerca_dopo_i_tasti(void) {
+  struct menu_item *riga = ricerca_item_riga;
+
+  if (!ricerca_da_rifare) {
+    return;
+  }
+  ricerca_da_rifare = 0;
+  if (!ui_enabled || riga == NULL || ricerca_root == NULL ||
+      ui_menu_in_cima() != ricerca_root ||
+      ricerca_indice(ricerca_root, riga) < 0) {
+    ricerca_pos = -1;
+    return;
+  }
+  ricerca_testo_da(ricerca_bozza);
+  ricerca_riga = 1;
+  ricerca_sul_primo = 0;
+  ricerca_da_se = 1;
+  rilista_stessa_finestra(riga, 1);
+}
+
+
+
+
 static int ricerca_tasto(struct menu_item *cur, char ch) {
   struct menu_item *riga = NULL;
   size_t n;
@@ -4907,6 +6520,7 @@ static int ricerca_tasto(struct menu_item *cur, char ch) {
       riga->str_value[n + 1] = '\0';
     }
     riga->value = strlen(riga->str_value);
+    ricerca_campo_scritto(riga);
     ui_to_top();
     ui_set_cur_pos(ricerca_indice(ricerca_root, riga));
     return 1;
@@ -4918,6 +6532,7 @@ static int ricerca_tasto(struct menu_item *cur, char ch) {
 
   ricerca_bozza[0] = ch;
   ricerca_bozza[1] = '\0';
+  ricerca_testo_da(ricerca_bozza);
   ricerca_riga = 1;
   ricerca_sul_primo = 0;
   ricerca_da_se = 1;
@@ -5748,6 +7363,26 @@ static int crt_preset_item_bounds(const struct menu_item *item,
   }
 }
 
+
+
+static void remember_crt_parameters(void) {
+  for (size_t i = 0; i < CRT_PRESET_FIELD_COUNT; ++i) {
+    struct menu_item *bound_item = *s_crt_preset_bindings[i].item;
+    s_crt_baseline[i] = bound_item != NULL ? bound_item->value : 0;
+  }
+  s_crt_modified = 0;
+}
+
+static int crt_parameters_changed(void) {
+  for (size_t i = 0; i < CRT_PRESET_FIELD_COUNT; ++i) {
+    struct menu_item *bound_item = *s_crt_preset_bindings[i].item;
+    if (bound_item != NULL && bound_item->value != s_crt_baseline[i]) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
 static int load_crt_preset_choice(int choice) {
   if (choice == CRT_PRESET_CURRENT_CHOICE) {
     s_crt_preset_applied_choice = CRT_PRESET_CURRENT_CHOICE;
@@ -5795,6 +7430,7 @@ static int load_crt_preset_choice(int choice) {
   sanity_check_shader_params();
   s_crt_preset_item->value = choice;
   s_crt_preset_applied_choice = choice;
+  remember_crt_parameters();
 
   printf("boot: crt preset loaded name=%s clamped=%u unknown=%u",
          s_crt_preset_item->choices[choice], result.clamped_count,
@@ -5811,6 +7447,7 @@ static void mark_crt_preset_modified(void) {
     s_crt_preset_item->value = CRT_PRESET_CURRENT_CHOICE;
   }
   s_crt_preset_applied_choice = CRT_PRESET_CURRENT_CHOICE;
+  s_crt_modified = crt_parameters_changed();
 }
 
 static void disable_all_crt_effects(void) {
@@ -5828,6 +7465,23 @@ static void disable_all_crt_effects(void) {
 }
 
 static void apply_startup_crt_preset(int settings_loaded) {
+
+
+
+  if (settings_loaded && s_crt_saved_name_letto) {
+    if (strcmp(s_crt_saved_name, CRT_PRESET_SALVATO_CORRENTE) == 0) {
+      mark_crt_preset_modified();
+      printf("boot: crt preset saved=current-settings\n");
+      return;
+    }
+    int saved_choice = find_crt_preset_choice(s_crt_saved_name);
+    if (saved_choice > CRT_PRESET_CURRENT_CHOICE &&
+        load_crt_preset_choice(saved_choice)) {
+      return;
+    }
+    printf("boot: crt preset saved name=%s not available\n",
+           s_crt_saved_name);
+  }
   int default_choice = find_crt_preset_choice("Default");
   if (default_choice > 0 && load_crt_preset_choice(default_choice)) {
     return;
@@ -5841,6 +7495,226 @@ static void apply_startup_crt_preset(int settings_loaded) {
     printf("boot: crt preset fallback=saved-settings\n");
   }
 }
+
+
+static void crt_save_dialog_popped(struct menu_item *old_root,
+                                   struct menu_item *new_root) {
+  (void)old_root;
+  (void)new_root;
+  s_crt_save_name = NULL;
+  s_crt_pending_name[0] = '\0';
+}
+
+static void show_crt_save_dialog(void) {
+  char name[MAX_MENU_STR] = "";
+  struct menu_item *root = ui_push_menu(36, 8);
+  struct menu_item *riga;
+  root->on_popped_off = crt_save_dialog_popped;
+  riga = ui_menu_add_button(MENU_ID_DO_NOTHING, root, "Save as preset");
+  riga->disabled = 1;
+  riga = ui_menu_add_button(MENU_ID_DO_NOTHING, root, "Folder: " CRT_PRESET_DIR);
+  riga->disabled = 1;
+  ui_menu_add_divider(root);
+  if (s_crt_preset_applied_choice > CRT_PRESET_CURRENT_CHOICE &&
+      s_crt_preset_applied_choice < s_crt_preset_item->num_choices) {
+    snprintf(name, sizeof(name), "%s",
+             s_crt_preset_item->choices[s_crt_preset_applied_choice]);
+  }
+  s_crt_save_name = ui_menu_add_text_field_limit(
+      MENU_SHADER_SAVE_NAME, root, "Name", name, MAX_MENU_STR - 1);
+  if (s_crt_save_name != NULL) {
+    s_crt_save_name->textfield_gap = 3;
+  }
+  ui_menu_add_button(MENU_SHADER_SAVE_CONFIRM, root, "Save");
+  ui_menu_add_button(MENU_SHADER_SAVE_CANCEL, root, "Cancel");
+  ui_select_first_interactive_item();
+}
+
+static void show_crt_overwrite_dialog(const char *filename) {
+  struct menu_item *root = ui_push_menu(36, 6);
+  struct menu_item *riga;
+  riga = ui_menu_add_button(MENU_ID_DO_NOTHING, root,
+                            "Overwrite existing preset?");
+  riga->disabled = 1;
+  riga = ui_menu_add_button(MENU_ID_DO_NOTHING, root, filename);
+  riga->disabled = 1;
+  ui_menu_add_button(MENU_SHADER_OVERWRITE, root, "Overwrite");
+  ui_menu_add_button(MENU_SHADER_SAVE_CANCEL, root, "Cancel");
+  ui_set_cur_pos(3);
+}
+
+static void show_crt_unsaved_dialog(void) {
+  struct menu_item *root = ui_push_menu(36, 6);
+  struct menu_item *riga = ui_menu_add_button(MENU_ID_DO_NOTHING, root,
+                                              "Unsaved CRT changes");
+  riga->disabled = 1;
+  ui_menu_add_button(MENU_SHADER_UNSAVED_SAVE, root, "Save as preset...");
+  ui_menu_add_button(MENU_SHADER_DISCARD, root, "Discard changes");
+  ui_menu_add_button(MENU_SHADER_SAVE_CANCEL, root, "Cancel");
+  ui_set_cur_pos(3);
+}
+
+static void crt_select_by_name(const char *name) {
+  int choice = find_crt_preset_choice(name);
+  if (choice <= CRT_PRESET_CURRENT_CHOICE) {
+    ui_error("Invalid CRT preset");
+    return;
+  }
+  reveal_crt_shader_preview();
+  if (load_crt_preset_choice(choice)) {
+    handle_shader_param_change();
+  } else {
+    s_crt_preset_item->value = s_crt_preset_applied_choice;
+    ui_error("Invalid CRT preset");
+  }
+}
+
+static void crt_save_preset(int overwrite) {
+  char filename[MAX_MENU_STR + 8];
+  char display[MAX_MENU_STR];
+  char path[MAX_STR_VAL_LEN];
+  char pending[MAX_MENU_STR];
+  struct crt_preset_field fields[CRT_PRESET_FIELD_COUNT];
+  int values[CRT_PRESET_FIELD_COUNT];
+  struct stat info;
+  size_t length;
+  int result;
+  int choice;
+
+  if (s_crt_save_name == NULL) {
+    return;
+  }
+  if (!crt_preset_filename(s_crt_save_name->str_value, filename,
+                           sizeof(filename))) {
+    ui_error("Invalid preset name. Use a filename without path separators "
+             "or special characters.");
+    return;
+  }
+  length = strlen(filename) - strlen(CRT_PRESET_EXTENSION);
+  if (length == 0 || length >= sizeof(display)) {
+    ui_error("Invalid preset name");
+    return;
+  }
+  memcpy(display, filename, length);
+  display[length] = '\0';
+  if (find_crt_preset_choice(display) < 0 &&
+      s_crt_preset_item->num_choices >= MAX_CHOICES) {
+    ui_error("Preset list is full. Remove an unused preset file first.");
+    return;
+  }
+  if (stat(CRT_PRESET_DIR, &info) != 0 && !crt_preset_folder()) {
+    ui_error("Could not create preset folder " CRT_PRESET_DIR);
+    return;
+  }
+  snprintf(path, sizeof(path), "%s/%s", CRT_PRESET_DIR, filename);
+  for (size_t i = 0; i < CRT_PRESET_FIELD_COUNT; ++i) {
+    struct menu_item *bound_item = *s_crt_preset_bindings[i].item;
+    fields[i].key = s_crt_preset_bindings[i].key;
+    if (bound_item == NULL ||
+        !crt_preset_item_bounds(bound_item, &fields[i].min, &fields[i].max)) {
+      ui_error("Invalid CRT parameter schema");
+      return;
+    }
+    values[i] = bound_item->value;
+  }
+  result = crt_preset_save_file(path, overwrite, fields,
+                                CRT_PRESET_FIELD_COUNT, values);
+  if (result == 1) {
+    show_crt_overwrite_dialog(filename);
+    return;
+  }
+  if (result != 0) {
+    printf("crt: preset NON salvato '%s'\n", path);
+    ui_error("Could not save preset %s", path);
+    return;
+  }
+  printf("crt: preset salvato '%s'\n", path);
+  snprintf(pending, sizeof(pending), "%s", s_crt_pending_name);
+  ui_pop_menu();
+  populate_crt_preset_menu();
+  update_crt_shader_availability();
+  choice = find_crt_preset_choice(display);
+  if (choice > CRT_PRESET_CURRENT_CHOICE) {
+    s_crt_preset_item->value = choice;
+    s_crt_preset_applied_choice = choice;
+  }
+  remember_crt_parameters();
+  if (pending[0] != '\0') {
+    crt_select_by_name(pending);
+  } else {
+    ui_info("Preset saved. Use Save settings to remember this selection "
+            "at startup.");
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -6755,10 +8629,656 @@ void menu_pagina_tasti_rapidi_2(void) {
   ui_menu_add_button(MENU_TEXT, pagina, "Menu key and F-key hotkeys: Prefs.");
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define KEYMAP_EDITOR_REPORT_KEYS 6
+static unsigned keymap_editor_capture_enabled;
+static unsigned keymap_editor_capture_ready;
+static unsigned keymap_editor_capture_wait_neutral;
+static unsigned keymap_editor_capture_wait_release;
+static long keymap_editor_capture_keycode;
+static unsigned char keymap_editor_capture_modifiers;
+static unsigned char keymap_editor_held_modifiers[MAX_USB_DEVICES];
+static unsigned char keymap_editor_held_keys[MAX_USB_DEVICES]
+                                            [KEYMAP_EDITOR_REPORT_KEYS];
+static struct keymap_editor_model keymap_editor_model;
+static struct menu_item *keymap_editor_target_items[KEYMAP_EDITOR_MAX_TARGETS];
+static size_t keymap_editor_binding_cursor[KEYMAP_EDITOR_MAX_TARGETS];
+static int keymap_editor_active;
+static int keymap_editor_editable;
+static int keymap_editor_waiting_target = -1;
+static size_t keymap_editor_waiting_binding;
+static int keymap_editor_waiting_add;
+static int keymap_editor_pending_target = -1;
+static size_t keymap_editor_pending_binding;
+static int keymap_editor_pending_add;
+static long keymap_editor_pending_keycode;
+static int keymap_editor_pending_flags;
+static int keymap_editor_return_add;
+
+
+
+
+static int keymap_editor_contains(
+    const unsigned char keys[KEYMAP_EDITOR_REPORT_KEYS], unsigned char usage) {
+  int i;
+  for (i = 0; i < KEYMAP_EDITOR_REPORT_KEYS; i++) {
+    if (keys[i] == usage) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static long keymap_editor_modifier_keycode(int bit) {
+  static const long keycodes[8] = {
+      KEYCODE_LeftControl, KEYCODE_LeftShift, KEYCODE_LeftAlt,
+      KEYCODE_LeftSuper, KEYCODE_RightControl, KEYCODE_RightShift,
+      KEYCODE_RightAlt, KEYCODE_RightSuper};
+  return bit >= 0 && bit < 8 ? keycodes[bit] : KEYCODE_NONE;
+}
+
+
+static int keymap_editor_all_released(void) {
+  int d, i;
+  for (d = 0; d < MAX_USB_DEVICES; d++) {
+    if (keymap_editor_held_modifiers[d] != 0) {
+      return 0;
+    }
+    for (i = 0; i < KEYMAP_EDITOR_REPORT_KEYS; i++) {
+      if (keymap_editor_held_keys[d][i] != 0) {
+        return 0;
+      }
+    }
+  }
+  return 1;
+}
+
+int emu_wants_raw_keyboard(void) {
+  return emu_is_ui_activated() &&
+         (__atomic_load_n(&keymap_editor_capture_enabled,
+                          __ATOMIC_ACQUIRE) != 0 ||
+          __atomic_load_n(&keymap_editor_capture_wait_release,
+                          __ATOMIC_ACQUIRE) != 0);
+}
+
+
+void emu_set_raw_keyboard(unsigned device, unsigned char modifiers,
+                          const unsigned char raw_keys[6]) {
+  unsigned char previous_keys[KEYMAP_EDITOR_REPORT_KEYS];
+  unsigned char previous_modifiers;
+  int i;
+  int event_published = 0;
+  int event_usage = 0;
+  long event_keycode = KEYCODE_NONE;
+  int event_pressed = 0;
+  int capture_active = __atomic_load_n(&keymap_editor_capture_enabled,
+                                       __ATOMIC_ACQUIRE) != 0;
+  int capture_wait_neutral = __atomic_load_n(
+      &keymap_editor_capture_wait_neutral, __ATOMIC_ACQUIRE) != 0;
+
+  if (device >= MAX_USB_DEVICES || raw_keys == NULL) {
+    return;
+  }
+
+  for (i = 0; i < KEYMAP_EDITOR_REPORT_KEYS; i++) {
+    if (raw_keys[i] >= 1 && raw_keys[i] <= 3) {
+      return;
+    }
+  }
+
+  previous_modifiers = keymap_editor_held_modifiers[device];
+  memcpy(previous_keys, keymap_editor_held_keys[device], sizeof previous_keys);
+
+
+
+  for (i = 0; i < KEYMAP_EDITOR_REPORT_KEYS; i++) {
+    unsigned char usage = raw_keys[i];
+    if (usage != 0 && !keymap_editor_contains(previous_keys, usage)) {
+      event_usage = usage;
+      event_keycode = usage;
+      event_pressed = 1;
+      event_published = 1;
+      break;
+    }
+  }
+  if (!event_published) {
+    for (i = 0; i < 8; i++) {
+      unsigned char mask = (unsigned char)(1U << i);
+      if ((modifiers & mask) != (previous_modifiers & mask)) {
+        event_usage = 0xe0 + i;
+        event_keycode = keymap_editor_modifier_keycode(i);
+        event_pressed = (modifiers & mask) != 0;
+        event_published = 1;
+        break;
+      }
+    }
+  }
+  if (!event_published) {
+    for (i = 0; i < KEYMAP_EDITOR_REPORT_KEYS; i++) {
+      unsigned char usage = previous_keys[i];
+      if (usage != 0 && !keymap_editor_contains(raw_keys, usage)) {
+        event_usage = usage;
+        event_keycode = usage;
+        event_pressed = 0;
+        event_published = 1;
+        break;
+      }
+    }
+  }
+
+  keymap_editor_held_modifiers[device] = modifiers;
+  memcpy(keymap_editor_held_keys[device], raw_keys, KEYMAP_EDITOR_REPORT_KEYS);
+
+  if (capture_active && capture_wait_neutral && keymap_editor_all_released()) {
+    __atomic_store_n(&keymap_editor_capture_wait_neutral, 0U, __ATOMIC_RELEASE);
+  }
+
+  if (event_published && capture_active && !capture_wait_neutral &&
+      ((event_usage < 0xe0 && event_pressed) ||
+       (event_usage >= 0xe0 && !event_pressed))) {
+    __atomic_store_n(&keymap_editor_capture_keycode, event_keycode,
+                     __ATOMIC_RELAXED);
+    __atomic_store_n(&keymap_editor_capture_modifiers, modifiers,
+                     __ATOMIC_RELAXED);
+    __atomic_store_n(&keymap_editor_capture_wait_release,
+                     keymap_editor_all_released() ? 0U : 1U,
+                     __ATOMIC_RELEASE);
+    __atomic_store_n(&keymap_editor_capture_ready, 1U, __ATOMIC_RELEASE);
+    __atomic_store_n(&keymap_editor_capture_enabled, 0U, __ATOMIC_RELEASE);
+    return;
+  }
+
+
+  if (!capture_active && keymap_editor_all_released()) {
+    __atomic_store_n(&keymap_editor_capture_wait_release, 0U,
+                     __ATOMIC_RELEASE);
+  }
+}
+
+static void keymap_editor_logical_target_name(size_t target_index,
+                                              char *buffer,
+                                              size_t buffer_size) {
+  const struct keymap_editor_target *target;
+  char raw[64];
+  const char *logical = NULL;
+  if (target_index >= keymap_editor_model.target_count) {
+    snprintf(buffer, buffer_size, "Unknown");
+    return;
+  }
+  target = &keymap_editor_model.targets[target_index];
+  if (!emux_keyboard_mapping_target_name(target->row, target->column,
+                                         target->flags, raw, sizeof raw)) {
+    snprintf(buffer, buffer_size, "Row %d, column %d",
+             target->row, target->column);
+    return;
+  }
+  if (strcmp(raw, "Shift+F1") == 0) logical = "F2";
+  else if (strcmp(raw, "Shift+F3") == 0) logical = "F4";
+  else if (strcmp(raw, "Shift+F5") == 0) logical = "F6";
+  else if (strcmp(raw, "Shift+F7") == 0) logical = "F8";
+  else if (strcmp(raw, "Shift+Cursor Right") == 0) logical = "Cursor Left";
+  else if (strcmp(raw, "Shift+Cursor Down") == 0) logical = "Cursor Up";
+  snprintf(buffer, buffer_size, "%s", logical != NULL ? logical : raw);
+}
+
+static void keymap_editor_refresh_target(size_t target_index) {
+  const struct keymap_editor_binding *binding;
+  struct menu_item *item;
+  size_t binding_index;
+  size_t count;
+  char value[64];
+  if (target_index >= keymap_editor_model.target_count) return;
+  item = keymap_editor_target_items[target_index];
+  if (item == NULL) return;
+  count = keymap_editor_target_binding_count(&keymap_editor_model,
+                                             target_index);
+  if (count == 0) {
+    keymap_editor_binding_cursor[target_index] = 0;
+  } else if (keymap_editor_binding_cursor[target_index] >= count) {
+    keymap_editor_binding_cursor[target_index] = count - 1;
+  }
+  binding_index = keymap_editor_binding_cursor[target_index];
+  binding = keymap_editor_target_binding(&keymap_editor_model,
+                                         target_index, binding_index);
+  if (binding == NULL) {
+    snprintf(value, sizeof value, "(unassigned)");
+  } else {
+
+    if (!keymap_editor_format_host_binding_for_layout(
+            binding->keycode, binding->flags,
+            ui_get_keyboard_layout() == MENU_TEXT_LAYOUT_DE,
+            value, sizeof value)) {
+      snprintf(value, sizeof value, "HID 0x%02lX", binding->keycode);
+    }
+    if (count > 1) {
+      size_t used = strlen(value);
+      snprintf(value + used, sizeof value - used, " [%u/%u]",
+               (unsigned)(binding_index + 1), (unsigned)count);
+    }
+  }
+  ui_menu_set_button_value_fitted(item, value, 1);
+}
+
+static int keymap_editor_usb_host_flags(long keycode,
+                                        unsigned char modifiers) {
+  int flags = 0;
+  if (modifiers & ((1U << 2) | (1U << 3) | (1U << 7))) {
+    return -1;
+  }
+  if (modifiers & ((1U << 1) | (1U << 5))) {
+    flags |= KEYMAP_EDITOR_MAP_MOD_SHIFT;
+  }
+  if (modifiers & ((1U << 0) | (1U << 4))) {
+    flags |= KEYMAP_EDITOR_MAP_MOD_CTRL;
+  }
+  if (modifiers & (1U << 6)) {
+    flags |= KEYMAP_EDITOR_MAP_MOD_RIGHT_ALT;
+  }
+  if (keycode == KEYCODE_LeftShift || keycode == KEYCODE_RightShift) {
+    flags &= ~KEYMAP_EDITOR_MAP_MOD_SHIFT;
+  } else if (keycode == KEYCODE_LeftControl ||
+             keycode == KEYCODE_RightControl) {
+    flags &= ~KEYMAP_EDITOR_MAP_MOD_CTRL;
+  } else if (keycode == KEYCODE_RightAlt) {
+    flags &= ~KEYMAP_EDITOR_MAP_MOD_RIGHT_ALT;
+  }
+  return flags;
+}
+
+static void keymap_editor_capture_start(int target_index, int add,
+                                        int wait_neutral) {
+  size_t count;
+  if (!keymap_editor_active || !keymap_editor_editable || target_index < 0 ||
+      (size_t)target_index >= keymap_editor_model.target_count) return;
+  count = keymap_editor_target_binding_count(
+      &keymap_editor_model, (size_t)target_index);
+  __atomic_store_n(&keymap_editor_capture_enabled, 0U, __ATOMIC_RELEASE);
+  __atomic_store_n(&keymap_editor_capture_wait_release, 0U, __ATOMIC_RELEASE);
+  memset(keymap_editor_held_modifiers, 0, sizeof keymap_editor_held_modifiers);
+  memset(keymap_editor_held_keys, 0, sizeof keymap_editor_held_keys);
+  __atomic_store_n(&keymap_editor_capture_ready, 0U, __ATOMIC_RELAXED);
+  __atomic_store_n(&keymap_editor_capture_wait_neutral,
+                   wait_neutral ? 1U : 0U, __ATOMIC_RELAXED);
+  keymap_editor_waiting_target = target_index;
+  keymap_editor_waiting_binding = keymap_editor_binding_cursor[target_index];
+  keymap_editor_waiting_add = add || count == 0;
+  /* Raw capture consumes the physical Shift release after Shift+Enter. */
+  ui_keyboard_clear_shift();
+  ui_menu_set_button_value_fitted(
+      keymap_editor_target_items[target_index], "(waiting)", 1);
+  __atomic_store_n(&keymap_editor_capture_enabled, 1U, __ATOMIC_RELEASE);
+}
+
+static void keymap_editor_apply_pending(void) {
+  int conflict;
+  int applied;
+  int target = keymap_editor_pending_target;
+  if (!keymap_editor_editable || target < 0 ||
+      (size_t)target >= keymap_editor_model.target_count) return;
+  conflict = keymap_editor_find_conflict(
+      &keymap_editor_model, (size_t)target, keymap_editor_pending_keycode,
+      keymap_editor_pending_flags);
+  if (keymap_editor_pending_add) {
+    applied = keymap_editor_add_binding(
+        &keymap_editor_model, (size_t)target,
+        keymap_editor_pending_keycode, keymap_editor_pending_flags);
+  } else {
+    applied = keymap_editor_replace_binding(
+        &keymap_editor_model, (size_t)target,
+        keymap_editor_pending_binding, keymap_editor_pending_keycode,
+        keymap_editor_pending_flags);
+  }
+  if (applied) {
+    size_t count = keymap_editor_target_binding_count(
+        &keymap_editor_model, (size_t)target);
+    if (keymap_editor_pending_add && count > 0) {
+      keymap_editor_binding_cursor[target] = count - 1;
+    }
+    keymap_editor_refresh_target((size_t)target);
+    if (conflict >= 0) keymap_editor_refresh_target((size_t)conflict);
+  } else {
+    keymap_editor_refresh_target((size_t)target);
+    ui_error("Could not assign key");
+  }
+  keymap_editor_pending_target = -1;
+  keymap_editor_pending_binding = 0;
+  keymap_editor_pending_add = 0;
+}
+
+static void keymap_editor_refresh_capture(void) {
+  int target;
+  int flags;
+  int conflict;
+  long keycode;
+  unsigned char modifiers;
+  char current_target[64];
+  char new_target[64];
+  char message[256];
+
+  if (!keymap_editor_active || !keymap_editor_editable ||
+      !__atomic_exchange_n(&keymap_editor_capture_ready, 0U,
+                           __ATOMIC_ACQ_REL)) return;
+  target = keymap_editor_waiting_target;
+  keymap_editor_waiting_target = -1;
+  keycode = __atomic_load_n(&keymap_editor_capture_keycode, __ATOMIC_RELAXED);
+  modifiers = __atomic_load_n(&keymap_editor_capture_modifiers,
+                              __ATOMIC_RELAXED);
+  if (target < 0 || (size_t)target >= keymap_editor_model.target_count) return;
+
+
+
+
+  flags = keymap_editor_usb_host_flags(keycode, modifiers);
+  if (flags < 0) {
+    keymap_editor_refresh_target((size_t)target);
+    ui_error_wrapped("Left Alt and Super cannot be used as chord modifiers. "
+                     "They can still be assigned as individual keys.");
+    return;
+  }
+  conflict = keymap_editor_find_conflict(&keymap_editor_model,
+                                         (size_t)target, keycode, flags);
+  keymap_editor_pending_target = target;
+  keymap_editor_pending_binding = keymap_editor_waiting_binding;
+  keymap_editor_pending_add = keymap_editor_waiting_add;
+  keymap_editor_pending_keycode = keycode;
+  keymap_editor_pending_flags = flags;
+  if (conflict >= 0) {
+    keymap_editor_logical_target_name((size_t)conflict,
+                                      current_target, sizeof current_target);
+    keymap_editor_logical_target_name((size_t)target,
+                                      new_target, sizeof new_target);
+    snprintf(message, sizeof message,
+             "This PC binding is assigned to %s. Move it to %s?",
+             current_target, new_target);
+    ui_confirm_wrapped_cancel_default(
+        "Key already assigned", message, target,
+        MENU_CONFIRM_KEYBOARD_EDITOR_CONFLICT);
+    return;
+  }
+  keymap_editor_apply_pending();
+}
+
+static int keymap_editor_key_pressed(struct menu_item *root,
+                                     struct menu_item *current, long key) {
+  (void)root;
+  if (!keymap_editor_active || !keymap_editor_editable || current == NULL ||
+      current->id != MENU_KEYBOARD_EDITOR_TARGET) return 0;
+  if (current->value < 0 ||
+      (size_t)current->value >= keymap_editor_model.target_count) return 0;
+  if (key == KEYCODE_Return) {
+    keymap_editor_return_add = ui_keyboard_shift_active();
+    return 0;
+  }
+  if (key != KEYCODE_Delete && key != KEYCODE_Backspace) return 0;
+  if (ui_keyboard_shift_active()) {
+    keymap_editor_clear(&keymap_editor_model, (size_t)current->value);
+    keymap_editor_binding_cursor[current->value] = 0;
+  } else {
+    keymap_editor_remove_binding(
+        &keymap_editor_model, (size_t)current->value,
+        keymap_editor_binding_cursor[current->value]);
+  }
+  keymap_editor_refresh_target((size_t)current->value);
+  return 1;
+}
+
+static int keymap_editor_left_right(struct menu_item *root,
+                                    struct menu_item *current, int right) {
+  size_t count;
+  size_t target;
+  (void)root;
+  if (!keymap_editor_active || current == NULL ||
+      current->id != MENU_KEYBOARD_EDITOR_TARGET) return 0;
+  if (current->value < 0 ||
+      (size_t)current->value >= keymap_editor_model.target_count) return 0;
+  target = (size_t)current->value;
+  count = keymap_editor_target_binding_count(&keymap_editor_model, target);
+  if (count > 1) {
+    if (right) {
+      keymap_editor_binding_cursor[target] =
+          (keymap_editor_binding_cursor[target] + 1) % count;
+    } else if (keymap_editor_binding_cursor[target] == 0) {
+      keymap_editor_binding_cursor[target] = count - 1;
+    } else {
+      --keymap_editor_binding_cursor[target];
+    }
+    keymap_editor_refresh_target(target);
+  }
+  return 1;
+}
+
+static void keymap_editor_popped(struct menu_item *old_root,
+                                 struct menu_item *new_root) {
+  (void)old_root;
+  (void)new_root;
+  __atomic_store_n(&keymap_editor_capture_enabled, 0U, __ATOMIC_RELEASE);
+  __atomic_store_n(&keymap_editor_capture_ready, 0U, __ATOMIC_RELEASE);
+  __atomic_store_n(&keymap_editor_capture_wait_neutral, 0U, __ATOMIC_RELEASE);
+  __atomic_store_n(&keymap_editor_capture_wait_release, 0U, __ATOMIC_RELEASE);
+  memset(keymap_editor_target_items, 0, sizeof keymap_editor_target_items);
+  memset(keymap_editor_binding_cursor, 0, sizeof keymap_editor_binding_cursor);
+  keymap_editor_waiting_target = -1;
+  keymap_editor_waiting_binding = 0;
+  keymap_editor_waiting_add = 0;
+  keymap_editor_pending_target = -1;
+  keymap_editor_pending_binding = 0;
+  keymap_editor_pending_add = 0;
+  keymap_editor_return_add = 0;
+  keymap_editor_active = 0;
+  keymap_editor_editable = 0;
+
+
+
+}
+
+static void show_keymap_editor(void) {
+  struct menu_item *root;
+  struct menu_item *item;
+  char error[128];
+  size_t i;
+
+  if (!emux_keymap_editor_begin(&keymap_editor_model,
+                                &keymap_editor_editable,
+                                error, sizeof error)) {
+    ui_error("%s", error);
+    return;
+  }
+  root = ui_push_menu(-1, -1);
+  if (root == NULL) {
+    keymap_editor_editable = 0;
+    return;
+  }
+  root->on_popped_off = keymap_editor_popped;
+  root->key_listener_func = keymap_editor_key_pressed;
+  root->left_right_listener_func = keymap_editor_left_right;
+
+
+
+  keymap_editor_active = 1;
+  keymap_editor_waiting_target = -1;
+  keymap_editor_waiting_binding = 0;
+  keymap_editor_waiting_add = 0;
+  keymap_editor_pending_target = -1;
+  keymap_editor_pending_binding = 0;
+  keymap_editor_pending_add = 0;
+  keymap_editor_return_add = 0;
+  memset(keymap_editor_target_items, 0, sizeof keymap_editor_target_items);
+  memset(keymap_editor_binding_cursor, 0, sizeof keymap_editor_binding_cursor);
+
+  ui_menu_add_button(MENU_TEXT, root, "Mapping Editor");
+  ui_menu_add_button_with_value(MENU_TEXT, root, "File", 0, "",
+                                emux_keyboard_mapping_file());
+  ui_menu_add_button_with_value(
+      MENU_TEXT, root, "Mode", 0, "",
+      keymap_editor_editable ? "Editable" : "Read only");
+  ui_menu_add_button(MENU_TEXT, root, "Left/Right: select binding");
+  if (keymap_editor_editable) {
+    ui_menu_add_button(MENU_KEYBOARD_EDITOR_SAVE, root, "Save & Apply");
+    ui_menu_add_button(MENU_KEYBOARD_EDITOR_RESTORE, root,
+                       "Restore Defaults...");
+    ui_menu_add_button(MENU_TEXT, root, "Enter: replace   Shift+Enter: add");
+    ui_menu_add_button(MENU_TEXT, root, "Del: remove   Shift+Del: clear all");
+  } else {
+    ui_menu_add_button(MENU_TEXT, root, "Select Mapping: Custom to edit");
+  }
+  ui_menu_add_divider(root);
+
+  for (i = 0; i < keymap_editor_model.target_count; ++i) {
+    char name[MAX_MENU_STR];
+    keymap_editor_logical_target_name(i, name, sizeof name);
+    item = ui_menu_add_button_with_value(
+        MENU_KEYBOARD_EDITOR_TARGET, root, name, (int)i, "", "");
+    keymap_editor_target_items[i] = item;
+    keymap_editor_refresh_target(i);
+  }
+
+
+
+
+
+
+}
+
+
+void menu_before_render(void) {
+  keymap_editor_refresh_capture();
+
+
+  quick_access_refresh_slot_items();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static void menu_value_changed(struct menu_item *item) {
   struct machine_entry* head;
   int status = 0;
   int p;
+
+
+
+
+  {
+    int quick_slot = menu_quick_access_slot_from_menu_id(item->id);
+    if (quick_slot >= 0) {
+      if (item->sub_id == MENU_SUB_QUICK_ACCESS_ASSIGN) {
+        struct menu_item *target = menu_quick_access_find(
+            ui_menu_root(), quick_access_pending_target.id,
+            quick_access_pending_target.sub_id, 0);
+        if (target != NULL && !target->disabled) {
+          menu_quick_access_set(&quick_access_state, quick_slot,
+                                quick_access_pending_target.id,
+                                quick_access_pending_target.sub_id);
+          quick_access_refresh_slot_items();
+        }
+        quick_access_pending_target.id = MENU_ID_DO_NOTHING;
+        quick_access_pending_target.sub_id = MENU_SUB_NONE;
+        ui_pop_menu();
+        return;
+      }
+      if (item == quick_access_slot_items[quick_slot]) {
+        const struct menu_quick_access_slot *assignment =
+            menu_quick_access_get(&quick_access_state, quick_slot);
+        struct menu_item *target = assignment != NULL
+            ? menu_quick_access_find(ui_menu_root(), assignment->id,
+                                     assignment->sub_id, 1)
+            : NULL;
+        if (target != NULL && !target->disabled) {
+          quick_access_folder_item->is_expanded = 0;
+          ui_focus_item(target);
+        }
+        return;
+      }
+    }
+  }
 
   switch (item->id) {
   case MENU_ATTACH_DISK_8:
@@ -6815,8 +9335,19 @@ static void menu_value_changed(struct menu_item *item) {
     ui_canvas_reveal_temp(FB_LAYER_VDC);
     emux_change_palette(1, item->value);
     return;
+  case MENU_AUTOSTART_PRG_MODE:
+
+    emux_set_int(Setting_AutostartPrgMode, item->choice_ints[item->value]);
+    return;
   case MENU_AUTOSTART_WARP:
     emux_set_int(Setting_AutostartWarp, item->value);
+    return;
+  case MENU_MOUSE_SENSITIVITY:
+
+    emux_set_int(Setting_MouseSensitivity, item->value);
+    return;
+  case MENU_MOUSE_TYPE:
+    emux_set_int(Setting_MouseType, item->choice_ints[item->value]);
     return;
   case MENU_REALDRIVE_LOG:
     emux_set_real_drive_log(item->value);
@@ -6827,18 +9358,52 @@ static void menu_value_changed(struct menu_item *item) {
   case MENU_REALDRIVE_VELOCE:
     emux_set_real_drive_veloce(item->value);
     return;
+  case MENU_REALDRIVE_COMMODORE:
+    emux_set_real_drive_commodore(item->value);
+
+
+
+
+
+
+    {
+      static const char *cifra[3] = { "0", "1", "2" };
+      int scelta = (item->value >= 0 && item->value <= 2) ? item->value : 0;
+
+      if (cmdline_opzione("drive_commodore", cifra[scelta]) != 0) {
+        ui_error("Cannot write the card");
+        return;
+      }
+      drive_commodore_cmdline = scelta;
+      printf("[XUM] Drive on XUM1541 in cmdline.txt: %s, per tutte le "
+             "macchine\n", item->choices[scelta]);
+    }
+    return;
+  case MENU_REALDRIVE_DIRECTORY:
+
+    show_xum_directory();
+    return;
   case MENU_REALDRIVE_RECOVER: {
 
 
 
 
 
-    int v[9];
-    int quanti = emux_real_drive_recover(8, v, 9);
+
+
+
+
+
+
+
+    int v[12];
+    int quanti = emux_real_drive_recover(prima_unita_vera(), v, 12);
     static const char *chi[6] = { "no answer", "1541", "1570", "1571",
-                                  "1581", "something else" };
+                                  "1581", "other drive" };
     struct menu_item *pagina = ui_push_menu(-1, -1);
     char riga[48];
+    int u, righe = 0, lunga = 0, uj_dopo_linea = 0, muti = 0, elenco = 0,
+        fermi = 0;
 
     ui_menu_add_button(MENU_TEXT, pagina, "Reset drive on XUM1541");
     ui_menu_add_divider(pagina);
@@ -6854,23 +9419,100 @@ static void menu_value_changed(struct menu_item *item) {
     ui_menu_add_button(MENU_TEXT, pagina, riga);
     snprintf(riga, 47, "Adapter reopened       %s", v[3] ? "yes" : "NO");
     ui_menu_add_button(MENU_TEXT, pagina, riga);
-    snprintf(riga, 47, "Bus reset              %s", v[4] ? "yes" : "NO");
+    if (quanti >= 12 && v[11] == 0) {
+      snprintf(riga, 47, "Bus reset              no (UJ)");
+    } else if (quanti >= 12 && v[11] == 3) {
+
+
+      snprintf(riga, 47, "Bus reset              taken, %d ms", v[9]);
+    } else if (quanti >= 12 && v[11] == 4) {
+      snprintf(riga, 47, "Bus reset              not taken, %d s",
+               (v[9] + 500) / 1000);
+    } else if (quanti >= 12 && v[11] == 5) {
+      snprintf(riga, 47, "Bus reset              held %d ms", v[9]);
+    } else if (quanti >= 12) {
+      snprintf(riga, 47, "Bus reset              yes, %d ms", v[9]);
+    } else {
+      snprintf(riga, 47, "Bus reset              %s", v[4] ? "yes" : "NO");
+    }
     ui_menu_add_button(MENU_TEXT, pagina, riga);
-    snprintf(riga, 47, "Drive answers          %d", v[5]);
-    ui_menu_add_button(MENU_TEXT, pagina, riga);
+    if (quanti >= 12 && v[11] == 2) {
+
+      ui_menu_add_button(MENU_TEXT, pagina, "Long bus reset         yes (0.5 s)");
+    }
     snprintf(riga, 47, "Took                   %d ms", v[6]);
     ui_menu_add_button(MENU_TEXT, pagina, riga);
-    snprintf(riga, 47, "The drive looks like a %s",
-             chi[(v[8] >= 0 && v[8] <= 5) ? v[8] : 5]);
-    ui_menu_add_button(MENU_TEXT, pagina, riga);
+    ui_menu_add_divider(pagina);
+
+    for (u = 8; u <= 11; u++) {
+      int stato = 99, tipo = 0;
+      int come = emux_real_drive_unit_result(u, &stato, &tipo);
+      const char *come_testo;
+
+      switch (come) {
+      case 1:  come_testo = "restarted (bus reset)"; break;
+      case 5:  come_testo = "restarted (long reset)"; lunga = 1; break;
+      case 2:  come_testo = "restarted with UJ";
+               if (quanti >= 12 && v[11] != 0) {
+                 uj_dopo_linea = 1;
+               }
+               break;
+      case 3:  come_testo = "answers, did not restart"; fermi = 1; break;
+      case 4:  come_testo = "Pi1541, no image"; elenco = 1; break;
+      case -1: come_testo = "does not answer"; muti = 1; break;
+      case -2: come_testo = "not on the bus"; break;
+      default: continue;
+      }
+      snprintf(riga, 47, "Drive %d  %s", u, come_testo);
+      ui_menu_add_button(MENU_TEXT, pagina, riga);
+      if (come != -1 && come != -2) {
+        snprintf(riga, 47, "         says %02d, a %s", stato,
+                 chi[(tipo >= 0 && tipo <= 5) ? tipo : 5]);
+        ui_menu_add_button(MENU_TEXT, pagina, riga);
+      }
+      righe++;
+    }
+    if (righe == 0) {
+      snprintf(riga, 47, "Drive answers          %d", v[5]);
+      ui_menu_add_button(MENU_TEXT, pagina, riga);
+    }
 
     ui_menu_add_divider(pagina);
-    if (v[7]) {
-      ui_menu_add_button(MENU_TEXT, pagina, "It is back. 73 is what a 1541");
-      ui_menu_add_button(MENU_TEXT, pagina, "says after a reset.");
-    } else {
-      ui_menu_add_button(MENU_TEXT, pagina, "Still not answering. Check the");
-      ui_menu_add_button(MENU_TEXT, pagina, "cable and that the drive is on.");
+    if (muti) {
+      ui_menu_add_button(MENU_TEXT, pagina, "A drive that does not answer:");
+      ui_menu_add_button(MENU_TEXT, pagina, "switch it off and on.");
+    }
+    if (uj_dopo_linea) {
+      ui_menu_add_button(MENU_TEXT, pagina, "The bus reset did not reach it:");
+      ui_menu_add_button(MENU_TEXT, pagina, "UJ restarted it, without the");
+      ui_menu_add_button(MENU_TEXT, pagina, "LED, as on a real 1541.");
+    }
+    if (quanti >= 12 && v[11] == 4 && !uj_dopo_linea) {
+
+      ui_menu_add_button(MENU_TEXT, pagina, "No drive took the bus reset");
+      ui_menu_add_button(MENU_TEXT, pagina, "in 3 seconds: the RESET wire");
+      ui_menu_add_button(MENU_TEXT, pagina, "does not reach it.");
+    }
+    if (lunga) {
+      ui_menu_add_button(MENU_TEXT, pagina, "It needed the bus reset held");
+      ui_menu_add_button(MENU_TEXT, pagina, "for half a second.");
+    }
+    if (fermi) {
+      ui_menu_add_button(MENU_TEXT, pagina, "A drive did not restart:");
+      ui_menu_add_button(MENU_TEXT, pagina, "switch it off and on.");
+    }
+    if (elenco) {
+      ui_menu_add_button(MENU_TEXT, pagina, "The Pi1541 dropped its image");
+      ui_menu_add_button(MENU_TEXT, pagina, "on the bus reset: mount it.");
+    }
+    if (!muti && !uj_dopo_linea && !lunga && !fermi && !elenco) {
+      if (v[7]) {
+        ui_menu_add_button(MENU_TEXT, pagina, "Back. 73 is what a drive says");
+        ui_menu_add_button(MENU_TEXT, pagina, "after a reset.");
+      } else {
+        ui_menu_add_button(MENU_TEXT, pagina, "Still not answering. Check the");
+        ui_menu_add_button(MENU_TEXT, pagina, "cable and that the drive is on.");
+      }
     }
     return;
   }
@@ -6902,7 +9544,8 @@ static void menu_value_changed(struct menu_item *item) {
 
 
     int v[17] = {0};
-    int quanti = emux_real_drive_turbo(8, nome, (int)sizeof(nome),
+    int quanti = emux_real_drive_turbo(prima_unita_vera(), nome,
+                                       (int)sizeof(nome),
                                        dove, (int)sizeof(dove), v, 17);
     struct menu_item *pagina = ui_push_menu(-1, -1);
     char riga[48];
@@ -6915,6 +9558,31 @@ static void menu_value_changed(struct menu_item *item) {
     } else if (v[0] == 5) {
       ui_menu_add_button(MENU_TEXT, pagina, "No adapter plugged in, or the");
       ui_menu_add_button(MENU_TEXT, pagina, "unit is not set to Real drive.");
+    } else if (v[0] == 6) {
+
+
+
+      ui_menu_add_button(MENU_TEXT, pagina, "The fast loader is only for a");
+      ui_menu_add_button(MENU_TEXT, pagina, "1541. This drive is:");
+      snprintf(riga, 47, "%s", dove);
+      ui_menu_add_button(MENU_TEXT, pagina, riga);
+    } else if (v[0] == 7) {
+
+
+
+      ui_menu_add_button(MENU_TEXT, pagina, "Another drive is on the bus:");
+      snprintf(riga, 47, "%s.", dove);
+      ui_menu_add_button(MENU_TEXT, pagina, riga);
+      ui_menu_add_button(MENU_TEXT, pagina, "The fast loader needs one drive");
+      ui_menu_add_button(MENU_TEXT, pagina, "alone on the bus.");
+    } else if (v[0] == 8) {
+
+
+
+      snprintf(riga, 47, "%s", dove);
+      ui_menu_add_button(MENU_TEXT, pagina, riga);
+      ui_menu_add_button(MENU_TEXT, pagina, "Try Reset Drive on XUM1541, or");
+      ui_menu_add_button(MENU_TEXT, pagina, "switch the drive off and on.");
     } else if (v[0] == 1) {
       ui_menu_add_button(MENU_TEXT, pagina, "No directory - is there a");
       ui_menu_add_button(MENU_TEXT, pagina, "disk in the drive?");
@@ -6990,6 +9658,13 @@ static void menu_value_changed(struct menu_item *item) {
 
     return;
   }
+  case MENU_DEFAULT_DISK_IMAGE:
+
+    show_files(DIR_DISKS, FILTER_DISK, MENU_DEFAULT_DISK_FILE, 0);
+    return;
+  case MENU_DEFAULT_DISK_DRIVE:
+    default_disk_set_drive(item->choice_ints[item->value]);
+    return;
   case MENU_AUTOSTART:
 
 
@@ -7383,6 +10058,59 @@ static void menu_value_changed(struct menu_item *item) {
   case MENU_NETWORKING:
     menu_update_network_status();
     return;
+  case MENU_NTP_ENABLED:
+  case MENU_NTP_APPLY:
+
+
+    if (ntp_enabled_item->value && ntp_server_item->str_value[0] == '\0' &&
+        ntp_fallback_item->str_value[0] == '\0') {
+      ui_error("Server 1 is empty");
+      return;
+    }
+    circle_ntp_imposta(ntp_enabled_item->value, ntp_server_item->str_value,
+                       ntp_fallback_item->str_value,
+                       ntp_interval_item->choice_ints[ntp_interval_item->value]);
+    if (save_settings()) {
+      ui_error("Problem saving");
+    } else if (item->id == MENU_NTP_APPLY) {
+      ui_info("NTP settings saved");
+    }
+    aggiorna_ntp();
+    return;
+  case MENU_WIC64_APPLY:
+
+    apply_wic64_config(1);
+    return;
+  case MENU_WIC64_APPLY_RUNTIME:
+    apply_wic64_config(0);
+    return;
+  case MENU_WIC64_ENABLE:
+  case MENU_WIC64_SERVER:
+  case MENU_WIC64_TIMEZONE:
+  case MENU_WIC64_TIMEOUT:
+  case MENU_WIC64_LOG:
+  case MENU_WIC64_REPORTING:
+  case MENU_WIC64_SSID:
+  case MENU_WIC64_RSSI:
+    return;
+  case MENU_NTP_SYNC_NOW:
+    if (!ntp_enabled_item->value) {
+      ui_error("NTP is off");
+      return;
+    }
+    circle_ntp_adesso();
+    aggiorna_ntp();
+    return;
+  case MENU_NTP_STATUS: {
+    char dettaglio[96];
+    int stato = circle_ntp_stato(dettaglio, sizeof(dettaglio), NULL);
+    if (dettaglio[0] != '\0') {
+      ui_info("%s: %s", ntp_nome_stato(stato), dettaglio);
+    } else {
+      ui_info("%s", ntp_nome_stato(stato));
+    }
+    return;
+  }
   case MENU_NETWORK_ENABLED:
     update_wifi_menu_enabled();
     network_reboot_prompted = 0;
@@ -7579,8 +10307,23 @@ static void menu_value_changed(struct menu_item *item) {
     set_joy_item_to_value(p, item->choice_ints[item->value]);
     set_need_mouse();
     return;
+  case MENU_JOYSTICK_PORT_5:
+  case MENU_JOYSTICK_PORT_6:
+  case MENU_JOYSTICK_PORT_7:
+  case MENU_JOYSTICK_PORT_8:
+  case MENU_JOYSTICK_PORT_9:
+  case MENU_JOYSTICK_PORT_10:
+    p = item->id - MENU_JOYSTICK_PORT_5 + 5;
+    set_joy_item_to_value(p, item->choice_ints[item->value]);
+    set_need_mouse();
+    return;
   case MENU_SPINNER_SENSITIVITY:
     emu_spinner_set_sensitivity(item->choice_ints[item->value]);
+    return;
+  case MENU_AUTOFIRE_1:
+  case MENU_AUTOFIRE_2:
+
+    emux_set_autofire(item->id == MENU_AUTOFIRE_1 ? 1 : 2, item->value);
     return;
   case MENU_TAPE_START:
     if (menu_nastro_pronto()) {
@@ -7906,6 +10649,36 @@ static void menu_value_changed(struct menu_item *item) {
       ui_confirm_wrapped("WARNING!", SWITCH_TIMER_MSG, 0, MENU_SWITCH_TIMER);
     }
     return;
+#if RASPPI >= 4
+  case MENU_VENTOLA:
+
+
+
+    {
+      const int scelta = item->value == 0 ? -1 : (item->value - 1) * 10;
+      char numero[8];
+      if (scelta == circle_ventola_scelta()) {
+        return;
+      }
+      circle_ventola_scegli(scelta);
+      snprintf(numero, sizeof(numero), "%d", scelta);
+      if (cmdline_opzione("ventola", scelta < 0 ? NULL : numero) != 0) {
+        ui_error("Cannot write the card");
+      } else {
+        printf("[VENTOLA] Fan: %s\n", item->choices[item->value]);
+      }
+    }
+    return;
+#endif
+  case MENU_USB_SPEGNI:
+
+
+    if (!ui_value_changed_by_return()) {
+      return;
+    }
+    item->value = ui_value_before_return();
+    usb_spegni_chiedi(item);
+    return;
   case MENU_PORTA_VGA:
 
 
@@ -7919,6 +10692,16 @@ static void menu_value_changed(struct menu_item *item) {
     } else {
       printf("[VID] VGA Monitor On: %s\n", item->choices[item->value]);
     }
+    return;
+  case MENU_RISOLUZIONE_HDMI:
+
+
+
+    if (!ui_value_changed_by_return()) {
+      return;
+    }
+    item->value = ui_value_before_return();
+    risoluzione_chiedi(item);
     return;
   case MENU_HDMI_PRINCIPALE:
   case MENU_AUDIO_OUT:
@@ -7947,6 +10730,43 @@ static void menu_value_changed(struct menu_item *item) {
   case MENU_GPUCLOCK_MENU:
     show_gpuclock_menu();
     return;
+
+
+  case MENU_OCX_MENU:
+    show_ocx_menu();
+    return;
+  case MENU_OCX_VOLT:
+  case MENU_OCX_TEMP:
+  case MENU_OCX_CORE:
+  case MENU_OCX_V3D:
+    return;
+  case MENU_OCX_RESTORE:
+    if (ocx_volt_item != NULL) {
+      ocx_volt_item->value = 0;
+      ocx_temp_item->value = 0;
+      ocx_core_item->value = 0;
+      ocx_v3d_item->value = 0;
+    }
+    return;
+  case MENU_OCX_APPLY:
+    if (ocx_volt_item != NULL) {
+      int perche;
+      ocx_scelti.volt = ocx_volt_item->choice_ints[ocx_volt_item->value];
+      ocx_scelti.temp = ocx_temp_item->choice_ints[ocx_temp_item->value];
+      ocx_scelti.core = ocx_core_item->choice_ints[ocx_core_item->value];
+      ocx_scelti.v3d = ocx_v3d_item->choice_ints[ocx_v3d_item->value];
+      perche = ocx_valido(&ocx_scelti, circle_get_model(), overclock_current());
+      if (perche != 0) {
+        ui_error(perche == 2 ? "The voltage is set by CPU Clock"
+                 : perche == 3 ? "No voltage up with the CPU below Stock"
+                 : "Value out of range");
+        return;
+      }
+      ui_pop_menu();
+
+      ui_confirm_wrapped("Reboot?", OCX_MSG, 0, MENU_OCX_APPLY);
+    }
+    return;
   case MENU_GPUCLOCK:
     {
       int level = item->value;
@@ -7970,10 +10790,49 @@ static void menu_value_changed(struct menu_item *item) {
     ui_confirm_wrapped("Reboot?",SWITCH_MSG,item->value,MENU_SWITCH_MACHINE);
     break;
   case MENU_REBOOT_PI:
-    ui_confirm_wrapped("Reboot?", REBOOTPI_MSG, 0, MENU_REBOOT_PI);
+
+
+    ui_confirm_wrapped_cancel_default("Reboot?", REBOOTPI_MSG, 0,
+                                      MENU_REBOOT_PI);
     break;
   case MENU_POWEROFF:
-    ui_confirm_wrapped("Power Off?", POWEROFF_MSG, 0, MENU_POWEROFF);
+    ui_confirm_wrapped_cancel_default("Power Off?", POWEROFF_MSG, 0,
+                                      MENU_POWEROFF);
+    break;
+  case MENU_KEYBOARD_EDITOR:
+    show_keymap_editor();
+    break;
+  case MENU_KEYBOARD_EDITOR_TARGET:
+    if (!keymap_editor_editable) break;
+    keymap_editor_capture_start(item->value, keymap_editor_return_add,
+                                ui_keyboard_shift_active());
+    keymap_editor_return_add = 0;
+    break;
+  case MENU_KEYBOARD_EDITOR_SAVE: {
+    char error[128];
+    if (!keymap_editor_editable) {
+      ui_info("Select Mapping: Custom to edit");
+      break;
+    }
+    if (emux_keymap_editor_save(&keymap_editor_model,
+                                error, sizeof error)) {
+      ui_info("Custom keymap saved and applied");
+    } else {
+      ui_error("%s", error);
+    }
+    break;
+  }
+  case MENU_KEYBOARD_EDITOR_RESTORE:
+    if (!keymap_editor_editable) {
+      ui_info("Select Mapping: Custom to edit");
+      break;
+    }
+    ui_confirm_wrapped_cancel_default(
+        "Restore defaults",
+        "Remove all assignments created by this editor and reload the "
+        "default custom keymap? Manual entries outside the editor block "
+        "are preserved.",
+        0, MENU_CONFIRM_KEYBOARD_EDITOR_RESTORE);
     break;
   case MENU_CONFIRM_OK:
     int confirmation_id = item->sub_id;
@@ -7983,7 +10842,19 @@ static void menu_value_changed(struct menu_item *item) {
 
 
     ui_pop_menu();
-    if (confirmation_id == MENU_SWITCH_MACHINE) {
+    if (confirmation_id == MENU_CONFIRM_KEYBOARD_EDITOR_CONFLICT) {
+      if (keymap_editor_editable) keymap_editor_apply_pending();
+    } else if (confirmation_id == MENU_CONFIRM_KEYBOARD_EDITOR_RESTORE) {
+      char error[128];
+      if (!keymap_editor_editable) {
+        ui_info("Select Mapping: Custom to edit");
+      } else if (emux_keymap_editor_restore_defaults(error, sizeof error)) {
+        ui_pop_menu();
+        ui_info("Custom keymap defaults restored");
+      } else {
+        ui_error("%s", error);
+      }
+    } else if (confirmation_id == MENU_SWITCH_MACHINE) {
       load_machines(&head);
       struct machine_entry* ptr = head;
       status = 0;
@@ -8020,6 +10891,8 @@ static void menu_value_changed(struct menu_item *item) {
                confirmation_value ? "HDMI 1" : "HDMI 0");
         riavvia();
       }
+    } else if (confirmation_id == MENU_USB_SPEGNI) {
+      usb_spegni_applica(confirmation_value);
     } else if (confirmation_id == MENU_AUDIO_OUT) {
       if (audio_out_apply(confirmation_value) != 0) {
         rimetti_voci_riavvio(-1);
@@ -8035,6 +10908,12 @@ static void menu_value_changed(struct menu_item *item) {
       }
     } else if (confirmation_id == MENU_GPUCLOCK) {
       if (gpuclock_apply(confirmation_value, circle_get_model()) != 0) {
+        ui_error("Cannot write config.txt");
+      } else {
+        riavvia();
+      }
+    } else if (confirmation_id == MENU_OCX_APPLY) {
+      if (ocx_apply(&ocx_scelti, circle_get_model()) != 0) {
         ui_error("Cannot write config.txt");
       } else {
         riavvia();
@@ -8062,6 +10941,15 @@ static void menu_value_changed(struct menu_item *item) {
     }
     break;
   case MENU_CONFIRM_CANCEL:
+
+    if (item->sub_id == MENU_CONFIRM_KEYBOARD_EDITOR_CONFLICT) {
+      if (keymap_editor_pending_target >= 0) {
+        keymap_editor_refresh_target((size_t)keymap_editor_pending_target);
+      }
+      keymap_editor_pending_target = -1;
+      keymap_editor_pending_binding = 0;
+      keymap_editor_pending_add = 0;
+    }
     ui_pop_menu();
 
 
@@ -8085,9 +10973,42 @@ static void menu_value_changed(struct menu_item *item) {
     handle_shader_param_change();
     passo_fatto("shader: parametri");
     break;
+  case MENU_SHADER_SAVE_AS:
+
+    show_crt_save_dialog();
+    break;
+  case MENU_SHADER_UNSAVED_SAVE:
+    ui_pop_menu();
+    show_crt_save_dialog();
+    snprintf(s_crt_pending_name, sizeof(s_crt_pending_name), "%s",
+             s_crt_prompt_name);
+    break;
+  case MENU_SHADER_SAVE_CONFIRM:
+    crt_save_preset(0);
+    break;
+  case MENU_SHADER_OVERWRITE:
+    ui_pop_menu();
+    crt_save_preset(1);
+    break;
+  case MENU_SHADER_SAVE_CANCEL:
+    ui_pop_menu();
+    break;
+  case MENU_SHADER_DISCARD:
+    ui_pop_menu();
+    crt_select_by_name(s_crt_prompt_name);
+    break;
   case MENU_SHADER_PRESET:
     if (item->value == CRT_PRESET_CURRENT_CHOICE) {
       s_crt_preset_applied_choice = CRT_PRESET_CURRENT_CHOICE;
+      break;
+    }
+
+
+    if (s_crt_modified && item->value != s_crt_preset_applied_choice) {
+      snprintf(s_crt_prompt_name, sizeof(s_crt_prompt_name), "%s",
+               item->choices[item->value]);
+      item->value = s_crt_preset_applied_choice;
+      show_crt_unsaved_dialog();
       break;
     }
     reveal_crt_shader_preview();
@@ -8195,6 +11116,9 @@ static void menu_value_changed(struct menu_item *item) {
        }
     }
     break;
+  case MENU_MOUSE_NEL_MENU:
+    ui_set_menu_mouse_enabled(item->value);
+    break;
   case MENU_SCALING_INTERPOLATION:
     reveal_crt_shader_preview();
     circle_set_interpolation(item->value); // dispmanx interpolation
@@ -8279,7 +11203,9 @@ void emu_get_usb_pref(int device, int *usb_pref_dst, int *x_axis, int *y_axis,
 
 // KEEP in sync with kernel.cpp, kbd.c, menu_usb.c
 static void set_hotkey_choices(struct menu_item *item) {
-  item->num_choices = 16;
+
+
+  item->num_choices = 26;
   strcpy(item->choices[HOTKEY_CHOICE_NONE], function_to_string(BTN_ASSIGN_UNDEF));
   strcpy(item->choices[HOTKEY_CHOICE_MENU], function_to_string(BTN_ASSIGN_MENU));
   strcpy(item->choices[HOTKEY_CHOICE_WARP], function_to_string(BTN_ASSIGN_WARP));
@@ -8296,6 +11222,16 @@ static void set_hotkey_choices(struct menu_item *item) {
   strcpy(item->choices[HOTKEY_CHOICE_PIP_SWAP], function_to_string(BTN_ASSIGN_PIP_SWAP));
   strcpy(item->choices[HOTKEY_CHOICE_40_80_COLUMN], function_to_string(BTN_ASSIGN_40_80_COLUMN));
   strcpy(item->choices[HOTKEY_CHOICE_FLUSH_DISK], function_to_string(BTN_ASSIGN_FLUSH_DISK));
+  strcpy(item->choices[HOTKEY_CHOICE_RIAVVIA_PI], function_to_string(BTN_ASSIGN_RIAVVIA_PI));
+  strcpy(item->choices[HOTKEY_CHOICE_SPEGNI_PI], function_to_string(BTN_ASSIGN_SPEGNI_PI));
+  strcpy(item->choices[HOTKEY_CHOICE_ATTACH_TAPE], function_to_string(BTN_ASSIGN_ATTACH_TAPE_2));
+  strcpy(item->choices[HOTKEY_CHOICE_ATTACH_CART], function_to_string(BTN_ASSIGN_ATTACH_CART_2));
+  strcpy(item->choices[HOTKEY_CHOICE_ATTACH_DISK_8], function_to_string(BTN_ASSIGN_ATTACH_DISK_8_2));
+  strcpy(item->choices[HOTKEY_CHOICE_ATTACH_DISK_9], function_to_string(BTN_ASSIGN_ATTACH_DISK_9_2));
+  strcpy(item->choices[HOTKEY_CHOICE_ATTACH_DISK_10], function_to_string(BTN_ASSIGN_ATTACH_DISK_10_2));
+  strcpy(item->choices[HOTKEY_CHOICE_ATTACH_DISK_11], function_to_string(BTN_ASSIGN_ATTACH_DISK_11_2));
+  strcpy(item->choices[HOTKEY_CHOICE_SID_OSD], function_to_string(BTN_ASSIGN_SID_OSD));
+  strcpy(item->choices[HOTKEY_CHOICE_SCREENSHOT], function_to_string(BTN_ASSIGN_SCREENSHOT));
   item->choice_ints[HOTKEY_CHOICE_NONE] = BTN_ASSIGN_UNDEF;
   item->choice_ints[HOTKEY_CHOICE_MENU] = BTN_ASSIGN_MENU;
   item->choice_ints[HOTKEY_CHOICE_WARP] = BTN_ASSIGN_WARP;
@@ -8312,6 +11248,16 @@ static void set_hotkey_choices(struct menu_item *item) {
   item->choice_ints[HOTKEY_CHOICE_PIP_SWAP] = BTN_ASSIGN_PIP_SWAP;
   item->choice_ints[HOTKEY_CHOICE_40_80_COLUMN] = BTN_ASSIGN_40_80_COLUMN;
   item->choice_ints[HOTKEY_CHOICE_FLUSH_DISK] = BTN_ASSIGN_FLUSH_DISK;
+  item->choice_ints[HOTKEY_CHOICE_RIAVVIA_PI] = BTN_ASSIGN_RIAVVIA_PI;
+  item->choice_ints[HOTKEY_CHOICE_SPEGNI_PI] = BTN_ASSIGN_SPEGNI_PI;
+  item->choice_ints[HOTKEY_CHOICE_ATTACH_TAPE] = BTN_ASSIGN_ATTACH_TAPE_2;
+  item->choice_ints[HOTKEY_CHOICE_ATTACH_CART] = BTN_ASSIGN_ATTACH_CART_2;
+  item->choice_ints[HOTKEY_CHOICE_ATTACH_DISK_8] = BTN_ASSIGN_ATTACH_DISK_8_2;
+  item->choice_ints[HOTKEY_CHOICE_ATTACH_DISK_9] = BTN_ASSIGN_ATTACH_DISK_9_2;
+  item->choice_ints[HOTKEY_CHOICE_ATTACH_DISK_10] = BTN_ASSIGN_ATTACH_DISK_10_2;
+  item->choice_ints[HOTKEY_CHOICE_ATTACH_DISK_11] = BTN_ASSIGN_ATTACH_DISK_11_2;
+  item->choice_ints[HOTKEY_CHOICE_SID_OSD] = BTN_ASSIGN_SID_OSD;
+  item->choice_ints[HOTKEY_CHOICE_SCREENSHOT] = BTN_ASSIGN_SCREENSHOT;
 
   if (emux_machine_class == BMC64_MACHINE_CLASS_VIC20) {
      item->choice_disabled[HOTKEY_CHOICE_SWAP_PORTS] = 1;
@@ -8328,6 +11274,21 @@ static void set_hotkey_choices(struct menu_item *item) {
      item->choice_disabled[HOTKEY_CHOICE_PIP_LOCATION] = 1;
      item->choice_disabled[HOTKEY_CHOICE_PIP_SWAP] = 1;
      item->choice_disabled[HOTKEY_CHOICE_40_80_COLUMN] = 1;
+  }
+
+
+
+
+
+  if (emux_machine_class == BMC64_MACHINE_CLASS_SCPU64) {
+     item->choice_disabled[HOTKEY_CHOICE_ATTACH_TAPE] = 1;
+  }
+  if (emux_machine_class == BMC64_MACHINE_CLASS_PET) {
+     item->choice_disabled[HOTKEY_CHOICE_ATTACH_CART] = 1;
+  }
+  if (emux_machine_class == BMC64_MACHINE_CLASS_VIC20 ||
+      emux_machine_class == BMC64_MACHINE_CLASS_PLUS4EMU) {
+     item->choice_disabled[HOTKEY_CHOICE_SID_OSD] = 1;
   }
 }
 
@@ -8418,7 +11379,9 @@ struct menu_item* add_joyport_options(struct menu_item* parent, int port) {
        menu_id = MENU_JOYSTICK_PORT_4;
        break;
      default:
-       assert(0);
+       assert(port >= 5 && port <= MAX_JOY_PORTS);
+       menu_id = MENU_JOYSTICK_PORT_5 + port - 5;
+       break;
   }
 
   struct menu_item* child = ui_menu_add_multiple_choice(
@@ -8444,7 +11407,8 @@ struct menu_item* add_joyport_options(struct menu_item* parent, int port) {
   child->choice_ints[7] = JOYDEV_NUMS_2;
   strcpy(child->choices[8], "CURS + LCTRL");
   child->choice_ints[8] = JOYDEV_CURS_LC;
-  strcpy(child->choices[9], "USB Mouse (1351)");
+
+  strcpy(child->choices[9], "USB Mouse");
   child->choice_ints[9] = JOYDEV_MOUSE;
   strcpy(child->choices[10], "Custom Keyset 1");
   child->choice_ints[10] = JOYDEV_KEYSET1;
@@ -8622,6 +11586,198 @@ void show_gpuclock_menu(void) {
 }
 
 
+
+
+
+
+
+
+static void ocx_scelte(struct menu_item *it, int da, int a, int passo,
+                       int attuale, const char *formato) {
+  int n = 0;
+  it->value = 0;
+  strcpy(it->choices[n], "Auto");
+  it->choice_ints[n++] = OCX_AUTO;
+  for (int x = da; x <= a && n < MAX_CHOICES; x += passo) {
+    snprintf(it->choices[n], MAX_MENU_STR, formato, x);
+    it->choice_ints[n] = x;
+    if (x == attuale) {
+      it->value = n;
+    }
+    n++;
+  }
+  it->num_choices = n;
+}
+
+void show_ocx_menu(void) {
+  struct ocx_valori v;
+  int cmin, cmax, vmin, vmax;
+  const int modello = circle_get_model();
+  const int cpu = overclock_current();
+  ocx_current(&v);
+  ocx_limiti(modello, &cmin, &cmax, &vmin, &vmax);
+  struct menu_item *root = ui_push_menu(-1, -1);
+  ui_menu_add_read_only_heading(root, "Overclocking");
+  if (cpu > 0) {
+    ui_menu_add_read_only_heading(root, "Voltage: set by CPU Clock");
+  } else if (cpu < 0) {
+    ui_menu_add_read_only_heading(root, "CPU below Stock: no voltage up");
+  }
+  ui_menu_add_divider(root);
+  ocx_volt_item = ui_menu_add_multiple_choice(MENU_OCX_VOLT, root,
+                                              "Voltage Offset");
+  ocx_scelte(ocx_volt_item, -100, 100, 5, v.volt, "%+d mV");
+  for (int i = 1; i < ocx_volt_item->num_choices; i++) {
+    if (cpu > 0 || (cpu < 0 && ocx_volt_item->choice_ints[i] > 0)) {
+      ocx_volt_item->choice_disabled[i] = 1;
+    }
+  }
+  ocx_temp_item = ui_menu_add_multiple_choice(MENU_OCX_TEMP, root,
+                                              "Temperature Limit");
+  ocx_scelte(ocx_temp_item, 60, 85, 1, v.temp, "%d C");
+  ocx_core_item = ui_menu_add_multiple_choice(MENU_OCX_CORE, root,
+                                              "Core Clock");
+  ocx_scelte(ocx_core_item, cmin, cmax, 10, v.core, "%d MHz");
+  ocx_v3d_item = ui_menu_add_multiple_choice(MENU_OCX_V3D, root,
+                                             "V3D Clock");
+  ocx_scelte(ocx_v3d_item, vmin, vmax, 10, v.v3d, "%d MHz");
+  ui_menu_add_divider(root);
+  ui_menu_add_button(MENU_OCX_RESTORE, root, "Restore Defaults");
+  ui_menu_add_button(MENU_OCX_APPLY, root, "Apply & Reboot");
+  ui_menu_add_button(MENU_CONFIRM_CANCEL, root, "Cancel");
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //
 
 
@@ -8745,6 +11901,33 @@ int menu_poweroff_is_reboot(void) {
 
 
 
+
+
+
+
+
+static void domanda_dal_tasto_rapido(int riavvio) {
+  if (poweroff_armed && poweroff_e_riavvio != riavvio) {
+    poweroff_e_riavvio = riavvio;
+    poweroff_deadline = circle_get_ticks() +
+                        POWEROFF_CONFIRM_SECONDS * 1000000UL;
+    return;
+  }
+  if (riavvio) {
+    menu_reboot_key();
+  } else {
+    menu_poweroff_key();
+  }
+}
+
+
+
+
+
+
+
+
+
 int menu_poweroff_annulla(void) {
   if (!poweroff_armed) {
     return 0;
@@ -8775,10 +11958,13 @@ void menu_poweroff_tick(void) {
 
 
 
+
       if (poweroff_e_riavvio) {
-        ui_confirm_wrapped("Reboot?", REBOOTPI_MSG, 0, MENU_REBOOT_PI);
+        ui_confirm_wrapped_cancel_default("Reboot?", REBOOTPI_MSG, 0,
+                                          MENU_REBOOT_PI);
       } else {
-        ui_confirm_wrapped("Power Off?", POWEROFF_MSG, 0, MENU_POWEROFF);
+        ui_confirm_wrapped_cancel_default("Power Off?", POWEROFF_MSG, 0,
+                                          MENU_POWEROFF);
       }
     } else if (poweroff_armed) {
 
@@ -8840,6 +12026,17 @@ void menu_banco_rom_a_caldo(void) {
   esito = emux_handle_rom_change(&finta, fullpath);
   printf("[ROM] 1541 -> 1541-II a caldo, esito %d\n", esito);
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -9706,6 +12903,79 @@ void menu_banco_player2(int porta) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 void menu_banco_aspetto(int largo) {
   metti_aspetto(VIC_INDEX, largo);
 }
@@ -9751,6 +13021,44 @@ int menu_poweroff_left(void) {
 static void build_overclock_menu(struct menu_item *root) {
   ui_menu_add_button(MENU_OVERCLOCK_MENU, root, "CPU Clock...");
   ui_menu_add_button(MENU_GPUCLOCK_MENU, root, "GPU Clock...");
+
+  ui_menu_add_button(MENU_OCX_MENU, root, "Overclocking...");
+#if RASPPI >= 4
+
+
+
+
+
+
+  ventola_item = NULL;
+  if (circle_ventola_presente()) {
+    const int scelta = circle_ventola_scelta();
+    ventola_item = ui_menu_add_multiple_choice(MENU_VENTOLA, root, "Fan");
+    ventola_item->num_choices = 12;
+    strcpy(ventola_item->choices[0], "Auto");
+    for (int i = 1; i < 12; i++) {
+      snprintf(ventola_item->choices[i], MAX_MENU_STR, "%d%%", (i - 1) * 10);
+    }
+    ventola_item->value = scelta < 0 ? 0 : scelta / 10 + 1;
+  }
+#endif
+
+
+
+
+  usb_spegni_item = NULL;
+  if (circle_usb_spegni_ms() >= 0) {
+    usb_spegni_item = ui_menu_add_multiple_choice(MENU_USB_SPEGNI, root,
+                                                  "USB Off at Restart");
+    usb_spegni_item->num_choices = USB_SPEGNI_SCELTE;
+    strcpy(usb_spegni_item->choices[0], "Off");
+    for (int i = 1; i < USB_SPEGNI_SCELTE; i++) {
+      snprintf(usb_spegni_item->choices[i], MAX_MENU_STR, "%d.%d s",
+               usb_spegni_scelte_ms[i] / 1000,
+               usb_spegni_scelte_ms[i] % 1000 / 100);
+    }
+    usb_spegni_item->value = usb_spegni_indice(circle_usb_spegni_ms());
+  }
 }
 
 
@@ -9763,6 +13071,164 @@ static void build_overclock_menu(struct menu_item *root) {
 
 static struct menu_item *cart_only_autostart;
 static struct menu_item *cart_only_warp;
+
+
+
+
+static struct menu_item *prg_loading_item;
+
+static void prg_loading_allinea(void) {
+  int modo = BMX_AUTOSTART_PRG_DISK;
+  if (prg_loading_item == NULL) {
+    return;
+  }
+  emux_get_int(Setting_AutostartPrgMode, &modo);
+  prg_loading_item->value = modo == BMX_AUTOSTART_PRG_RAM ? 0 : 1;
+}
+
+static void aggiungi_prg_loading(struct menu_item *root) {
+  prg_loading_item =
+      ui_menu_add_multiple_choice(MENU_AUTOSTART_PRG_MODE, root, "PRG loading");
+  prg_loading_item->num_choices = 2;
+  strcpy(prg_loading_item->choices[0], "Direct to RAM");
+  prg_loading_item->choice_ints[0] = BMX_AUTOSTART_PRG_RAM;
+  strcpy(prg_loading_item->choices[1], "Via disk image");
+  prg_loading_item->choice_ints[1] = BMX_AUTOSTART_PRG_DISK;
+  prg_loading_allinea();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static struct menu_item *cart_only_loadprg;
 static struct menu_item *cart_only_drives;
 static struct menu_item *cart_only_tape;
@@ -9771,6 +13237,7 @@ static int cart_only;
 static void apply_cartridge_only(void) {
   if (cart_only_autostart) cart_only_autostart->disabled = cart_only;
   if (cart_only_warp)      cart_only_warp->disabled = cart_only;
+  if (prg_loading_item)    prg_loading_item->disabled = cart_only;
   if (cart_only_loadprg)   cart_only_loadprg->disabled = cart_only;
   if (cart_only_drives)    cart_only_drives->disabled = cart_only;
   if (cart_only_tape)      cart_only_tape->disabled = cart_only;
@@ -9788,6 +13255,162 @@ void menu_set_cartridge_only(int on) {
 
 int menu_is_cartridge_only(void) {
   return cart_only;
+}
+
+
+static void build_default_disk_menu(struct menu_item *drive_parent) {
+  struct menu_item *parent = ui_menu_add_folder(drive_parent, "Default disk");
+  default_disk_image_item = ui_menu_add_button_with_value(
+      MENU_DEFAULT_DISK_IMAGE, parent, "Disk image", 0,
+      default_disk_image, menu_basename(default_disk_image));
+  default_disk_image_item->str_value[MAX_STR_VAL_LEN - 1] = '\0';
+  default_disk_image_item->displayed_value[MAX_DSP_VAL_LEN - 1] = '\0';
+  default_disk_image_item->prefer_str = 1;
+  default_disk_drive_item = ui_menu_add_multiple_choice(
+      MENU_DEFAULT_DISK_DRIVE, parent, "Drive");
+  default_disk_drive_item->num_choices = 5;
+  strcpy(default_disk_drive_item->choices[0], "None");
+  default_disk_drive_item->choice_ints[0] = DEFAULT_DISK_DRIVE_NONE;
+  strcpy(default_disk_drive_item->choices[1], "8");
+  default_disk_drive_item->choice_ints[1] = 8;
+  strcpy(default_disk_drive_item->choices[2], "9");
+  default_disk_drive_item->choice_ints[2] = 9;
+  strcpy(default_disk_drive_item->choices[3], "10");
+  default_disk_drive_item->choice_ints[3] = 10;
+  strcpy(default_disk_drive_item->choices[4], "11");
+  default_disk_drive_item->choice_ints[4] = 11;
+  default_disk_set_drive(default_disk_drive);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static char riga_macchina_testa[16];
+
+
+static void riga_macchina_tempi(char *riga, int decimali) {
+  char scratch[16];
+  switch (circle_get_machine_timing()) {
+  case MACHINE_TIMING_NTSC_HDMI:
+    strcat(riga, "NTSC 60Hz HDMI");
+    break;
+  case MACHINE_TIMING_NTSC_DPI:
+    strcat(riga, "NTSC 60Hz DPI");
+    break;
+  case MACHINE_TIMING_NTSC_COMPOSITE:
+  case MACHINE_TIMING_NTSC_CUSTOM_HDMI:
+  case MACHINE_TIMING_NTSC_CUSTOM_DPI:
+    strcat(riga, "NTSC ");
+    snprintf (scratch, sizeof(scratch), "%.*f", decimali, emux_calculate_fps());
+    strcat (riga, scratch);
+    strcat(riga, "Hz ");
+    switch (circle_get_machine_timing()) {
+      case MACHINE_TIMING_NTSC_COMPOSITE:
+        strcat(riga, "Composite");
+        break;
+      case MACHINE_TIMING_NTSC_CUSTOM_HDMI:
+        strcat(riga, "Custom HDMI");
+        break;
+      case MACHINE_TIMING_NTSC_CUSTOM_DPI:
+        strcat(riga, "Custom DPI");
+        break;
+      default:
+        break;
+    }
+    break;
+  case MACHINE_TIMING_PAL_HDMI:
+    strcat(riga, "PAL 50Hz HDMI");
+    break;
+  case MACHINE_TIMING_PAL_DPI:
+    strcat(riga, "PAL 50Hz DPI");
+    break;
+  case MACHINE_TIMING_PAL_COMPOSITE:
+  case MACHINE_TIMING_PAL_CUSTOM_HDMI:
+  case MACHINE_TIMING_PAL_CUSTOM_DPI:
+    strcat(riga, "PAL ");
+    snprintf (scratch, sizeof(scratch), "%.*f", decimali, emux_calculate_fps());
+    strcat (riga, scratch);
+    strcat(riga, "Hz ");
+    switch (circle_get_machine_timing()) {
+      case MACHINE_TIMING_PAL_COMPOSITE:
+        strcat(riga, "Composite");
+        break;
+      case MACHINE_TIMING_PAL_CUSTOM_HDMI:
+        strcat(riga, "Custom HDMI");
+        break;
+      case MACHINE_TIMING_PAL_CUSTOM_DPI:
+        strcat(riga, "Custom DPI");
+        break;
+      default:
+        break;
+    }
+    break;
+  default:
+    strcat(riga, "Error");
+    break;
+  }
+}
+
+static int riga_macchina_altezza_schermo(void) {
+  int dw = 0, dh = 0, fw = 0, fh = 0, sw = 0, sh = 0, ow = 0, oh = 0;
+  circle_get_fbl_dimensions(FB_LAYER_VIC, &dw, &dh, &fw, &fh, &sw, &sh, &ow, &oh);
+  if (dh <= 0) {
+    dh = 0;
+    circle_get_fbl_dimensions(FB_LAYER_UI, &dw, &dh, &fw, &fh, &sw, &sh, &ow, &oh);
+  }
+  return dh > 0 ? dh : 0;
+}
+
+static void aggiorna_riga_macchina(void) {
+  char riga[64];
+  int altezza;
+  int decimali;
+  size_t l;
+  if (riga_macchina_item == NULL) {
+    return;
+  }
+  altezza = riga_macchina_altezza_schermo();
+  if (altezza == riga_macchina_altezza) {
+    return;
+  }
+  riga_macchina_altezza = altezza;
+  for (decimali = 3; decimali >= 0; decimali--) {
+    snprintf(riga, sizeof(riga), "%s", riga_macchina_testa);
+    riga_macchina_tempi(riga, decimali);
+    l = strlen(riga);
+    while (l > 0 && riga[l - 1] == ' ') {
+      riga[--l] = '\0';
+    }
+    if (altezza > 0) {
+      snprintf(riga + l, sizeof(riga) - l, " %dp", altezza);
+    }
+    if (strlen(riga) <= MAX_MENU_STR - 1) {
+      break;
+    }
+  }
+  strncpy(riga_macchina_item->name, riga, MAX_MENU_STR - 1);
+  riga_macchina_item->name[MAX_MENU_STR - 1] = '\0';
 }
 
 void build_menu(struct menu_item *root) {
@@ -9813,12 +13436,19 @@ void build_menu(struct menu_item *root) {
      sprintf (usb_y_name[k], "usb_y_%d", k);
      sprintf (usb_x_t_name[k], "usb_x_t_%d", k);
      sprintf (usb_y_t_name[k], "usb_y_t_%d", k);
+     sprintf (usb_mapping_name[k], "usb_mapping_%d", k);
   }
 
   attached_disk_name[0][0] = '\0';
   attached_disk_name[1][0] = '\0';
   attached_disk_name[2][0] = '\0';
   attached_disk_name[3][0] = '\0';
+
+
+
+  default_disk_image_item = NULL;
+  default_disk_drive_item = NULL;
+  default_disk_reset();
 
   emux_load_additional_settings();
 
@@ -9882,68 +13512,13 @@ void build_menu(struct menu_item *root) {
                             ? "/C64" : machine_sub_dir);
 
 
-  char scratch[16];
-  switch (circle_get_machine_timing()) {
-  case MACHINE_TIMING_NTSC_HDMI:
-    strcat(machine_info_txt, "NTSC 60Hz HDMI");
-    break;
-  case MACHINE_TIMING_NTSC_DPI:
-    strcat(machine_info_txt, "NTSC 60Hz DPI");
-    break;
-  case MACHINE_TIMING_NTSC_COMPOSITE:
-  case MACHINE_TIMING_NTSC_CUSTOM_HDMI:
-  case MACHINE_TIMING_NTSC_CUSTOM_DPI:
-    strcat(machine_info_txt, "NTSC ");
-    snprintf (scratch, sizeof(scratch), "%.3f", emux_calculate_fps());
-    strcat (machine_info_txt, scratch);
-    strcat(machine_info_txt, "Hz ");
-    switch (circle_get_machine_timing()) {
-      case MACHINE_TIMING_NTSC_COMPOSITE:
-        strcat(machine_info_txt, "Composite");
-        break;
-      case MACHINE_TIMING_NTSC_CUSTOM_HDMI:
-        strcat(machine_info_txt, "Custom HDMI");
-        break;
-      case MACHINE_TIMING_NTSC_CUSTOM_DPI:
-        strcat(machine_info_txt, "Custom DPI");
-        break;
-      default:
-        break;
-    }
-    break;
-  case MACHINE_TIMING_PAL_HDMI:
-    strcat(machine_info_txt, "PAL 50Hz HDMI");
-    break;
-  case MACHINE_TIMING_PAL_DPI:
-    strcat(machine_info_txt, "PAL 50Hz DPI");
-    break;
-  case MACHINE_TIMING_PAL_COMPOSITE:
-  case MACHINE_TIMING_PAL_CUSTOM_HDMI:
-  case MACHINE_TIMING_PAL_CUSTOM_DPI:
-    strcat(machine_info_txt, "PAL ");
-    snprintf (scratch, sizeof(scratch), "%.3f", emux_calculate_fps());
-    strcat (machine_info_txt, scratch);
-    strcat(machine_info_txt, "Hz ");
-    switch (circle_get_machine_timing()) {
-      case MACHINE_TIMING_PAL_COMPOSITE:
-        strcat(machine_info_txt, "Composite");
-        break;
-      case MACHINE_TIMING_PAL_CUSTOM_HDMI:
-        strcat(machine_info_txt, "Custom HDMI");
-        break;
-      case MACHINE_TIMING_PAL_CUSTOM_DPI:
-        strcat(machine_info_txt, "Custom DPI");
-        break;
-      default:
-        break;
-    }
-    break;
-  default:
-    strcat(machine_info_txt, "Error");
-    break;
-  }
 
-  ui_menu_add_button(MENU_TEXT, root, machine_info_txt);
+
+  strncpy(riga_macchina_testa, machine_info_txt, sizeof(riga_macchina_testa) - 1);
+  riga_macchina_testa[sizeof(riga_macchina_testa) - 1] = '\0';
+  riga_macchina_item = ui_menu_add_button(MENU_TEXT, root, machine_info_txt);
+  riga_macchina_altezza = -1;
+  aggiorna_riga_macchina();
 
 
 
@@ -9960,6 +13535,10 @@ void build_menu(struct menu_item *root) {
   ui_menu_add_button(MENU_ABOUT, root, "About...");
   ui_menu_add_button(MENU_LICENSE, root, "License...");
 
+  ui_menu_add_divider(root);
+
+
+  build_quick_access_menu(root);
   ui_menu_add_divider(root);
 
 
@@ -10058,6 +13637,77 @@ void build_menu(struct menu_item *root) {
     strcpy(timezone_dst_item->choices[1], "On");
     strcpy(timezone_dst_item->choices[2], "Auto (EU)");
 
+
+
+
+    {
+      struct menu_item *ntp = ui_menu_add_folder(parent, "NTP");
+      ntp_enabled_item =
+          ui_menu_add_toggle(MENU_NTP_ENABLED, ntp, "Enable NTP", 1);
+      ntp_server_item = ui_menu_add_text_field_limit(
+          MENU_NTP_SERVER, ntp, "Server 1", "pool.ntp.org", 127);
+      ntp_server_item->textfield_right_aligned = 1;
+      ntp_fallback_item = ui_menu_add_text_field_limit(
+          MENU_NTP_FALLBACK, ntp, "Server 2", "", 127);
+      ntp_fallback_item->textfield_right_aligned = 1;
+      ntp_interval_item =
+          ui_menu_add_multiple_choice(MENU_NTP_INTERVAL, ntp, "Sync interval");
+      ntp_interval_item->num_choices = 5;
+      strcpy(ntp_interval_item->choices[0], "15 min");
+      ntp_interval_item->choice_ints[0] = 15;
+      strcpy(ntp_interval_item->choices[1], "Boot only");
+      ntp_interval_item->choice_ints[1] = 0;
+      strcpy(ntp_interval_item->choices[2], "6 h");
+      ntp_interval_item->choice_ints[2] = 360;
+      strcpy(ntp_interval_item->choices[3], "12 h");
+      ntp_interval_item->choice_ints[3] = 720;
+      strcpy(ntp_interval_item->choices[4], "24 h");
+      ntp_interval_item->choice_ints[4] = 1440;
+      ntp_interval_item->value = 0;
+      ui_menu_add_button(MENU_NTP_APPLY, ntp, "Save & Apply");
+      ui_menu_add_button(MENU_NTP_SYNC_NOW, ntp, "Sync now");
+      ntp_status_item = ui_menu_add_button_with_value(
+          MENU_NTP_STATUS, ntp, "Status", 0, " ", " ");
+      ntp_time_item = ui_menu_add_button_with_value(
+          MENU_ID_DO_NOTHING, ntp, "Current time", 0, " ", " ");
+      ntp_time_item->disabled = 1;
+      ntp_synced_item = ui_menu_add_button_with_value(
+          MENU_ID_DO_NOTHING, ntp, "Synced", 0, " ", " ");
+      ntp_synced_item->disabled = 1;
+      aggiorna_ntp();
+    }
+
+
+
+    if (emux_wic64_supported()) {
+      struct menu_item *wic = ui_menu_add_folder(parent, "WiC64");
+      wic64_enable_item = ui_menu_add_toggle(MENU_WIC64_ENABLE, wic,
+                                             "Enabled", wic64_config.enabled);
+      wic64_server_item = ui_menu_add_text_field_limit(MENU_WIC64_SERVER, wic,
+          "Default server", wic64_config.server, BMX_WIC64_SERVER_SIZE - 1);
+      wic64_server_item->textfield_right_aligned = 1;
+      wic64_timezone_item = ui_menu_add_multiple_choice(MENU_WIC64_TIMEZONE, wic,
+                                                        "Time zone");
+      set_wic64_timezone_choices();
+      wic64_timeout_item = ui_menu_add_range(MENU_WIC64_TIMEOUT, wic,
+          "Remote timeout (s)", 1, 255, 1, wic64_config.timeout);
+      wic64_log_item = ui_menu_add_toggle(MENU_WIC64_LOG, wic,
+                                          "Command logging", wic64_config.loglevel);
+      wic64_reporting_item = ui_menu_add_multiple_choice(MENU_WIC64_REPORTING, wic,
+                                                         "Network reporting");
+      wic64_reporting_item->num_choices = 2;
+      strcpy(wic64_reporting_item->choices[0], "Emulated SSID/RSSI");
+      strcpy(wic64_reporting_item->choices[1], "Actual adapter");
+      wic64_reporting_item->value = wic64_config.reporting.real;
+      wic64_ssid_item = ui_menu_add_text_field_limit(MENU_WIC64_SSID, wic,
+          "Emulated SSID", wic64_config.reporting.ssid, 32);
+      wic64_ssid_item->textfield_right_aligned = 1;
+      wic64_rssi_item = ui_menu_add_range(MENU_WIC64_RSSI, wic,
+          "Emulated RSSI (dBm)", -127, 0, 1, wic64_config.reporting.rssi);
+      ui_menu_add_button(MENU_WIC64_APPLY_RUNTIME, wic, "Apply");
+      ui_menu_add_button(MENU_WIC64_APPLY, wic, "Save & Apply");
+    }
+
     network_ip_address_item = ui_menu_add_button_with_value(
       MENU_ID_DO_NOTHING, parent, "IP Address", 0,
       " ", " ");
@@ -10129,6 +13779,7 @@ void build_menu(struct menu_item *root) {
 
 
      ui_menu_add_button(MENU_AUTOSTART, root, "Autostart Prg...");
+     aggiungi_prg_loading(root);
      break;
     default:
      cart_only_autostart =
@@ -10136,6 +13787,7 @@ void build_menu(struct menu_item *root) {
      emux_get_int(Setting_AutostartWarp, &tmp);
      cart_only_warp =
          ui_menu_add_toggle(MENU_AUTOSTART_WARP, root, "Autostart Warp", tmp);
+     aggiungi_prg_loading(root);
      break;
   }
 
@@ -10175,6 +13827,41 @@ void build_menu(struct menu_item *root) {
 
       realdrive_veloce_item = ui_menu_add_toggle(
           MENU_REALDRIVE_VELOCE, drive_parent, "Real Drive Fast Loading", 1);
+
+
+
+
+
+
+
+
+
+      realdrive_commodore_item = ui_menu_add_multiple_choice(
+          MENU_REALDRIVE_COMMODORE, drive_parent, "Drive on XUM1541");
+      realdrive_commodore_item->num_choices = 3;
+      strcpy(realdrive_commodore_item->choices[0], "Pi1541");
+      strcpy(realdrive_commodore_item->choices[1], "Commodore");
+
+
+
+
+
+
+      strcpy(realdrive_commodore_item->choices[2], "Pi1541 + Commodore");
+
+
+
+      drive_commodore_cmdline = cmdline_cifra("drive_commodore");
+      realdrive_commodore_item->value =
+          (drive_commodore_cmdline == 1 || drive_commodore_cmdline == 2)
+              ? drive_commodore_cmdline : 0;
+
+
+
+
+
+      ui_menu_add_button(MENU_REALDRIVE_DIRECTORY, drive_parent,
+                         "Directory of Drive on XUM1541");
 
 
 
@@ -10274,6 +13961,11 @@ void build_menu(struct menu_item *root) {
     if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
       ui_menu_add_button(MENU_DRIVE_CHANGE_MODEL_11, parent, "Change Model...");
     }
+  }
+
+
+  if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
+    build_default_disk_menu(drive_parent);
   }
 
   if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
@@ -10408,6 +14100,21 @@ void build_menu(struct menu_item *root) {
 
 
 
+  if (!is_composite() && risoluzione_hdmi_leggi() >= 0) {
+    risoluzione_item = child =
+       ui_menu_add_multiple_choice(MENU_RISOLUZIONE_HDMI, parent,
+          "HDMI Resolution");
+    child->num_choices = 2;
+    strcpy(child->choices[0], "720p");
+    strcpy(child->choices[1], "1080p");
+    child->value = risoluzione_hdmi_leggi();
+  }
+
+
+
+
+
+
 
 
 
@@ -10470,6 +14177,8 @@ void build_menu(struct menu_item *root) {
      if (!allow_shader()) {
         s_crt_preset_item->disabled = 1;
      }
+
+     ui_menu_add_button(MENU_SHADER_SAVE_AS, shader, "Save as preset...");
 
      struct menu_item *geometry = ui_menu_add_folder(shader, "Geometry");
      struct menu_item *convergence = ui_menu_add_folder(shader, "Convergence");
@@ -10913,6 +14622,10 @@ void build_menu(struct menu_item *root) {
 
   emux_add_keyboard_options(parent);
 
+  if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
+    ui_menu_add_button(MENU_KEYBOARD_EDITOR, parent, "Mapping Editor...");
+  }
+
   if (emux_machine_class == BMC64_MACHINE_CLASS_C128) {
      c40_80_column_item = ui_menu_add_toggle_labels(
         MENU_40_80_COLUMN, parent, "40/80 Column", 1 /* default 40 col */,
@@ -10956,6 +14669,48 @@ void build_menu(struct menu_item *root) {
   child->value = HOTKEY_CHOICE_MENU;
   set_hotkey_choices(hotkey_tf7_item);
 
+
+
+  if (machine_supports_mouse_type()) {
+    int k;
+    parent = ui_menu_add_folder(root, "Mouse");
+    child = ui_menu_add_multiple_choice(MENU_MOUSE_TYPE, parent, "Type");
+    child->num_choices = BMX_MOUSE_TYPE_NUM;
+    strcpy(child->choices[0], "1351");
+    child->choice_ints[0] = BMX_MOUSE_TYPE_1351;
+    strcpy(child->choices[1], "NEOS");
+    child->choice_ints[1] = BMX_MOUSE_TYPE_NEOS;
+    strcpy(child->choices[2], "Amiga");
+    child->choice_ints[2] = BMX_MOUSE_TYPE_AMIGA;
+    strcpy(child->choices[3], "Atari CX-22");
+    child->choice_ints[3] = BMX_MOUSE_TYPE_CX22;
+    strcpy(child->choices[4], "Atari ST");
+    child->choice_ints[4] = BMX_MOUSE_TYPE_ST;
+    strcpy(child->choices[5], "SmartMouse");
+    child->choice_ints[5] = BMX_MOUSE_TYPE_SMART;
+    strcpy(child->choices[6], "Micromys");
+    child->choice_ints[6] = BMX_MOUSE_TYPE_MICROMYS;
+
+
+    strcpy(child->choices[7], "1350 (Joystick)");
+    child->choice_ints[7] = BMX_MOUSE_TYPE_DIGITAL;
+    tmp = BMX_MOUSE_TYPE_DEFAULT;
+    emux_get_int(Setting_MouseType, &tmp);
+    if (tmp < 0 || tmp >= BMX_MOUSE_TYPE_NUM) {
+      tmp = BMX_MOUSE_TYPE_DEFAULT;
+    }
+    child->value = 0;
+    for (k = 0; k < child->num_choices; ++k) {
+      if (child->choice_ints[k] == tmp) {
+        child->value = k;
+      }
+    }
+    tmp = 100;
+    emux_get_int(Setting_MouseSensitivity, &tmp);
+    ui_menu_add_range(MENU_MOUSE_SENSITIVITY, parent, "Sensitivity (%)",
+                      10, 200, 10, tmp);
+  }
+
   parent = ui_menu_add_folder(root, "Joyports");
 
   if (emu_get_num_joysticks() > 1) {
@@ -10991,6 +14746,7 @@ void build_menu(struct menu_item *root) {
   }
   port_3_menu_item = NULL;
   port_4_menu_item = NULL;
+  memset(port_v8_menu_item, 0, sizeof(port_v8_menu_item));
 
   emux_add_userport_joys(parent);
 
@@ -11006,9 +14762,35 @@ void build_menu(struct menu_item *root) {
   for (k = 0; k < MAX_USB_DEVICES; k++) {
     usb_gamepad_reset_to_defaults(k);
   }
+  menu_usb_mapping_initialize();
 
   ui_menu_add_button(MENU_CONFIGURE_KEYSET1, parent, "Configure Keyset 1...");
   ui_menu_add_button(MENU_CONFIGURE_KEYSET2, parent, "Configure Keyset 2...");
+
+
+
+
+
+
+
+
+
+
+  autofire_item[0] = autofire_item[1] = NULL;
+  if (emu_get_num_joysticks() > 0 &&
+      emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
+    parent = ui_menu_add_folder(root, "Autofire");
+    for (k = 0; k < emu_get_num_joysticks() && k < 2; k++) {
+      autofire_item[k] = ui_menu_add_multiple_choice(
+          k == 0 ? MENU_AUTOFIRE_1 : MENU_AUTOFIRE_2, parent,
+          k == 0 ? "Port 1" : "Port 2");
+      autofire_item[k]->num_choices = 3;
+      strcpy(autofire_item[k]->choices[0], "Off");
+      strcpy(autofire_item[k]->choices[1], "Slow");
+      strcpy(autofire_item[k]->choices[2], "Fast");
+      autofire_item[k]->value = 0;
+    }
+  }
 
   parent = ui_menu_add_folder(root, "GPIO");
 
@@ -11052,6 +14834,33 @@ void build_menu(struct menu_item *root) {
 
   parent = ui_menu_add_folder(root, "Prefs");
 
+
+  {
+    struct menu_item *screenshot_parent =
+        ui_menu_add_folder(parent, "Screenshots");
+    struct menu_item *bottone;
+    screenshot_stage_item = ui_menu_add_multiple_choice(MENU_ID_DO_NOTHING,
+        screenshot_parent, "Capture point");
+    screenshot_stage_item->num_choices = 4;
+    strcpy(screenshot_stage_item->choices[SCREENSHOT_EMULATOR], "Emulator");
+    strcpy(screenshot_stage_item->choices[SCREENSHOT_SCALED], "Scaled");
+    strcpy(screenshot_stage_item->choices[SCREENSHOT_CRT], "CRT");
+    strcpy(screenshot_stage_item->choices[SCREENSHOT_SCREEN], "Screen");
+    screenshot_stage_item->value = SCREENSHOT_CRT;
+    screenshot_size_item = ui_menu_add_multiple_choice(MENU_ID_DO_NOTHING,
+        screenshot_parent, "Size");
+    screenshot_refresh_sizes();
+    screenshot_format_item = ui_menu_add_multiple_choice(MENU_ID_DO_NOTHING,
+        screenshot_parent, "Format");
+    screenshot_format_item->num_choices = 2;
+    strcpy(screenshot_format_item->choices[SCREENSHOT_FORMAT_PPM], "PPM");
+    strcpy(screenshot_format_item->choices[SCREENSHOT_FORMAT_PNG], "PNG");
+    screenshot_format_item->value = SCREENSHOT_FORMAT_PNG;
+    bottone = ui_menu_add_button(MENU_SCREENSHOT_TAKE, screenshot_parent,
+                                 "Take screenshot");
+    bottone->on_value_changed = screenshot_from_menu;
+  }
+
   if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
     drive_sounds_item = ui_menu_add_toggle(MENU_DRIVE_SOUND_EMULATION, parent,
                                          "Drive sound emulation", 0);
@@ -11093,6 +14902,39 @@ void build_menu(struct menu_item *root) {
 
   reset_confirm_item = ui_menu_add_toggle(MENU_RESET_CONFIRM, parent,
                                           "Confirm Reset from Emulator", 1);
+
+
+  menu_mouse_item = ui_menu_add_toggle(MENU_MOUSE_NEL_MENU, parent, "Mouse in Menu", 1);
+
+  invio_coda_item = ui_menu_add_multiple_choice(MENU_ID_DO_NOTHING, parent,
+                                                "Enter shows name end");
+  invio_coda_item->num_choices = 6;
+  strcpy(invio_coda_item->choices[0], "Off");
+  strcpy(invio_coda_item->choices[1], "100 ms");
+  strcpy(invio_coda_item->choices[2], "250 ms");
+  strcpy(invio_coda_item->choices[3], "500 ms");
+  strcpy(invio_coda_item->choices[4], "750 ms");
+  strcpy(invio_coda_item->choices[5], "1 s");
+  invio_coda_item->choice_ints[0] = 0;
+  invio_coda_item->choice_ints[1] = 100;
+  invio_coda_item->choice_ints[2] = 250;
+  invio_coda_item->choice_ints[3] = 500;
+  invio_coda_item->choice_ints[4] = 750;
+  invio_coda_item->choice_ints[5] = 1000;
+  invio_coda_item->on_value_changed = invio_coda_cambiato;
+  invio_coda_allinea();
+
+  menu_scala_item = ui_menu_add_range(MENU_MENU_SCALE, parent, "Menu Scale %",
+                                      UI_MENU_SCALE_MIN, UI_MENU_SCALE_MAX,
+                                      UI_MENU_SCALE_STEP,
+                                      ui_get_menu_scale_percent());
+  menu_scala_item->ministep = UI_MENU_SCALE_FINE_STEP;
+  menu_scala_item->on_value_changed = menu_scala_cambiata;
+  menu_righe_item = ui_menu_add_range(MENU_MENU_ROW_GAP, parent, "Row Gap px",
+                                      UI_MENU_ROW_GAP_MIN, UI_MENU_ROW_GAP_MAX,
+                                      UI_MENU_ROW_GAP_STEP,
+                                      ui_get_menu_row_gap());
+  menu_righe_item->on_value_changed = menu_righe_cambiate;
 
   char emu_folder[16];
   char folder_emu[16];
@@ -11147,10 +14989,14 @@ void build_menu(struct menu_item *root) {
 
   ui_set_on_value_changed_callback(menu_value_changed);
   ui_tasto_nella_lista = ricerca_tasto;
+  ui_campo_scritto = ricerca_campo_scritto;
+  ui_dopo_i_tasti = ricerca_dopo_i_tasti;
 
   int settings_loaded = load_settings();
+  prg_loading_allinea();
   nas_carica();
   apply_startup_crt_preset(settings_loaded);
+  remember_crt_parameters();
 
   if (is_composite()) {
      geo_composito_all_avvio();
@@ -11285,6 +15131,23 @@ void build_menu(struct menu_item *root) {
 
 
 
+  if (realdrive_commodore_item != NULL) {
+    if (drive_commodore_da_settings) {
+
+
+      drive_commodore_da_settings = 0;
+      realdrive_commodore_item->value = 1;
+      if (cmdline_opzione("drive_commodore", "1") == 0) {
+        drive_commodore_cmdline = 1;
+        printf("[XUM] Drive on XUM1541: il Commodore dei settings ora in "
+               "cmdline.txt, per tutte le macchine\n");
+      }
+    }
+    emux_set_real_drive_commodore(realdrive_commodore_item->value);
+  }
+
+
+
 
   for (int u = 8; u <= 11; u++) {
     if (real_drive_wanted[u - 8]) {
@@ -11325,7 +15188,12 @@ static int clock_scalabile(void) {
   static int chiesto = 0;
   static int si = 0;
   if (!chiesto) {
-    si = (overclock_current() == 0 && gpuclock_current() == 0);
+
+
+    struct ocx_valori ocx;
+    ocx_current(&ocx);
+    si = (overclock_current() == 0 && gpuclock_current() == 0 &&
+          ocx.core == OCX_AUTO && ocx.v3d == OCX_AUTO);
     chiesto = 1;
   }
   return si;
@@ -11354,6 +15222,7 @@ static unsigned long guai_audio(void) {
 
 // Stuff to do when menu is activated
 void menu_about_to_activate() {
+  screenshot_refresh_sizes();
 
 
 
@@ -11654,6 +15523,12 @@ static const char *nome_del_tasto_rapido(int b) {
     case BTN_ASSIGN_SOLCO_GIU:        return "scanline piu' deboli";
     case BTN_ASSIGN_MUTO:             return "silenziatore";
     case BTN_ASSIGN_FLUSH_DISK:       return "riversa il dischetto";
+    case BTN_ASSIGN_SCREENSHOT:       return "screenshot";
+    case BTN_ASSIGN_RIAVVIA_PI:       return "riavvia il Pi";
+    case BTN_ASSIGN_SPEGNI_PI:        return "spegne il Pi";
+    case BTN_ASSIGN_ATTACH_DISK_10_2: return "disco sulla 10";
+    case BTN_ASSIGN_ATTACH_DISK_11_2: return "disco sulla 11";
+    case BTN_ASSIGN_SID_OSD:          return "riquadro del SID";
     default:                          return "";
   }
 }
@@ -11693,6 +15568,14 @@ void menu_quick_func(int button_assignment) {
 static void menu_quick_func_dentro(int button_assignment) {
   int value;
 
+
+
+  if (button_assignment == BTN_ASSIGN_RIAVVIA_PI ||
+      button_assignment == BTN_ASSIGN_SPEGNI_PI) {
+    domanda_dal_tasto_rapido(button_assignment == BTN_ASSIGN_RIAVVIA_PI);
+    return;
+  }
+
   if (emux_handle_quick_func(button_assignment, fullpath)) {
     return;
   }
@@ -11730,6 +15613,9 @@ static void menu_quick_func_dentro(int button_assignment) {
   case BTN_ASSIGN_TAPE_REW_2X:
     emux_tape_control_veloce(EMUX_TAPE_REWIND, 2);
     overlay_avviso("REW 2X");
+    break;
+  case BTN_ASSIGN_SCREENSHOT:
+    take_local_screenshot();
     break;
   case BTN_ASSIGN_WARP:
     emux_get_int(Setting_WarpMode, &value);
@@ -11783,6 +15669,21 @@ static void menu_quick_func_dentro(int button_assignment) {
     unit = 9;
     tasto_apre_i_file(DIR_DISKS, FILTER_DISK, MENU_DISK_FILE);
     break;
+
+
+  case BTN_ASSIGN_ATTACH_DISK_10_2:
+    unit = 10;
+    tasto_apre_i_file(DIR_DISKS, FILTER_DISK, MENU_DISK_FILE);
+    break;
+  case BTN_ASSIGN_ATTACH_DISK_11_2:
+    unit = 11;
+    tasto_apre_i_file(DIR_DISKS, FILTER_DISK, MENU_DISK_FILE);
+    break;
+  case BTN_ASSIGN_SID_OSD:
+
+
+    overlay_avviso("NO SID OSD ON THIS MACHINE");
+    break;
   case BTN_ASSIGN_DETACH_DISK_8_2:
     emux_detach_disk(8);
     attached_disk_name[0][0] = '\0';
@@ -11798,6 +15699,13 @@ static void menu_quick_func_dentro(int button_assignment) {
     tasto_stacca_la_cartuccia();
     break;
   case BTN_ASSIGN_ATTACH_TAPE_2:
+
+
+
+    if (emux_tape_presente() < 0) {
+      overlay_avviso("NO TAPE ON THIS MACHINE");
+      break;
+    }
     tasto_apre_i_file(DIR_TAPES, FILTER_TAPE, MENU_TAPE_FILE);
     break;
   case BTN_ASSIGN_DETACH_TAPE_2:
@@ -12190,6 +16098,29 @@ const char* function_to_string(int button_func) {
        return "Virtual Keyboard";
     case BTN_ASSIGN_FLUSH_DISK:
        return "Flush Disks";
+
+    case BTN_ASSIGN_RIAVVIA_PI:
+       return "Reboot BMC64";
+    case BTN_ASSIGN_SPEGNI_PI:
+       return "Power Off BMC64";
+
+
+    case BTN_ASSIGN_ATTACH_TAPE_2:
+       return "Attach Tape";
+    case BTN_ASSIGN_ATTACH_CART_2:
+       return "Attach Cart";
+    case BTN_ASSIGN_ATTACH_DISK_8_2:
+       return "Attach Drive 8";
+    case BTN_ASSIGN_ATTACH_DISK_9_2:
+       return "Attach Drive 9";
+    case BTN_ASSIGN_ATTACH_DISK_10_2:
+       return "Attach Drive 10";
+    case BTN_ASSIGN_ATTACH_DISK_11_2:
+       return "Attach Drive 11";
+    case BTN_ASSIGN_SID_OSD:
+       return "SID OSD";
+    case BTN_ASSIGN_SCREENSHOT:
+       return "Screenshot";
     default:
        return "Unknown";
   }

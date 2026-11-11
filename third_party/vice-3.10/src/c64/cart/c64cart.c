@@ -104,6 +104,7 @@
 #include "ltkernal.h"
 #include "mach5.h"
 #include "magicdesk.h"
+#include "magicdeskplus.h"
 #include "magicdesk16.h"
 #include "magicformel.h"
 #include "magicvoice.h"
@@ -226,6 +227,7 @@ static char *cartridge_file = NULL; /* (resource) file name */
 static int cartridge_type = CARTRIDGE_NONE; /* (resource) is == CARTRIDGE_CRT (0) if CRT file */
 /* actually in use for the "Main Slot" */
 static char *cartfile = NULL; /* file name */
+static uint8_t *rawcart_buffer = NULL;
 static int c64cart_type = CARTRIDGE_NONE; /* is == CARTRIDGE_CRT (0) if CRT file */
 static int crttype = CARTRIDGE_NONE; /* contains CRT ID if c64cart_type == 0 */
 
@@ -292,6 +294,8 @@ static cartridge_info_t cartlist[] = {
     { CARTRIDGE_NAME_LT_KERNAL,           CARTRIDGE_LT_KERNAL,           CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_MACH5,               CARTRIDGE_MACH5,               CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_MAGIC_DESK,          CARTRIDGE_MAGIC_DESK,          CARTRIDGE_GROUP_UTIL },
+    { CARTRIDGE_NAME_MAGIC_DESK_16,       CARTRIDGE_MAGIC_DESK_16,       CARTRIDGE_GROUP_UTIL },
+    { CARTRIDGE_NAME_MAGIC_DESK_PLUS,     CARTRIDGE_MAGIC_DESK_PLUS,     CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_MAGIC_FORMEL,        CARTRIDGE_MAGIC_FORMEL,        CARTRIDGE_GROUP_FREEZER },
     { CARTRIDGE_NAME_MAGIC_VOICE,         CARTRIDGE_MAGIC_VOICE,         CARTRIDGE_GROUP_UTIL },
     { CARTRIDGE_NAME_MAX_BASIC,           CARTRIDGE_MAX_BASIC,           CARTRIDGE_GROUP_UTIL },
@@ -475,12 +479,15 @@ static int set_cartridge_type(int val, void *param)
         case CARTRIDGE_IDE64:
         case CARTRIDGE_KINGSOFT:
         case CARTRIDGE_KCS_POWER:
+        case CARTRIDGE_LT_KERNAL:
         case CARTRIDGE_MACH5:
         case CARTRIDGE_MAGIC_DESK:
+        case CARTRIDGE_MAGIC_DESK_PLUS:
         case CARTRIDGE_MAGIC_DESK_16:
         case CARTRIDGE_MAGIC_FORMEL:
         case CARTRIDGE_MAGIC_VOICE:
         case CARTRIDGE_MAX_BASIC:
+        case CARTRIDGE_MEGABYTER:
         case CARTRIDGE_MIKRO_ASSEMBLER:
         case CARTRIDGE_MMC64:
         case CARTRIDGE_MMC_REPLAY:
@@ -515,6 +522,7 @@ static int set_cartridge_type(int val, void *param)
         case CARTRIDGE_WARPSPEED:
         case CARTRIDGE_WESTERMANN:
         case CARTRIDGE_ZAXXON:
+        case CARTRIDGE_ZIPPCODE48:
             break;
         default:
             /* FIXME: perhaps make this a call via the c128cartridge interface */
@@ -522,7 +530,9 @@ static int set_cartridge_type(int val, void *param)
                 (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GENERIC)) ||
                 (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_WARPSPEED128)) ||
                 (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_PARTNER128)) ||
-                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_COMAL80))
+                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_COMAL80)) ||
+                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_MAGICDESK128)) ||
+                (val == CARTRIDGE_C128_MAKEID(CARTRIDGE_C128_GMOD2C128))
                 )) {
                 break;
             } else {
@@ -671,6 +681,23 @@ int cartridge_cmdline_options_init(void)
 
 /* ------------------------------------------------------------------------- */
 
+
+/* return filetype of cart with given crtid
+   (CARTRIDGE_FILETYPE_BIN, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_NONE) */
+/* FIXME: what about CARTRIDGE_FILETYPE_SNAPSHOT ? */
+/* FIXME: only works for main slot right now */
+int cartridge_get_filetype(int crtid)
+{
+    if (cart_getid_slotmain() == crtid) {
+        if (c64cart_type == CARTRIDGE_CRT) {
+            return CARTRIDGE_FILETYPE_CRT;
+        }
+        return CARTRIDGE_FILETYPE_BIN;
+    }
+    /* FIXME: this is not entirely correct :) */
+    return CARTRIDGE_FILETYPE_NONE;
+}
+
 /*
     returns ID of cart in "Main Slot"
 */
@@ -700,6 +727,7 @@ const char *cartridge_get_filename_by_type(int type)
     }
     return cart_get_filename_by_type(type);
 }
+
 
 /*
     returns 1 if the cartridge of the given type is enabled
@@ -914,6 +942,10 @@ static int crt_attach(const char *filename, uint8_t *rawcart)
             case CARTRIDGE_MAGIC_DESK:
                 rc = magicdesk_crt_attach(fd, rawcart);
                 break;
+            case CARTRIDGE_MAGIC_DESK_PLUS:
+                magicdeskplus_file_della_cartuccia(filename);
+                rc = magicdeskplus_crt_attach(fd, rawcart, header.subtype);
+                break;
             case CARTRIDGE_MAGIC_DESK_16:
                 rc = magicdesk16_crt_attach(fd, rawcart);
                 break;
@@ -1102,8 +1134,15 @@ int cartridge_attach_image(int type, const char *filename)
     }
     DBG(("CART: cartridge_attach_image type: %d ID: %d\n", type, carttype));
 
-    /* allocate temporary array */
-    rawcart = lib_malloc(C64CART_IMAGE_LIMIT);
+
+
+
+
+    if (rawcart_buffer == NULL) {
+        rawcart_buffer = lib_malloc(C64CART_IMAGE_LIMIT);
+    }
+    rawcart = rawcart_buffer;
+    memset(rawcart, 0xff, C64CART_IMAGE_LIMIT);
 
 /*  cart should always be detached. there is no reason for doing fancy checks
     here, and it will cause problems incase a cart MUST be detached before
@@ -1178,14 +1217,12 @@ int cartridge_attach_image(int type, const char *filename)
     }
 
     DBG(("CART: cartridge_attach_image type: %d ID: %d done.\n", type, carttype));
-    lib_free(rawcart);
     log_message(LOG_DEFAULT, "CART: attached '%s' as ID %d.", abs_filename, carttype);
     lib_free(abs_filename);
     return 0;
 
 exiterror:
     DBG(("CART: error\n"));
-    lib_free(rawcart);
     log_message(LOG_DEFAULT, "CART: could not attach '%s'.", abs_filename);
     lib_free(abs_filename);
     return -1;

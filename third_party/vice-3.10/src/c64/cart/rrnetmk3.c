@@ -419,7 +419,9 @@ int rrnetmk3_bin_save(const char *filename)
     }
 
     ret = fwrite(rrnetmk3_bios, 1, 0x2000 + rrnetmk3_bios_offset, fd);
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     if (ret != (0x2000 + rrnetmk3_bios_offset)) {
         return -1;
     }
@@ -448,7 +450,9 @@ int rrnetmk3_crt_save(const char *filename)
         return -1;
     }
 
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 

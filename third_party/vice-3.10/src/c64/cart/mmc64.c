@@ -1310,7 +1310,9 @@ int mmc64_bin_save(const char *filename)
     }
 
     ret = fwrite(mmc64_bios, 1, 0x2000 + mmc64_bios_offset, fd);
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     if (ret != (0x2000 + mmc64_bios_offset)) {
         return -1;
     }
@@ -1339,7 +1341,9 @@ int mmc64_crt_save(const char *filename)
         return -1;
     }
 
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -1497,6 +1501,7 @@ int mmc64_snapshot_read_module(snapshot_t *s)
 {
     uint8_t vmajor, vminor;
     snapshot_module_t *m;
+    int bios_changed;
 
     m = snapshot_module_open(s, snap_module_name, &vmajor, &vminor);
 
@@ -1539,7 +1544,20 @@ int mmc64_snapshot_read_module(snapshot_t *s)
         goto fail;
     }
 
+    if ((mmc64_hw_clockport != 0xde02) && (mmc64_hw_clockport != 0xdf22)) {
+        goto fail;
+    }
+
     snapshot_module_close(m);
+
+
+
+    bios_changed = mmc64_bios_changed;
+    mmc64_activate();
+    mmc64_bios_changed = bios_changed;
+    if (clockport_activate() < 0) {
+        return -1;
+    }
 
     mmc64_enabled = 1;
 
@@ -1547,22 +1565,26 @@ int mmc64_snapshot_read_module(snapshot_t *s)
     mmc64_io1_list_item = io_source_register(&mmc64_io1_device);
     mmc64_io2_list_item = io_source_register(&mmc64_io2_device);
 
-    if (mmc64_clockport_enabled) {
-        if (mmc64_hw_clockport == 0xde02) {
-            mmc64_current_clockport_device = &mmc64_io1_clockport_device;
-        } else {
-            mmc64_current_clockport_device = &mmc64_io2_clockport_device;
-        }
-        mmc64_clockport_list_item = io_source_register(mmc64_current_clockport_device);
+
+    if (mmc64_hw_clockport == 0xde02) {
+        mmc64_current_clockport_device = &mmc64_io1_clockport_device;
+        mmc64_current_clockport_enable_device = &mmc64_io1_clockport_enable_device;
+    } else {
+        mmc64_current_clockport_device = &mmc64_io2_clockport_device;
+        mmc64_current_clockport_enable_device = &mmc64_io2_clockport_enable_device;
     }
+    mmc64_clockport_list_item = io_source_register(mmc64_current_clockport_device);
+    mmc64_clockport_enable_list_item = io_source_register(mmc64_current_clockport_enable_device);
 
     if (export_add(&export_res) < 0) {
         io_source_unregister(mmc64_io1_list_item);
         io_source_unregister(mmc64_io2_list_item);
         io_source_unregister(mmc64_clockport_list_item);
+        io_source_unregister(mmc64_clockport_enable_list_item);
         mmc64_io1_list_item = NULL;
         mmc64_io2_list_item = NULL;
         mmc64_clockport_list_item = NULL;
+        mmc64_clockport_enable_list_item = NULL;
         mmc64_enabled = 0;
         return -1;
     }

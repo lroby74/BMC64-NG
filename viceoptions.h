@@ -94,10 +94,24 @@ public:
 
 
   bool CompositoHvs(void) const;
+#if RASPPI >= 4
+
+
+
+
+  int Ventola(void) const;
+#endif
 
 
 
   bool ViceDopoUsb(void) const;
+
+
+
+  unsigned UsbSpegniRiavvio(void) const;
+
+
+  void SetUsbSpegniRiavvio(unsigned ms);
   bool GetRasterSkip(void) const;
   bool GetRasterSkip2(void) const;
 
@@ -163,8 +177,12 @@ private:
   int m_fb_pages;
   bool m_bDoppioHdmi;
   bool m_bViceDopoUsb;
+  unsigned m_nUsbSpegniRiavvio = 0;
   bool m_bComposito;
   bool m_bCompositoHvs;
+#if RASPPI >= 4
+  int m_nVentola = -1;
+#endif
 
   static ViceOptions *s_pThis;
 };

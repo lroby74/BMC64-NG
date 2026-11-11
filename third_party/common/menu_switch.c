@@ -555,6 +555,282 @@ static void aggiungi_compositi(struct machine_entry *primo,
   }
 }
 
+
+
+
+
+
+
+
+
+
+
+
+static const char *const RISOLUZIONI_INCORPORATE[] = {
+  "[VIC20/NTSC/HDMI/1080p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=16",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=414,228,1863,1026",
+  "[VIC20/PAL/HDMI/1080p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=31",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=414,240,1863,1080",
+  "[C64/NTSC/HDMI/X64SC 1080p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=16",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "[C64/PAL/HDMI/X64SC 1080p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=31",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "[C128/NTSC/HDMI/1080p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=16",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "scaling_params2=864,228,1920,1026",
+  "[C128/PAL/HDMI/1080p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=31",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "scaling_params2=864,240,1920,1026",
+  "[PLUS4/NTSC/HDMI/1080p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=16",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=384,232,1728,1044",
+  "[PLUS4/PAL/HDMI/1080p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=31",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "[PLUS4EMU/NTSC/HDMI/Plus4Emu 1080p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=16",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "[PLUS4EMU/PAL/HDMI/Plus4Emu 1080p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=31",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "[PET/NTSC/HDMI/1080p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=16",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=376,256,1504,1080",
+  "scaling_params2=696,256,1650,1080",
+  "[PET/PAL/HDMI/1080p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=31",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=376,256,1504,1080",
+  "scaling_params2=696,256,1650,1080",
+  "[PET/NTSC/HDMI/720p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=4",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=376,256,1003,720",
+  "scaling_params2=696,256,1100,720",
+  "[PET/PAL/HDMI/720p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=19",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=376,256,1003,720",
+  "scaling_params2=696,256,1100,720",
+  "[X64/NTSC/HDMI/Std 1080p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=16",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "[X64/PAL/HDMI/Std 1080p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=31",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "[SCPU64/NTSC/HDMI/1080p@60Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=16",
+  "hdmi_group=1",
+  "hdmi_mode=16",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=ntsc-hdmi",
+  "scaling_params=384,240,1728,1080",
+  "[SCPU64/PAL/HDMI/1080p@50Hz]",
+  "disable_overscan=1",
+  "sdtv_mode=18",
+  "hdmi_group=1",
+  "hdmi_mode=31",
+  "hdmi_drive=2",
+  "audio_out=hdmi",
+  "machine_timing=pal-hdmi",
+  "scaling_params=384,240,1728,1080",
+  NULL
+};
+
+
+static const char *parola_risoluzione(const struct machine_entry *e) {
+  if (strstr(e->desc, "1080p") != NULL) {
+    return "1080p";
+  }
+  if (strstr(e->desc, "720p") != NULL) {
+    return "720p";
+  }
+  return NULL;
+}
+
+
+
+static struct machine_entry *voce_sorella(struct machine_entry *primo,
+                                          struct machine_entry *coda,
+                                          const struct machine_entry *s,
+                                          const char *parola) {
+  struct machine_entry *p;
+  for (p = primo; p != NULL; p = p->next) {
+    const char *r = parola_risoluzione(p);
+    if (p->class == s->class && p->variante == s->variante &&
+        p->video_standard == s->video_standard &&
+        p->video_out == BMC64_VIDEO_OUT_HDMI && !p->custom &&
+        r != NULL && strcmp(r, parola) == 0) {
+      return p;
+    }
+    if (p == coda) {
+      break;
+    }
+  }
+  return NULL;
+}
+
+
+static struct machine_entry *aggiungi_risoluzioni(struct machine_entry *primo,
+                                                  struct machine_entry *coda) {
+  struct machine_entry *nuova = NULL;
+  char riga[CONFIG_TXT_LINE_LEN];
+  int i, ha_voci, n = 0;
+
+  if (primo == NULL || coda == NULL) {
+    return coda;
+  }
+  for (i = 0; RISOLUZIONI_INCORPORATE[i] != NULL; i++) {
+    strncpy(riga, RISOLUZIONI_INCORPORATE[i], sizeof(riga) - 1);
+    riga[sizeof(riga) - 1] = '\0';
+    if (riga[0] == '[') {
+      struct machine_entry *s, *dopo;
+      const char *parola;
+      nuova = NULL;
+      if (new_section(&s, riga) != 0) {
+        continue;
+      }
+      parola = parola_risoluzione(s);
+      compositi_della_macchina(primo, coda, s->class, s->variante, &ha_voci);
+      if (!ha_voci || parola == NULL ||
+          voce_sorella(primo, coda, s, parola) != NULL) {
+        free(s);
+        continue;
+      }
+      if (strcmp(parola, "1080p") == 0) {
+        dopo = voce_sorella(primo, coda, s, "720p");
+      } else {
+
+        struct machine_entry *hd = voce_sorella(primo, coda, s, "1080p");
+        struct machine_entry *p;
+        dopo = NULL;
+        for (p = primo; hd != NULL && p != NULL && p != hd; p = p->next) {
+          if (p->next == hd) {
+            dopo = p;
+          }
+        }
+      }
+      if (dopo == NULL) {
+        dopo = coda;
+      }
+      s->next = dopo->next;
+      dopo->next = s;
+      if (dopo == coda) {
+        coda = s;
+      }
+      nuova = s;
+      n++;
+    } else if (nuova != NULL) {
+      append_to_section(nuova, riga);
+    }
+  }
+  if (n > 0) {
+    printf("[SWI] voci 720p/1080p aggiunte dal kernel: %d\n", n);
+  }
+  return coda;
+}
+
 // Load and parse the machine config from machines.txt
 // Returns non-zero on error.
 int load_machines(struct machine_entry** head) {
@@ -592,6 +868,9 @@ int load_machines(struct machine_entry** head) {
   }
 
   fclose(fp);
+
+
+  current_section = aggiungi_risoluzioni(first_section, current_section);
   aggiungi_compositi(first_section, current_section);
   *head = first_section;
   return 0;
@@ -1338,6 +1617,45 @@ int porta_vga_scrivi(int porta) {
 }
 
 
+
+
+
+
+int cmdline_cifra(const char *chiave) {
+  char prefisso[48];
+  size_t lpref;
+  int cifra = -1;
+  if (chiave == NULL || chiave[0] == 0) {
+    return -1;
+  }
+  snprintf(prefisso, sizeof(prefisso), "%s=", chiave);
+  lpref = strlen(prefisso);
+  FILE *fp = fopen("/cmdline.txt", "r");
+  if (fp == NULL) {
+    return -1;
+  }
+  char riga[CMDLINE_LINE_LEN];
+  if (fgets(riga, CMDLINE_LINE_LEN, fp)) {
+    char *p = riga;
+    while (*p) {
+      while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+      if (!*p) break;
+      char *fine = p;
+      while (*fine && *fine != ' ' && *fine != '\t' && *fine != '\r' &&
+             *fine != '\n') fine++;
+      if ((size_t)(fine - p) == lpref + 1 &&
+          strncmp(p, prefisso, lpref) == 0 &&
+          p[lpref] >= '0' && p[lpref] <= '9') {
+        cifra = p[lpref] - '0';
+      }
+      p = fine;
+    }
+  }
+  fclose(fp);
+  return cifra;
+}
+
+
 static int voce_vga(const struct machine_entry *e) {
   const char *d;
   for (d = e->desc; *d; d++) {
@@ -1665,8 +1983,154 @@ static int apply_config(struct machine_entry* head, int pi_model, struct s_cfg_f
 #define OC_END   "# BMC64-OVERCLOCK-END"
 
 
+
 #define GPU_BEGIN "# BMC64-GPUCLOCK-BEGIN"
 #define GPU_END   "# BMC64-GPUCLOCK-END"
+
+static int gpu_blocco_mio(const char *p, int tipo, int famiglia, int *pct);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#define OCX_BEGIN "# BMC64-OCEXTRA-BEGIN"
+#define OCX_END   "# BMC64-OCEXTRA-END"
+
+static void ocx_tutto_auto(struct ocx_valori *v) {
+   v->volt = v->temp = v->core = v->v3d = OCX_AUTO;
+}
+
+static int ocx_vuoto(const struct ocx_valori *v) {
+   return v->volt == OCX_AUTO && v->temp == OCX_AUTO &&
+          v->core == OCX_AUTO && v->v3d == OCX_AUTO;
+}
+
+static int ocx_numero(const char *p, const char *chiave) {
+   const char *q = strstr(p, chiave);
+   if (q == NULL) {
+      return OCX_AUTO;
+   }
+   q += strlen(chiave);
+   if (strncmp(q, "auto", 4) == 0) {
+      return OCX_AUTO;
+   }
+   return atoi(q);
+}
+
+
+
+
+static int ocx_leggi_testa(const char *p, int tipo, int famiglia,
+                           struct ocx_valori *v) {
+   p += strlen(OCX_BEGIN);
+   v->volt = ocx_numero(p, "volt=");
+   v->temp = ocx_numero(p, "temp=");
+   v->core = ocx_numero(p, "core=");
+   v->v3d = ocx_numero(p, "v3d=");
+   const char *q = strstr(p, "board-type=");
+   if (q) {
+      return tipo >= 0 && (int)strtol(q + 11, NULL, 0) == tipo;
+   }
+   q = strstr(p, "famiglia=");
+   if (q) {
+      return tipo < 0 && atoi(q + 9) == famiglia;
+   }
+   return 0;
+}
+
+static void ocx_campo(char *dove, size_t n, int valore) {
+   if (valore == OCX_AUTO) {
+      snprintf(dove, n, "auto");
+   } else {
+      snprintf(dove, n, "%d", valore);
+   }
+}
+
+
+static void ocx_scrivi_blocco(FILE *fp2, const struct ocx_valori *v,
+                              const char *section, const char *chi) {
+   char volt[12], temp[12], core[12], v3d[12];
+   if (ocx_vuoto(v)) {
+      return;
+   }
+   ocx_campo(volt, sizeof(volt), v->volt);
+   ocx_campo(temp, sizeof(temp), v->temp);
+   ocx_campo(core, sizeof(core), v->core);
+   ocx_campo(v3d, sizeof(v3d), v->v3d);
+   fprintf(fp2, "%s volt=%s temp=%s core=%s v3d=%s %s\n", OCX_BEGIN, volt,
+           temp, core, v3d, chi);
+   fprintf(fp2, "%s\n", section);
+   if (v->volt != OCX_AUTO) {
+      fprintf(fp2, "over_voltage_delta=%d\n", v->volt * 1000);
+   }
+   if (v->temp != OCX_AUTO) {
+      fprintf(fp2, "temp_limit=%d\n", v->temp);
+   }
+
+   if (v->core != OCX_AUTO) {
+      fprintf(fp2, "core_freq=%d\n", v->core);
+      fprintf(fp2, "core_freq_min=%d\n", v->core);
+   }
+   if (v->v3d != OCX_AUTO) {
+      fprintf(fp2, "v3d_freq=%d\n", v->v3d);
+      fprintf(fp2, "v3d_freq_min=%d\n", v->v3d);
+   }
+   fprintf(fp2, "[all]\n");
+   fprintf(fp2, "%s\n", OCX_END);
+}
+
+
+
+static int ocx_volt_su(const struct ocx_valori *v) {
+   return v->volt != OCX_AUTO && v->volt > 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+static void gpu_scrivi_blocco(FILE *fp2, int pc, unsigned core, unsigned v3d,
+                              const char *chi, const char *section,
+                              int turbo) {
+   const unsigned core_mhz = (unsigned)((int)core + ((int)core * pc) / 100);
+   const unsigned v3d_mhz = (unsigned)((int)v3d + ((int)v3d * pc) / 100);
+   fprintf(fp2, "%s %+d%% core=%u v3d=%u %s\n", GPU_BEGIN, pc, core, v3d, chi);
+   fprintf(fp2, "%s\n", section);
+   fprintf(fp2, "core_freq=%u\n", core_mhz);
+   fprintf(fp2, "v3d_freq=%u\n", v3d_mhz);
+   if (turbo) {
+
+      fprintf(fp2, "force_turbo=1\n");
+   } else {
+      fprintf(fp2, "core_freq_min=%u\n", core_mhz);
+      fprintf(fp2, "v3d_freq_min=%u\n", v3d_mhz);
+   }
+
+   fprintf(fp2, "[all]\n");
+   fprintf(fp2, "%s\n", GPU_END);
+}
 
 static const char *oc_keys[] = {
    "arm_freq", "arm_freq_min", "over_voltage", "over_voltage_delta",
@@ -1889,15 +2353,80 @@ int overclock_apply(int level, int pi_model) {
    struct oc_blocco b;
    char line[CONFIG_TXT_LINE_LEN];
 
+   static char gpu_blocco[OC_RIGHE_BLOCCO][CONFIG_TXT_LINE_LEN];
+   int gpu_righe = 0, gpu_mio = 0, gpu_pct = 0, gpu_rifare = 0;
+   unsigned gpu_core = 0, gpu_v3d = 0;
+   char gpu_chi[32];
+
+   static char ocx_blocco[OC_RIGHE_BLOCCO][CONFIG_TXT_LINE_LEN];
+   int ocx_righe = 0, in_ocx = 0, ocx_mio = 0, ocx_rifare = 0;
+   struct ocx_valori ocx_letto;
+   ocx_tutto_auto(&ocx_letto);
+
    memset(&b, 0, sizeof(b));
+   if (tipo >= 0) {
+      snprintf(gpu_chi, sizeof(gpu_chi), "board-type=0x%02x", tipo);
+   } else {
+      snprintf(gpu_chi, sizeof(gpu_chi), "famiglia=%d", famiglia);
+   }
    while (fgets(line, CONFIG_TXT_LINE_LEN - 1, fp)) {
       char *p = ltrim(line);
 
 
-      if (in_gpu || (!in_block && strncmp(p, GPU_BEGIN, strlen(GPU_BEGIN)) == 0)) {
+
+
+      if (!in_gpu && !in_block && strncmp(p, GPU_BEGIN, strlen(GPU_BEGIN)) == 0) {
+         in_gpu = 1;
+         gpu_righe = 0;
+         gpu_mio = gpu_blocco_mio(p, tipo, famiglia, &gpu_pct);
+         if (gpu_mio) {
+            const char *q = strstr(p, "core=");
+            gpu_core = q ? (unsigned)atoi(q + 5) : 0;
+            q = strstr(p, "v3d=");
+            gpu_v3d = q ? (unsigned)atoi(q + 4) : 0;
+         }
+      }
+      if (in_gpu) {
          in_gpu = strncmp(p, GPU_END, strlen(GPU_END)) != 0;
-         fprintf(fp2, "%s", line);
-         chiudi_ultima_riga(fp, fp2, line);
+         if (gpu_mio) {
+            if (gpu_righe < OC_RIGHE_BLOCCO) {
+               strcpy(gpu_blocco[gpu_righe++], line);
+            }
+            if (!in_gpu) {
+               gpu_rifare = 1;
+            }
+         } else {
+            fprintf(fp2, "%s", line);
+            chiudi_ultima_riga(fp, fp2, line);
+         }
+         continue;
+      }
+
+
+
+      if (!in_ocx && !in_block && strncmp(p, OCX_BEGIN, strlen(OCX_BEGIN)) == 0) {
+         struct ocx_valori letto;
+         in_ocx = 1;
+         ocx_righe = 0;
+         ocx_mio = ocx_leggi_testa(p, tipo, famiglia, &letto);
+         if (ocx_mio) {
+            ocx_letto = letto;
+         }
+      }
+      if (in_ocx) {
+         if (ocx_righe < OC_RIGHE_BLOCCO) {
+            strcpy(ocx_blocco[ocx_righe++], line);
+         }
+         if (strncmp(p, OCX_END, strlen(OCX_END)) == 0) {
+            in_ocx = 0;
+            if (ocx_mio) {
+               ocx_rifare = 1;
+            } else {
+               for (int i = 0; i < ocx_righe; i++) {
+                  oc_scrivi(fp2, ocx_blocco[i]);
+               }
+            }
+         }
          continue;
       }
       if (!in_block && strncmp(p, OC_BEGIN, strlen(OC_BEGIN)) == 0) {
@@ -1941,6 +2470,11 @@ int overclock_apply(int level, int pi_model) {
          oc_scrivi(fp2, blocco[i]);
       }
    }
+   if (in_gpu && gpu_mio) {
+      for (int i = 0; i < gpu_righe; i++) {
+         oc_scrivi(fp2, gpu_blocco[i]);
+      }
+   }
 
    unsigned mhz = stock_mhz;
    if (level != 0) {
@@ -1965,11 +2499,39 @@ int overclock_apply(int level, int pi_model) {
 
 
 
-      fprintf(fp2, "force_turbo=1\n");
+
+
+
+      if (level < 0) {
+         fprintf(fp2, "force_turbo=1\n");
+      }
 
 
       fprintf(fp2, "[all]\n");
       fprintf(fp2, "%s\n", OC_END);
+   }
+
+   if (in_ocx) {
+      for (int i = 0; i < ocx_righe; i++) {
+         oc_scrivi(fp2, ocx_blocco[i]);
+      }
+   }
+
+
+   if (ocx_rifare && (level > 0 || (level < 0 && ocx_volt_su(&ocx_letto)))) {
+      ocx_letto.volt = OCX_AUTO;
+   }
+
+
+   if (gpu_rifare) {
+      if (gpu_core == 0 || gpu_v3d == 0) {
+         gpuclock_di_serie(pi_model, &gpu_core, &gpu_v3d);
+      }
+      gpu_scrivi_blocco(fp2, gpu_pct, gpu_core, gpu_v3d, gpu_chi, section,
+                        level <= 0 && !(ocx_rifare && ocx_volt_su(&ocx_letto)));
+   }
+   if (ocx_rifare) {
+      ocx_scrivi_blocco(fp2, &ocx_letto, section, gpu_chi);
    }
    printf("[OC] scheda 0x%02x, di serie %u MHz, livello %d -> %u MHz\n",
           tipo & 0xFF, stock_mhz, level, mhz);
@@ -1984,6 +2546,7 @@ int overclock_apply(int level, int pi_model) {
    }
    return 0;
 }
+
 
 
 
@@ -2105,6 +2668,9 @@ int gpuclock_apply(int level, int pi_model) {
       level = 0;
    }
    gpuclock_di_serie(pi_model, &core, &v3d);
+
+
+   const int turbo = overclock_current() <= 0;
    if (tipo >= 0) {
       snprintf(section, sizeof(section), "[board-type=0x%02x]", tipo);
       snprintf(chi, sizeof(chi), "board-type=0x%02x", tipo);
@@ -2128,8 +2694,39 @@ int gpuclock_apply(int level, int pi_model) {
    static char blocco[OC_RIGHE_BLOCCO][CONFIG_TXT_LINE_LEN];
    int righe = 0, in_block = 0, mio = 0, pct = 0;
    char line[CONFIG_TXT_LINE_LEN];
+
+
+   static char ocx_blocco[OC_RIGHE_BLOCCO][CONFIG_TXT_LINE_LEN];
+   int ocx_righe = 0, in_ocx = 0, ocx_mio = 0, ocx_rifare = 0;
+   struct ocx_valori ocx_letto;
+   ocx_tutto_auto(&ocx_letto);
    while (fgets(line, CONFIG_TXT_LINE_LEN - 1, fp)) {
       char *p = ltrim(line);
+      if (!in_ocx && !in_block && strncmp(p, OCX_BEGIN, strlen(OCX_BEGIN)) == 0) {
+         struct ocx_valori letto;
+         in_ocx = 1;
+         ocx_righe = 0;
+         ocx_mio = ocx_leggi_testa(p, tipo, famiglia, &letto);
+         if (ocx_mio) {
+            ocx_letto = letto;
+         }
+      }
+      if (in_ocx) {
+         if (ocx_righe < OC_RIGHE_BLOCCO) {
+            strcpy(ocx_blocco[ocx_righe++], line);
+         }
+         if (strncmp(p, OCX_END, strlen(OCX_END)) == 0) {
+            in_ocx = 0;
+            if (ocx_mio) {
+               ocx_rifare = 1;
+            } else {
+               for (int i = 0; i < ocx_righe; i++) {
+                  oc_scrivi(fp2, ocx_blocco[i]);
+               }
+            }
+         }
+         continue;
+      }
       if (!in_block && strncmp(p, GPU_BEGIN, strlen(GPU_BEGIN)) == 0) {
          in_block = 1;
          righe = 0;
@@ -2162,21 +2759,29 @@ int gpuclock_apply(int level, int pi_model) {
          oc_scrivi(fp2, blocco[i]);
       }
    }
+   if (in_ocx) {
+      for (int i = 0; i < ocx_righe; i++) {
+         oc_scrivi(fp2, ocx_blocco[i]);
+      }
+   }
+
+
+   if (ocx_rifare) {
+      ocx_letto.core = OCX_AUTO;
+      ocx_letto.v3d = OCX_AUTO;
+   }
 
    unsigned core_mhz = core, v3d_mhz = v3d;
    if (level != 0) {
       const int pc = level * 10;
       core_mhz = (unsigned)((int)core + ((int)core * pc) / 100);
       v3d_mhz = (unsigned)((int)v3d + ((int)v3d * pc) / 100);
-      fprintf(fp2, "%s %+d%% core=%u v3d=%u %s\n", GPU_BEGIN, pc, core, v3d, chi);
-      fprintf(fp2, "%s\n", section);
-      fprintf(fp2, "core_freq=%u\n", core_mhz);
-      fprintf(fp2, "v3d_freq=%u\n", v3d_mhz);
 
-      fprintf(fp2, "force_turbo=1\n");
-
-      fprintf(fp2, "[all]\n");
-      fprintf(fp2, "%s\n", GPU_END);
+      gpu_scrivi_blocco(fp2, pc, core, v3d, chi, section,
+                        turbo && !(ocx_rifare && ocx_volt_su(&ocx_letto)));
+   }
+   if (ocx_rifare) {
+      ocx_scrivi_blocco(fp2, &ocx_letto, section, chi);
    }
    printf("[GPU] scheda 0x%02x, di serie core %u v3d %u MHz, livello %d -> core %u v3d %u MHz\n",
           tipo & 0xFF, core, v3d, level, core_mhz, v3d_mhz);
@@ -2190,6 +2795,226 @@ int gpuclock_apply(int level, int pi_model) {
       return ERROR_10;
    }
    return 0;
+}
+
+
+
+
+
+
+
+void ocx_limiti(int pi_model, int *core_min, int *core_max, int *v3d_min,
+                int *v3d_max) {
+   if (oc_famiglia(pi_model) == 5) {
+      *core_min = 910;
+      *core_max = 1200;
+      *v3d_min = 960;
+      *v3d_max = 1200;
+   } else {
+      *core_min = 500;
+      *core_max = 800;
+      *v3d_min = 500;
+      *v3d_max = 800;
+   }
+}
+
+
+void ocx_current(struct ocx_valori *v) {
+   char line[CONFIG_TXT_LINE_LEN];
+   const int tipo = circle_board_type();
+   const int famiglia = oc_famiglia(circle_get_model());
+   struct ocx_valori letto;
+   ocx_tutto_auto(v);
+   FILE *fp = fopen("/config.txt", "r");
+   if (fp == NULL) {
+      return;
+   }
+   while (fgets(line, CONFIG_TXT_LINE_LEN - 1, fp)) {
+      char *p = ltrim(line);
+      if (strncmp(p, OCX_BEGIN, strlen(OCX_BEGIN)) == 0 &&
+          ocx_leggi_testa(p, tipo, famiglia, &letto)) {
+         *v = letto;
+         break;
+      }
+   }
+   fclose(fp);
+}
+
+
+
+
+int ocx_valido(const struct ocx_valori *v, int pi_model, int cpu_livello) {
+   int cmin, cmax, vmin, vmax;
+   ocx_limiti(pi_model, &cmin, &cmax, &vmin, &vmax);
+   if (v->volt != OCX_AUTO &&
+       (v->volt < -100 || v->volt > 100 || v->volt % 5 != 0)) {
+      return 1;
+   }
+   if (v->temp != OCX_AUTO && (v->temp < 60 || v->temp > 85)) {
+      return 1;
+   }
+   if (v->core != OCX_AUTO && (v->core < cmin || v->core > cmax)) {
+      return 1;
+   }
+   if (v->v3d != OCX_AUTO && (v->v3d < vmin || v->v3d > vmax)) {
+      return 1;
+   }
+   if (v->volt != OCX_AUTO && cpu_livello > 0) {
+      return 2;
+   }
+   if (ocx_volt_su(v) && cpu_livello < 0) {
+      return 3;
+   }
+   return 0;
+}
+
+
+static int ocx_riga_sparsa(const char *line, const struct ocx_valori *v) {
+   static const char *volt[] = { "over_voltage", "over_voltage_delta", NULL };
+   static const char *temp[] = { "temp_limit", NULL };
+   static const char *core[] = { "core_freq", "core_freq_min", "gpu_freq", NULL };
+   static const char *v3d[] = { "v3d_freq", "v3d_freq_min", "gpu_freq", NULL };
+   const char **gruppi[4] = { volt, temp, core, v3d };
+   const int scelto[4] = { v->volt != OCX_AUTO, v->temp != OCX_AUTO,
+                           v->core != OCX_AUTO, v->v3d != OCX_AUTO };
+   const char *p = ltrim((char *)line);
+   for (int g = 0; g < 4; g++) {
+      if (!scelto[g]) {
+         continue;
+      }
+      for (int i = 0; gruppi[g][i]; i++) {
+         size_t n = strlen(gruppi[g][i]);
+         if (strncmp(p, gruppi[g][i], n) == 0) {
+            const char *q = p + n;
+            while (*q == ' ' || *q == '\t') q++;
+            if (*q == '=') return 1;
+         }
+      }
+   }
+   return 0;
+}
+
+
+
+static int ocx_ricopia(void) {
+   if (copy_file("/config.txt", "/config.bak")) {
+      return ERROR_9;
+   }
+   if (copy_file("/config.new", "/config.txt")) {
+      copy_file("/config.bak", "/config.txt");
+      return ERROR_9;
+   }
+   if (unlink("/config.new")) {
+      return ERROR_10;
+   }
+   return 0;
+}
+
+int ocx_apply(const struct ocx_valori *v, int pi_model) {
+   char section[24], chi[32];
+   const int tipo = circle_board_type();
+   const int famiglia = oc_famiglia(pi_model);
+
+   if (pi_model != 4 && pi_model != 5) {
+      return ERROR_11;
+   }
+   if (ocx_valido(v, pi_model, overclock_current()) != 0) {
+      return ERROR_11;
+   }
+   if (tipo >= 0) {
+      snprintf(section, sizeof(section), "[board-type=0x%02x]", tipo);
+      snprintf(chi, sizeof(chi), "board-type=0x%02x", tipo);
+   } else {
+      strcpy(section, famiglia == 5 ? "[pi5]" : "[pi4]");
+      snprintf(chi, sizeof(chi), "famiglia=%d", famiglia);
+   }
+
+   const int tocca_gpu = v->core != OCX_AUTO || v->v3d != OCX_AUTO;
+
+   FILE *fp = fopen("/config.txt", "r");
+   if (fp == NULL) {
+      return ERROR_7;
+   }
+   FILE *fp2 = fopen("/config.new", "w");
+   if (fp2 == NULL) {
+      fclose(fp);
+      return ERROR_8;
+   }
+
+
+
+   static char blocco[OC_RIGHE_BLOCCO][CONFIG_TXT_LINE_LEN];
+   int righe = 0, in_ocx = 0, in_gpu = 0, mio = 0;
+   int gpu_pct = 0, gpu_rifare = 0;
+   unsigned gpu_core = 0, gpu_v3d = 0;
+   struct ocx_valori letto;
+   char line[CONFIG_TXT_LINE_LEN];
+   while (fgets(line, CONFIG_TXT_LINE_LEN - 1, fp)) {
+      char *p = ltrim(line);
+      if (!in_ocx && !in_gpu && strncmp(p, OCX_BEGIN, strlen(OCX_BEGIN)) == 0) {
+         in_ocx = 1;
+         righe = 0;
+         mio = ocx_leggi_testa(p, tipo, famiglia, &letto);
+         strcpy(blocco[righe++], line);
+         continue;
+      }
+      if (!in_ocx && !in_gpu && strncmp(p, GPU_BEGIN, strlen(GPU_BEGIN)) == 0) {
+         in_gpu = 1;
+         righe = 0;
+         mio = gpu_blocco_mio(p, tipo, famiglia, &gpu_pct);
+         if (mio) {
+            const char *q = strstr(p, "core=");
+            gpu_core = q ? (unsigned)atoi(q + 5) : 0;
+            q = strstr(p, "v3d=");
+            gpu_v3d = q ? (unsigned)atoi(q + 4) : 0;
+         }
+         strcpy(blocco[righe++], line);
+         continue;
+      }
+      if (in_ocx || in_gpu) {
+         if (righe < OC_RIGHE_BLOCCO) {
+            strcpy(blocco[righe++], line);
+         }
+         const int fine = in_ocx ? strncmp(p, OCX_END, strlen(OCX_END)) == 0
+                                 : strncmp(p, GPU_END, strlen(GPU_END)) == 0;
+         if (fine) {
+            if (in_gpu && mio) {
+
+
+               gpu_rifare = !tocca_gpu;
+            } else if (!mio) {
+               for (int i = 0; i < righe; i++) {
+                  oc_scrivi(fp2, blocco[i]);
+               }
+            }
+            in_ocx = 0;
+            in_gpu = 0;
+         }
+         continue;
+      }
+      if (ocx_riga_sparsa(line, v)) continue;
+      fprintf(fp2, "%s", line);
+      chiudi_ultima_riga(fp, fp2, line);
+   }
+   fclose(fp);
+
+   if (in_ocx || in_gpu) {
+      for (int i = 0; i < righe; i++) {
+         oc_scrivi(fp2, blocco[i]);
+      }
+   }
+   if (gpu_rifare) {
+      if (gpu_core == 0 || gpu_v3d == 0) {
+         gpuclock_di_serie(pi_model, &gpu_core, &gpu_v3d);
+      }
+      gpu_scrivi_blocco(fp2, gpu_pct, gpu_core, gpu_v3d, chi, section,
+                        overclock_current() <= 0 && !ocx_volt_su(v));
+   }
+   ocx_scrivi_blocco(fp2, v, section, chi);
+   printf("[OCX] scheda 0x%02x: volt %d temp %d core %d v3d %d\n", tipo & 0xFF,
+          v->volt, v->temp, v->core, v->v3d);
+   fclose(fp2);
+   return ocx_ricopia();
 }
 
 
@@ -2246,6 +3071,97 @@ int tvout_applica(int acceso) {
       return ERROR_10;
    }
    return 0;
+}
+
+
+
+
+
+
+int risoluzione_hdmi_leggi(void) {
+  FILE *fp = fopen("/cmdline.txt", "r");
+  char riga[CMDLINE_LINE_LEN];
+  int gruppo = 1, modo = -1;
+  if (fp == NULL) {
+    return -1;
+  }
+  if (fgets(riga, CMDLINE_LINE_LEN, fp)) {
+    char *p = riga;
+    while (*p) {
+      while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') p++;
+      if (!*p) break;
+      char *fine = p;
+      while (*fine && *fine != ' ' && *fine != '\t' && *fine != '\r' &&
+             *fine != '\n') fine++;
+      if (strncmp(p, "hdmi_group=", 11) == 0) {
+        gruppo = atoi(p + 11);
+      } else if (strncmp(p, "hdmi_mode=", 10) == 0) {
+        modo = atoi(p + 10);
+      }
+      p = fine;
+    }
+  }
+  fclose(fp);
+  if (gruppo != 1) {
+    return -1;
+  }
+  if (modo == 31 || modo == 16) {
+    return 1;
+  }
+  if (modo == 19 || modo == 4) {
+    return 0;
+  }
+  return -1;
+}
+
+extern int emux_machine_class;
+extern const char *emux_get_engine_version(void);
+
+
+
+
+
+static int variante_adesso(void) {
+  const char *e = emux_get_engine_version();
+  size_t n;
+  if (emux_machine_class != BMC64_MACHINE_CLASS_C64 || e == NULL) {
+    return 0;
+  }
+  n = strlen(e);
+  return n >= 4 && strcmp(e + n - 4, " x64") == 0;
+}
+
+
+
+int switch_voce_risoluzione(int voglio_1080) {
+  struct machine_entry *head = NULL;
+  struct machine_entry *p;
+  const int t = circle_get_machine_timing();
+  const int standard = (t == MACHINE_TIMING_NTSC_HDMI ||
+                        t == MACHINE_TIMING_NTSC_COMPOSITE ||
+                        t == MACHINE_TIMING_NTSC_CUSTOM_HDMI ||
+                        t == MACHINE_TIMING_NTSC_DPI ||
+                        t == MACHINE_TIMING_NTSC_CUSTOM_DPI)
+                           ? BMC64_VIDEO_STANDARD_NTSC
+                           : BMC64_VIDEO_STANDARD_PAL;
+  const int variante = variante_adesso();
+  const char *parola = voglio_1080 ? "1080p" : "720p";
+  int id = -1;
+  if (load_machines(&head) != 0) {
+    return -1;
+  }
+  for (p = head; p != NULL; p = p->next) {
+    const char *r = parola_risoluzione(p);
+    if (p->class == emux_machine_class && p->variante == variante &&
+        p->video_standard == standard &&
+        p->video_out == BMC64_VIDEO_OUT_HDMI && !p->custom &&
+        r != NULL && strcmp(r, parola) == 0) {
+      id = p->id;
+      break;
+    }
+  }
+  free_machines(head);
+  return id;
 }
 
 int switch_apply_files(struct machine_entry* head) {

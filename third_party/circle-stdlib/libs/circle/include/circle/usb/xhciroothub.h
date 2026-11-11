@@ -36,6 +36,8 @@ public:
 
 	boolean ReScanDevices (void);
 
+	unsigned PowerOffUSB3Ports (void);
+
 #ifndef NDEBUG
 	void DumpStatus (void);
 #endif

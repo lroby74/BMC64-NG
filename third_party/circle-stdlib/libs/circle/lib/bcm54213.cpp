@@ -579,6 +579,11 @@ GENET_IO_MACRO(rbuf, GENET_RBUF_OFF);
 
 static const char FromBcm54213[] = "genet";
 
+
+
+
+static boolean s_bAttesaAN = FALSE;
+
 CBcm54213Device::CBcm54213Device (void)
 :	m_pTimer (CTimer::Get ()),
 	m_bInterruptConnected (FALSE),
@@ -615,6 +620,8 @@ CBcm54213Device::~CBcm54213Device (void)
 
 boolean CBcm54213Device::Initialize (void)
 {
+	s_bAttesaAN = FALSE;
+
 	// probe:
 
 	u32 reg = sys_readl (SYS_REV_CTRL);	// read GENET HW version
@@ -884,6 +891,32 @@ out:
 	}
 
 	return bResult;
+}
+
+int CBcm54213Device::RestartAutoNegotiation (void)
+{
+	const int before = mdio_read (0);
+	if (before < 0 || before == 0xffff)
+	{
+		return -1;
+	}
+
+
+	if (!(before & 0x1000) || (before & (0x8000 | 0x4000 | 0x0800 | 0x0400)))
+	{
+		return 0;
+	}
+
+	mdio_write (0, before | 0x0200);
+
+
+	m_link = 0;
+	m_old_link = -1;
+	s_bAttesaAN = TRUE;
+
+	const int after = mdio_read (0);
+
+	return after >= 0 && after != 0xffff && ((after ^ before) & ~0x0200) == 0 ? 1 : -1;
 }
 
 boolean CBcm54213Device::IsLinkUp (void)
@@ -1958,6 +1991,17 @@ int CBcm54213Device::phy_disable_tx_clock_delay(void)
 //   then move on to 10/100.
 int CBcm54213Device::phy_read_status(void)
 {
+	if (s_bAttesaAN)
+	{
+		const int control = mdio_read(0);
+		if (control < 0 || control == 0xffff)
+			return -1;
+		if (control & 0x0200) {
+			m_link = 0;
+			return 0;
+		}
+	}
+
 
 
 
@@ -1974,10 +2018,15 @@ int CBcm54213Device::phy_read_status(void)
 			return bmsr;
 	}
 
+	if (s_bAttesaAN && (bmsr == 0xffff || (bmsr & 0x24) != 0x24)) {
+		m_link = 0;
+		return 0;
+	}
+
 	if ((bmsr & BMSR_LSTATUS) == 0) {
 		m_link = 0;
 		return 0;
-	} else
+	} else if (!s_bAttesaAN)
 		m_link = 1;
 
 	// Read autonegotiation status
@@ -2029,6 +2078,12 @@ int CBcm54213Device::phy_read_status(void)
 
 	if (m_duplex == 1) {
 		m_pause = lpa & LPA_PAUSE_CAP ? 1 : 0;
+	}
+
+
+	if (s_bAttesaAN) {
+		s_bAttesaAN = FALSE;
+		m_link = 1;
 	}
 
 	return 0;

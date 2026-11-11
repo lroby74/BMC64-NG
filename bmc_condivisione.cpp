@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "vice_network.h"
@@ -46,6 +47,14 @@ int bmc_file_in_uso(const char *path, int is_dir);
 }
 
 volatile int bmc_condivisione_attiva;
+
+
+
+
+extern "C" time_t bmc_smb_monotonic_seconds(void) {
+  return (time_t)(CTimer::GetClockTicks64() / 1000000U);
+}
+
 
 extern const char *volatile bmc_smb_fase;
 
@@ -209,6 +218,83 @@ static void smblog_inizio(void) {
 }
 
 
+static void smblog_intesta(void) {
+  if (smblog_testa) {
+    return;
+  }
+  smblog_testa = 1;
+  char riga[240];
+  CMachineInfo *info = CMachineInfo::Get();
+  snprintf(riga, sizeof(riga),
+           "\n==== condivisione su %s (%s), aperta a %lu s dall'accensione ====",
+           circle_nome_in_rete(), info != 0 ? info->GetMachineName() : "?",
+           smblog_aperta_s);
+  smblog_riga(riga);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+extern "C" {
+extern volatile unsigned bmc_emmc_riprese;
+extern volatile unsigned bmc_emmc_arresi;
+extern volatile unsigned bmc_emmc_da_stato;
+extern volatile unsigned bmc_emmc_occupato;
+extern volatile unsigned bmc_emmc_giro_max_us;
+}
+static unsigned smblog_let_riprese = 0;
+static unsigned smblog_let_da_stato = 0;
+static unsigned smblog_let_occupato = 0;
+static unsigned smblog_let_giro = 0;
+
+static unsigned smblog_let_righe = 0;
+
+
+static int smblog_let_decina(unsigned adesso, unsigned scritto) {
+  return adesso > 0 && adesso >= (scritto == 0 ? 1 : scritto * 10);
+}
+
+static void smblog_lettore(void) {
+  const unsigned r = bmc_emmc_riprese, s = bmc_emmc_da_stato;
+  const unsigned o = bmc_emmc_occupato, g = bmc_emmc_giro_max_us;
+  const unsigned soglia = smblog_let_giro < 50 ? 200 : smblog_let_giro * 4;
+  if (r == smblog_let_riprese && !smblog_let_decina(s, smblog_let_da_stato) &&
+      !smblog_let_decina(o, smblog_let_occupato) && g < soglia) {
+    return;
+  }
+  if (smblog_let_righe >= 40) {
+    return;
+  }
+  smblog_let_righe++;
+  smblog_let_riprese = r;
+  smblog_let_da_stato = s;
+  smblog_let_occupato = o;
+  smblog_let_giro = g;
+  smblog_intesta();
+  char riga[400];
+  const unsigned long ms = (unsigned long)(CTimer::GetClockTicks64() / 1000U);
+  snprintf(riga, sizeof(riga),
+           "[%lu.%03lu s] il lettore della scheda, dall'accensione: comandi rifatti e andati %u,"
+           " blocchi presi dallo stato %u, attese del controllore %u, arresi %u,"
+           " giro d'attesa piu' lungo %u us",
+           ms / 1000, ms % 1000, r, s, o, (unsigned)bmc_emmc_arresi, g);
+  smblog_riga(riga);
+  smblog_righe_emmc(1);
+}
+
+
 
 static void smblog_raccogli(const char *testo) {
   if (strncmp(testo, "read ", 5) != 0 && strncmp(testo, "write ", 6) != 0) {
@@ -219,15 +305,7 @@ static void smblog_raccogli(const char *testo) {
     return;
   }
   char riga[800];
-  if (!smblog_testa) {
-    smblog_testa = 1;
-    CMachineInfo *info = CMachineInfo::Get();
-    snprintf(riga, sizeof(riga),
-             "\n==== condivisione su %s (%s), aperta a %lu s dall'accensione ====",
-             circle_nome_in_rete(), info != 0 ? info->GetMachineName() : "?",
-             smblog_aperta_s);
-    smblog_riga(riga);
-  }
+  smblog_intesta();
   const unsigned long ms = (unsigned long)(CTimer::GetClockTicks64() / 1000U);
   const char *f = strstr(testo, "-> fr ");
   const int fr = f != NULL ? atoi(f + 6) : -1;
@@ -435,6 +513,7 @@ extern "C" void circle_smb_stop(void) {
   while (compito_vivo && CTimer::GetClockTicks() - inizio < 3000000) {
     CScheduler::Get()->Yield();
   }
+  smblog_lettore();
   smblog_scrivi(1);
 }
 
@@ -460,6 +539,7 @@ extern "C" void circle_smb_giro(unsigned microsecondi) {
   do {
     CScheduler::Get()->Yield();
   } while (CTimer::GetClockTicks() - inizio < microsecondi);
+  smblog_lettore();
   if (smblog_da_scrivere()) {
     smblog_scrivi(0);
   }

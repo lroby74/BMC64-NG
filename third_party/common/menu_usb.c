@@ -40,6 +40,7 @@
 #include "ui.h"
 #include "keycodes.h"
 #include "usb_gamepad_defaults.h"
+#include "gamepad_button_capture.h"
 
 extern int usb_pref[MAX_USB_DEVICES];
 extern int usb_x_axis[MAX_USB_DEVICES];
@@ -71,14 +72,41 @@ static struct menu_item *usb_x_thresh_items[MAX_USB_DEVICES];
 static struct menu_item *usb_y_thresh_items[MAX_USB_DEVICES];
 static struct menu_item *usb_button_items[MAX_USB_DEVICES][MAX_USB_BUTTONS];
 
+
+
+
+
+
+
+
+
+
+
+#define USB_MAPPING_AUTOMATIC 0
+#define USB_MAPPING_CUSTOM 1
+static int usb_mapping_modes[MAX_USB_DEVICES];
+static int usb_mapping_initialized;
+static int configured_device = -1;
+static struct menu_item *mapping_mode_items[MAX_USB_DEVICES];
+static struct menu_item *assign_by_function_item;
+static struct menu_item *function_items[NUM_BUTTON_ASSIGNMENTS];
+static struct menu_item *clear_button_item;
+static struct menu_item *capture_status_item;
+static int capture_assignment = BTN_ASSIGN_UNDEF;
+static BmxGamepadButtonCapture button_capture;
+
+#if MAX_USB_DEVICES != BMX_GAMEPAD_CAPTURE_MAX_DEVICES
+#error "Gamepad capture device count must match the USB mapping device count"
+#endif
+
+static void show_button_assignment_menu(int device);
+static void show_function_assignment_menu(int device);
+
 // Set to one when we are listening for raw usb values for config
 
 
 
 
-
-#define BMC64_FIRE2_BIT 0x200000
-#define BMC64_FIRE3_BIT 0x400000
 
 int want_raw_usb = 0;
 int want_raw_usb_device = 0;
@@ -147,7 +175,113 @@ static void update_key_binding_descriptions(struct menu_item *new_root,
   }
 }
 
+
+
+static int button_assignment_available(int assignment) {
+  if (assignment == BTN_ASSIGN_SWAP_PORTS &&
+      emux_machine_class == BMC64_MACHINE_CLASS_VIC20) {
+    return 0;
+  }
+  if (assignment == BTN_ASSIGN_CART_FREEZE &&
+      emux_machine_class != BMC64_MACHINE_CLASS_C64 &&
+      emux_machine_class != BMC64_MACHINE_CLASS_SCPU64 &&
+      emux_machine_class != BMC64_MACHINE_CLASS_C128) {
+    return 0;
+  }
+  if ((assignment == BTN_ASSIGN_ACTIVE_DISPLAY ||
+       assignment == BTN_ASSIGN_PIP_LOCATION ||
+       assignment == BTN_ASSIGN_PIP_SWAP ||
+       assignment == BTN_ASSIGN_40_80_COLUMN) &&
+      emux_machine_class != BMC64_MACHINE_CLASS_C128) {
+    return 0;
+  }
+  if (assignment == BTN_ASSIGN_VKBD_TOGGLE &&
+      emux_machine_class == BMC64_MACHINE_CLASS_PET) {
+    return 0;
+  }
+  return 1;
+}
+
+static void format_button_assignment_name(int assignment, char *buffer,
+                                          size_t size) {
+  if (assignment >= BTN_ASSIGN_CUSTOM_KEY_1 &&
+      assignment <= BTN_ASSIGN_CUSTOM_KEY_6) {
+    int binding = assignment - BTN_ASSIGN_CUSTOM_KEY_1;
+    snprintf(buffer, size, "Key %d (%s)", binding + 1,
+             keycode_to_string(key_bindings[binding]));
+  } else {
+    snprintf(buffer, size, "%s", function_to_string(assignment));
+  }
+}
+
+static void format_function_buttons(int device, int assignment, char *buffer,
+                                    size_t size) {
+  int count = 0;
+  size_t used;
+
+  for (int button = 0; button < joy_num_buttons[device]; button++) {
+    if (usb_button_assignments[device][button] == assignment) {
+      count++;
+    }
+  }
+
+  if (count == 0) {
+    snprintf(buffer, size, "None");
+    return;
+  }
+
+  used = (size_t)snprintf(buffer, size, "%s", count == 1 ? "Button "
+                                                          : "Buttons ");
+  if (used >= size) {
+    return;
+  }
+  count = 0;
+  for (int button = 0; button < joy_num_buttons[device]; button++) {
+    int written;
+    if (usb_button_assignments[device][button] != assignment) {
+      continue;
+    }
+    written = snprintf(buffer + used, size - used, "%s%d",
+                       count == 0 ? "" : ",", button);
+    if (written < 0 || (size_t)written >= size - used) {
+      buffer[size - 1U] = '\0';
+      return;
+    }
+    used += (size_t)written;
+    count++;
+  }
+}
+
+static void refresh_function_items(int device) {
+  char buttons[96];
+  int device_available = joy_num_pads > device && joy_num_buttons[device] > 0;
+
+  for (int assignment = BTN_ASSIGN_FIRE;
+       assignment < NUM_BUTTON_ASSIGNMENTS; assignment++) {
+    if (function_items[assignment] == NULL) {
+      continue;
+    }
+    format_function_buttons(device, assignment, buttons, sizeof buttons);
+    ui_menu_set_button_value_fitted(function_items[assignment], buttons, 1);
+    function_items[assignment]->disabled =
+        !device_available || !button_assignment_available(assignment);
+  }
+
+  if (clear_button_item != NULL) {
+    clear_button_item->disabled = !device_available;
+  }
+}
+
+
+
+
 static void refresh_usb_menu_values(int device) {
+  if (configured_device != device || usb_pref_items[device] == NULL) {
+    return;
+  }
+  if (mapping_mode_items[device] != NULL) {
+    mapping_mode_items[device]->value = usb_mapping_modes[device];
+  }
   usb_pref_items[device]->value = usb_pref[device];
   usb_x_axis_items[device]->value = usb_x_axis[device];
   usb_y_axis_items[device]->value = usb_y_axis[device];
@@ -155,9 +289,123 @@ static void refresh_usb_menu_values(int device) {
   usb_y_thresh_items[device]->value = (int)(usb_y_thresh[device] * 100.0f);
 
   for (int button = 0; button < joy_num_buttons[device]; button++) {
-    usb_button_items[device][button]->value =
-        usb_button_assignments[device][button];
+    if (usb_button_items[device][button] != NULL) {
+      usb_button_items[device][button]->value =
+          usb_button_assignments[device][button];
+    }
   }
+  refresh_function_items(device);
+}
+
+static void mark_mapping_custom(int device) {
+  usb_mapping_modes[device] = USB_MAPPING_CUSTOM;
+  refresh_usb_menu_values(device);
+}
+
+
+static void apply_automatic_mapping(int device) {
+  usb_gamepad_reset_to_defaults(device);
+}
+
+void menu_usb_mapping_initialize(void) {
+  for (int device = 0; device < MAX_USB_DEVICES; device++) {
+    usb_mapping_modes[device] = USB_MAPPING_AUTOMATIC;
+  }
+  usb_mapping_initialized = 0;
+  bmx_gamepad_button_capture_init(&button_capture);
+}
+
+
+
+static int mappa_di_una_volta(int device) {
+  if (usb_pref[device] != USB_PREF_ANALOG || usb_x_axis[device] != 0 ||
+      usb_y_axis[device] != 1 ||
+      (int)(usb_x_thresh[device] * 100.0f + 0.5f) != 50 ||
+      (int)(usb_y_thresh[device] * 100.0f + 0.5f) != 50) {
+    return 0;
+  }
+  for (int button = 0; button < MAX_USB_BUTTONS; button++) {
+    if (usb_button_assignments[device][button] !=
+        (button == 0 ? BTN_ASSIGN_FIRE : BTN_ASSIGN_UNDEF)) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+
+
+
+void menu_usb_mapping_finish_load(const int *mode_was_loaded,
+                                  const int *loaded_mode,
+                                  const int *mapping_was_loaded) {
+  for (int device = 0; device < MAX_USB_DEVICES; device++) {
+    if (mode_was_loaded[device]) {
+      usb_mapping_modes[device] = loaded_mode[device] == USB_MAPPING_AUTOMATIC
+                                      ? USB_MAPPING_AUTOMATIC
+                                      : USB_MAPPING_CUSTOM;
+    } else if (!mapping_was_loaded[device] || mappa_di_una_volta(device)) {
+      usb_mapping_modes[device] = USB_MAPPING_AUTOMATIC;
+    } else {
+      usb_mapping_modes[device] = USB_MAPPING_CUSTOM;
+    }
+    if (usb_mapping_modes[device] == USB_MAPPING_AUTOMATIC) {
+      apply_automatic_mapping(device);
+    }
+  }
+  usb_mapping_initialized = 1;
+}
+
+int menu_usb_mapping_mode(int device) {
+  return usb_mapping_modes[device];
+}
+
+
+
+void menu_usb_gamepad_info_changed(void) {
+  if (!usb_mapping_initialized) {
+    return;
+  }
+  for (int device = 0; device < MAX_USB_DEVICES; device++) {
+    if (usb_mapping_modes[device] == USB_MAPPING_AUTOMATIC) {
+      apply_automatic_mapping(device);
+    }
+    refresh_usb_menu_values(device);
+  }
+}
+
+static void mapping_menu_popped(struct menu_item *new_root,
+                                struct menu_item *old_root) {
+  (void)new_root;
+  (void)old_root;
+  if (configured_device >= 0 && configured_device < MAX_USB_DEVICES) {
+    usb_pref_items[configured_device] = NULL;
+    mapping_mode_items[configured_device] = NULL;
+    memset(usb_button_items[configured_device], 0,
+           sizeof(usb_button_items[0]));
+  }
+  configured_device = -1;
+  assign_by_function_item = NULL;
+  memset(function_items, 0, sizeof(function_items));
+  clear_button_item = NULL;
+  capture_status_item = NULL;
+  capture_assignment = BTN_ASSIGN_UNDEF;
+  bmx_gamepad_button_capture_cancel(&button_capture);
+}
+
+static void assignment_menu_popped(struct menu_item *new_root,
+                                   struct menu_item *old_root) {
+  (void)new_root;
+  (void)old_root;
+  if (configured_device >= 0 && configured_device < MAX_USB_DEVICES) {
+    memset(usb_button_items[configured_device], 0,
+           sizeof(usb_button_items[0]));
+  }
+  memset(function_items, 0, sizeof(function_items));
+  clear_button_item = NULL;
+  capture_status_item = NULL;
+  capture_assignment = BTN_ASSIGN_UNDEF;
+  bmx_gamepad_button_capture_cancel(&button_capture);
 }
 
 
@@ -218,18 +466,21 @@ static void menu_usb_value_changed(struct menu_item *item) {
   case MENU_USB_2_PREF:
   case MENU_USB_3_PREF:
     usb_pref[item->id - MENU_USB_0_PREF] = item->value;
+    mark_mapping_custom(item->id - MENU_USB_0_PREF);
     break;
   case MENU_USB_0_X_AXIS:
   case MENU_USB_1_X_AXIS:
   case MENU_USB_2_X_AXIS:
   case MENU_USB_3_X_AXIS:
     usb_x_axis[item->id - MENU_USB_0_X_AXIS] = item->value;
+    mark_mapping_custom(item->id - MENU_USB_0_X_AXIS);
     break;
   case MENU_USB_0_Y_AXIS:
   case MENU_USB_1_Y_AXIS:
   case MENU_USB_2_Y_AXIS:
   case MENU_USB_3_Y_AXIS:
     usb_y_axis[item->id - MENU_USB_0_Y_AXIS] = item->value;
+    mark_mapping_custom(item->id - MENU_USB_0_Y_AXIS);
     break;
   case MENU_USB_0_WATCH_RAW:
   case MENU_USB_1_WATCH_RAW:
@@ -243,14 +494,57 @@ static void menu_usb_value_changed(struct menu_item *item) {
   case MENU_USB_3_RESET_DEFAULTS: {
     int device = item->id - MENU_USB_0_RESET_DEFAULTS;
     usb_gamepad_reset_to_defaults(device);
+
+    usb_mapping_modes[device] = USB_MAPPING_AUTOMATIC;
     refresh_usb_menu_values(device);
     break;
   }
+
+
+
+  case MENU_USB_0_MAPPING_MODE:
+  case MENU_USB_1_MAPPING_MODE:
+  case MENU_USB_2_MAPPING_MODE:
+  case MENU_USB_3_MAPPING_MODE: {
+    int device = item->id - MENU_USB_0_MAPPING_MODE;
+    usb_mapping_modes[device] = item->value == USB_MAPPING_AUTOMATIC
+                                    ? USB_MAPPING_AUTOMATIC
+                                    : USB_MAPPING_CUSTOM;
+    if (usb_mapping_modes[device] == USB_MAPPING_AUTOMATIC) {
+      apply_automatic_mapping(device);
+    }
+    refresh_usb_menu_values(device);
+    break;
+  }
+  case MENU_USB_ASSIGN_BY_BUTTON:
+    show_button_assignment_menu(item->sub_id);
+    break;
+  case MENU_USB_ASSIGN_BY_FUNCTION:
+    show_function_assignment_menu(item->sub_id);
+    break;
+  case MENU_USB_FUNCTION_ASSIGN:
+  case MENU_USB_CLEAR_BUTTON:
+    capture_assignment = item->id == MENU_USB_FUNCTION_ASSIGN
+                             ? item->sub_id
+                             : BTN_ASSIGN_UNDEF;
+    bmx_gamepad_button_capture_cancel(&button_capture);
+    if (configured_device < 0 || configured_device >= MAX_USB_DEVICES ||
+        joy_num_pads <= configured_device ||
+        joy_num_buttons[configured_device] <= 0 ||
+        !bmx_gamepad_button_capture_begin(&button_capture, configured_device,
+                                          capture_assignment)) {
+      if (capture_status_item != NULL) {
+        ui_menu_set_button_value_fitted(capture_status_item,
+                                        "Gamepad unavailable", 1);
+      }
+    }
+    break;
   case MENU_USB_0_BTN_ASSIGN:
   case MENU_USB_1_BTN_ASSIGN:
   case MENU_USB_2_BTN_ASSIGN:
   case MENU_USB_3_BTN_ASSIGN:
     usb_button_assignments[item->id - MENU_USB_0_BTN_ASSIGN][item->sub_id] = item->value;
+    mark_mapping_custom(item->id - MENU_USB_0_BTN_ASSIGN);
     break;
   case MENU_POTX_HIGH:
     pot_x_high_value = item->value;
@@ -269,12 +563,14 @@ static void menu_usb_value_changed(struct menu_item *item) {
   case MENU_USB_2_X_THRESH:
   case MENU_USB_3_X_THRESH:
     usb_x_thresh[item->id - MENU_USB_0_X_THRESH] = ((float)item->value) / 100.0f;
+    mark_mapping_custom(item->id - MENU_USB_0_X_THRESH);
     break;
   case MENU_USB_0_Y_THRESH:
   case MENU_USB_1_Y_THRESH:
   case MENU_USB_2_Y_THRESH:
   case MENU_USB_3_Y_THRESH:
     usb_y_thresh[item->id - MENU_USB_0_Y_THRESH] = ((float)item->value) / 100.0f;
+    mark_mapping_custom(item->id - MENU_USB_0_Y_THRESH);
     break;
   case MENU_CONFIGURE_KEY_BINDINGS:
     tmp_item = ui_push_menu(-1,-1);
@@ -351,6 +647,81 @@ static void add_button_choices(struct menu_item *tmp_item) {
   }
 }
 
+
+
+static void show_button_assignment_menu(int device) {
+  struct menu_item *root = ui_push_menu(-1, -1);
+  struct menu_item *item;
+  char name[MAX_MENU_STR];
+
+  if (root == NULL) {
+    return;
+  }
+  root->on_popped_off = assignment_menu_popped;
+  memset(usb_button_items[device], 0, sizeof(usb_button_items[0]));
+
+  snprintf(name, sizeof name, "USB %d: By Button", device + 1);
+  item = ui_menu_add_button(MENU_TEXT, root, name);
+  item->disabled = 1;
+  ui_menu_add_divider(root);
+
+  if (joy_num_buttons[device] <= 0) {
+    item = ui_menu_add_button(MENU_TEXT, root, "No buttons detected");
+    item->disabled = 1;
+    return;
+  }
+
+  for (int button = 0; button < joy_num_buttons[device]; button++) {
+    snprintf(name, sizeof name, "Button %d Function", button);
+    item = ui_menu_add_multiple_choice(MENU_USB_0_BTN_ASSIGN + device, root,
+                                       name);
+    add_button_choices(item);
+    item->value = usb_button_assignments[device][button];
+    item->on_value_changed = menu_usb_value_changed;
+    item->sub_id = button;
+    usb_button_items[device][button] = item;
+  }
+}
+
+
+
+
+static void show_function_assignment_menu(int device) {
+  struct menu_item *root = ui_push_menu(-1, -1);
+  struct menu_item *item;
+  char name[MAX_MENU_STR];
+
+  if (root == NULL) {
+    return;
+  }
+  root->on_popped_off = assignment_menu_popped;
+  memset(function_items, 0, sizeof(function_items));
+
+  snprintf(name, sizeof name, "USB %d: By Function", device + 1);
+  item = ui_menu_add_button(MENU_TEXT, root, name);
+  item->disabled = 1;
+  capture_status_item = ui_menu_add_button_with_value(
+      MENU_TEXT, root, "Status", 0, "", "Select a function");
+  capture_status_item->disabled = 1;
+  ui_menu_add_divider(root);
+
+  for (int assignment = BTN_ASSIGN_FIRE;
+       assignment < NUM_BUTTON_ASSIGNMENTS; assignment++) {
+    format_button_assignment_name(assignment, name, sizeof name);
+    item = ui_menu_add_button_with_value(MENU_USB_FUNCTION_ASSIGN, root, name,
+                                         assignment, "", "");
+    item->sub_id = assignment;
+    item->on_value_changed = menu_usb_value_changed;
+    function_items[assignment] = item;
+  }
+
+  ui_menu_add_divider(root);
+  clear_button_item =
+      ui_menu_add_button(MENU_USB_CLEAR_BUTTON, root, "Clear a Button...");
+  clear_button_item->on_value_changed = menu_usb_value_changed;
+  refresh_function_items(device);
+}
+
 void build_usb_menu(int dev, struct menu_item *root) {
   struct menu_item *usb_pref_item;
   struct menu_item *x_axis_item;
@@ -360,8 +731,14 @@ void build_usb_menu(int dev, struct menu_item *root) {
   struct menu_item *tmp_item;
   char scratch[80];
   const char *profile_name = NULL;
-  int i;
   int j;
+
+
+
+  configured_device = dev;
+  root->on_popped_off = mapping_menu_popped;
+  memset(usb_button_items[dev], 0, sizeof(usb_button_items[0]));
+  memset(function_items, 0, sizeof(function_items));
 
   if (joy_num_pads > dev) {
     profile_name = usb_gamepad_default_profile_display_name_for_device(dev);
@@ -381,6 +758,16 @@ void build_usb_menu(int dev, struct menu_item *root) {
   }
 
   ui_menu_add_divider(root);
+
+  mapping_mode_items[dev] =
+      ui_menu_add_multiple_choice(MENU_USB_0_MAPPING_MODE + dev, root,
+                                  "Mapping Mode");
+  mapping_mode_items[dev]->num_choices = 2;
+  strcpy(mapping_mode_items[dev]->choices[USB_MAPPING_AUTOMATIC],
+         "Automatic");
+  strcpy(mapping_mode_items[dev]->choices[USB_MAPPING_CUSTOM], "Custom");
+  mapping_mode_items[dev]->value = usb_mapping_modes[dev];
+  mapping_mode_items[dev]->on_value_changed = menu_usb_value_changed;
   usb_pref_item = usb_pref_items[dev] =
       ui_menu_add_multiple_choice(MENU_USB_0_PREF+dev, root, "");
   snprintf(usb_pref_item->name, MAX_MENU_STR, "USB %d Directions", dev+1);
@@ -419,16 +806,17 @@ void build_usb_menu(int dev, struct menu_item *root) {
     ui_menu_add_divider(root);
   }
 
-  for (i = 0; i < joy_num_buttons[dev]; i++) {
-    sprintf(scratch, "Button %d Function", i);
-    tmp_item =
-        ui_menu_add_multiple_choice(MENU_USB_0_BTN_ASSIGN+dev, root, scratch);
-    add_button_choices(tmp_item);
-    usb_button_items[dev][i] = tmp_item;
-    tmp_item->value = usb_button_assignments[dev][i];
-    tmp_item->on_value_changed = menu_usb_value_changed;
-    tmp_item->sub_id = i;
-  }
+
+
+  tmp_item = ui_menu_add_button(MENU_USB_ASSIGN_BY_BUTTON, root,
+                                "Assignments by Button...");
+  tmp_item->sub_id = dev;
+  tmp_item->on_value_changed = menu_usb_value_changed;
+  assign_by_function_item = tmp_item =
+      ui_menu_add_button(MENU_USB_ASSIGN_BY_FUNCTION, root,
+                         "Assignments by Function...");
+  tmp_item->sub_id = dev;
+  tmp_item->on_value_changed = menu_usb_value_changed;
 
   ui_menu_add_divider(root);
   define_bindings_item =
@@ -528,13 +916,11 @@ int emu_button_function(int device, int button_num, unsigned buttons,
 int add_pot_values(int *value, int potx, int poty) {
   if (potx) {
      *value |= (pot_x_low_value << 5);
-     *value |= BMC64_FIRE2_BIT;
   } else {
      *value |= (pot_x_high_value << 5);
   }
   if (poty) {
      *value |= (pot_y_low_value << 13);
-     *value |= BMC64_FIRE3_BIT;
   } else {
      *value |= (pot_y_high_value << 13);
   }
@@ -555,12 +941,10 @@ int emu_add_button_values(int dev, unsigned b) {
       case BTN_ASSIGN_POTX:
         value &= ~(pot_x_high_value << 5);
         value |= (pot_x_low_value << 5);
-        value |= BMC64_FIRE2_BIT;
         break;
       case BTN_ASSIGN_POTY:
         value &= ~(pot_y_high_value << 13);
         value |= (pot_y_low_value << 13);
-        value |= BMC64_FIRE3_BIT;
         break;
       case BTN_ASSIGN_UP:
         value |= 0x1;
@@ -583,3 +967,144 @@ int emu_add_button_values(int dev, unsigned b) {
 long emu_get_key_binding(int index) {
   return key_bindings[index];
 }
+
+
+
+
+int emu_gamepad_button_capture_report(unsigned device, unsigned buttons,
+                                      unsigned button_count) {
+  int captured = bmx_gamepad_button_capture_report(
+      &button_capture, device, buttons, button_count);
+  if (captured && device < MAX_USB_DEVICES) {
+
+    joy_prev_buttons[device] = buttons;
+  }
+  return captured;
+}
+
+
+
+void menu_usb_capture_refresh(void) {
+  BmxGamepadCaptureState state;
+  unsigned device;
+  unsigned button;
+  int assignment;
+  char assignment_name[MAX_MENU_STR];
+  char status[MAX_DSP_VAL_LEN];
+
+  if (bmx_gamepad_button_capture_result(&button_capture, &device, &button,
+                                        &assignment)) {
+    if (device < MAX_USB_DEVICES && button < MAX_USB_BUTTONS &&
+        assignment >= BTN_ASSIGN_UNDEF &&
+        assignment < NUM_BUTTON_ASSIGNMENTS) {
+      usb_button_assignments[device][button] = assignment;
+      mark_mapping_custom((int)device);
+      format_button_assignment_name(assignment, assignment_name,
+                                    sizeof assignment_name);
+      if (assignment == BTN_ASSIGN_UNDEF) {
+        snprintf(status, sizeof status, "Button %u cleared", button);
+      } else {
+        snprintf(status, sizeof status, "Button %u -> %s", button,
+                 assignment_name);
+      }
+      if (capture_status_item != NULL) {
+        ui_menu_set_button_value_fitted(capture_status_item, status, 1);
+      }
+    }
+    bmx_gamepad_button_capture_finish(&button_capture);
+    return;
+  }
+
+  state = bmx_gamepad_button_capture_state(&button_capture);
+  if (state == BMX_GAMEPAD_CAPTURE_IDLE || capture_status_item == NULL) {
+    return;
+  }
+  if (configured_device < 0 || configured_device >= MAX_USB_DEVICES ||
+      joy_num_pads <= configured_device ||
+      joy_num_buttons[configured_device] <= 0) {
+    bmx_gamepad_button_capture_cancel(&button_capture);
+    ui_menu_set_button_value_fitted(capture_status_item,
+                                    "Gamepad unavailable", 1);
+    return;
+  }
+
+  if (capture_assignment == BTN_ASSIGN_UNDEF) {
+    snprintf(assignment_name, sizeof assignment_name, "Clear");
+  } else {
+    format_button_assignment_name(capture_assignment, assignment_name,
+                                  sizeof assignment_name);
+  }
+  switch (state) {
+  case BMX_GAMEPAD_CAPTURE_WAIT_NEUTRAL:
+    snprintf(status, sizeof status, "%s: release buttons", assignment_name);
+    break;
+  case BMX_GAMEPAD_CAPTURE_WAIT_PRESS:
+    snprintf(status, sizeof status, "%s: press button", assignment_name);
+    break;
+  case BMX_GAMEPAD_CAPTURE_WAIT_RELEASE:
+    snprintf(status, sizeof status, "%s: release to assign", assignment_name);
+    break;
+  case BMX_GAMEPAD_CAPTURE_COMPLETE:
+  case BMX_GAMEPAD_CAPTURE_IDLE:
+    return;
+  }
+  ui_menu_set_button_value_fitted(capture_status_item, status, 1);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

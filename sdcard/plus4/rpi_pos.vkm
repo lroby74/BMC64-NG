@@ -38,6 +38,7 @@
 !LSHIFT 1 7
 !RSHIFT 1 7
 !VSHIFT RSHIFT
+!SHIFTL RSHIFT
 
 Tab 7 2 8       /* CTRL */
 Control_L 7 5 8 /* Commodore Key */
@@ -57,7 +58,7 @@ Home 7 1 8      /* Clr */
 Left 6 0 8
 Return 0 1 8
 Right 6 3 8
-Shift_L 1 7 2
+Shift_L 1 7 4
 Shift_R 1 7 4
 Up 5 3 8
 LeftBracket 0 7 8       /* at */
@@ -115,4 +116,4 @@ z 1 4 8
 
 # Restore key mappings
 PrintScreen -3 0
-CapsLock -4 1
+CapsLock 1 7 64

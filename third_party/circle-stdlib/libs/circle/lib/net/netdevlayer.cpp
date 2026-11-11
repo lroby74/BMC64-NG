@@ -286,6 +286,18 @@ boolean CNetDeviceLayer::Initialize (boolean bWaitForActivate)
 	return TRUE;
 }
 
+int CNetDeviceLayer::RestartAutoNegotiation (void)
+{
+#if RASPPI == 4
+	if (CNetDevice::GetNetDevice (m_DeviceType) == &m_Bcm54213)
+	{
+		return m_Bcm54213.RestartAutoNegotiation ();
+	}
+#endif
+
+	return 0;
+}
+
 void CNetDeviceLayer::Process (void)
 {
 	if (m_pDevice == 0)

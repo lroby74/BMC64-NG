@@ -114,3 +114,9 @@ C128_CAPS     -4 1     /* CAPS LOCK    ALT+F4  (ASCII/DIN) */
 C128_HELP      8 0 8   /* HELP         ALT+F5 */
 C128_LINEFEED  9 3 8   /* LINE FEED    ALT+F6 */
 C128_NOSCROLL 10 7 0   /* NO SCROLL    ALT+F8  (bandiera 0 come a monte) */
+
+F9             9 0 8
+F10            8 3 8
+End            8 0 8
+PageDown       9 3 8
+ScrollLock    10 7 0

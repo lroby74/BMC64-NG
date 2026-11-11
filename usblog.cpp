@@ -22,6 +22,13 @@
 #include <circle/logger.h>
 #include <circle/machineinfo.h>
 #include <circle/timer.h>
+#if RASPPI == 4
+
+#include <circle/bcm2835.h>
+#include <circle/bcm2711.h>
+#include <circle/memio.h>
+#include <circle/synchronize.h>
+#endif
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -220,6 +227,23 @@ extern "C" void usblog_avvio(void) {
     fprintf(fp, "scheda            %s\n", info->GetMachineName());
     fprintf(fp, "revisione         %06x\n", (unsigned)info->GetRevisionRaw());
   }
+#if RASPPI == 4
+
+
+
+
+
+
+
+  {
+    PeripheralEntry();
+    const u32 rsts = read32(ARM_PM_RSTS);
+    PeripheralExit();
+    fprintf(fp, "avvio da          %s (RSTS 0x%08x)\n",
+            (rsts & 0x1000) ? "accensione" : "riavvio senza spegnere",
+            (unsigned)rsts);
+  }
+#endif
   fprintf(fp, "\n-- i dispositivi che il sistema conosce --\n");
   {
     ScrittoreSuFile scrittore(fp);
@@ -229,6 +253,60 @@ extern "C" void usblog_avvio(void) {
     }
   }
   fclose(fp);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+extern "C" void usblog_vl805(void) {
+#if RASPPI == 4
+  if (!s_aperto) {
+    return;
+  }
+  const char *perche = 0;
+  u32 stato = 0, id = 0, fw = 0;
+  CDeviceNameService *nomi = CDeviceNameService::Get();
+  if (nomi == 0 || nomi->GetDevice("uhub", 1, FALSE) == 0) {
+    perche = "la USB non ha l'hub del VL805";
+  } else {
+    const uintptr base = ARM_PCIE_HOST_BASE;
+    PeripheralEntry();
+    stato = read32(base + 0x4068);
+    if ((stato & 0x30) == 0x30) {
+      write32(base + 0x9000, 1u << 20);
+      id = read32(base + 0x8000);
+      fw = read32(base + 0x8000 + 0x50);
+    } else {
+      perche = "collegamento PCIe giu'";
+    }
+    PeripheralExit();
+  }
+  FILE *fp = fopen(USBLOG_FILE, "a");
+  if (fp == NULL) {
+    return;
+  }
+  if (perche != 0) {
+    fprintf(fp, "chip USB          non letto: %s (0x%08x)\n", perche,
+            (unsigned)stato);
+  } else if (id == 0x34831106) {
+    fprintf(fp, "chip USB          VIA VL805, firmware %08x\n", (unsigned)fw);
+  } else {
+    fprintf(fp, "chip USB          %04x:%04x, non e' un VL805\n",
+            (unsigned)(id & 0xFFFF), (unsigned)(id >> 16));
+  }
+  fclose(fp);
+#endif
 }
 
 extern "C" void usblog_elenco(const char *motivo) {

@@ -55,6 +55,8 @@
 #include "smb2.h"
 #include "libsmb2.h"
 #include "libsmb2-private.h"
+
+extern time_t bmc_smb_monotonic_seconds(void);
 #include "smb3-seal.h"
 #include "smb2-signing.h"
 
@@ -178,7 +180,7 @@ smb2_allocate_pdu(struct smb2_context *smb2, enum smb2_command command,
         }
 
         if (smb2->timeout) {
-                pdu->timeout = time(NULL) + smb2->timeout;
+                pdu->timeout = bmc_smb_monotonic_seconds() + smb2->timeout;
         }
 
         return pdu;
@@ -1195,7 +1197,7 @@ smb2_process_payload_variable(struct smb2_context *smb2, struct smb2_pdu *pdu)
 void smb2_timeout_pdus(struct smb2_context *smb2)
 {
         struct smb2_pdu *pdu, *next;
-        time_t t = time(NULL);
+        time_t t = bmc_smb_monotonic_seconds();
 
         pdu = smb2->outqueue;
         while (pdu) {

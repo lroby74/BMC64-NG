@@ -110,7 +110,16 @@ static int combo_ammessa(int funzione) {
   }
   return funzione == BTN_ASSIGN_MENU || funzione == BTN_ASSIGN_RESET_MENU ||
          funzione == BTN_ASSIGN_RESET_HARD ||
-         funzione == BTN_ASSIGN_RESET_SOFT;
+         funzione == BTN_ASSIGN_RESET_SOFT ||
+
+
+         funzione == BTN_ASSIGN_RIAVVIA_PI ||
+         funzione == BTN_ASSIGN_SPEGNI_PI ||
+
+
+
+         funzione == BTN_ASSIGN_ATTACH_CART_2 ||
+         funzione == BTN_ASSIGN_SCREENSHOT;
 }
 
 
@@ -839,6 +848,8 @@ signed long kbd_arch_keyname_to_keynum(char *keyname) {
     return (long)KEYCODE_F11;
   } else if (KCMP("ScrollLock")) {
     return (long)KEYCODE_ScrollLock;
+  } else if (KCMP("Pause")) {
+    return (long)KEYCODE_Pause;
   } else if (KCMP("KP_Divide")) {
     return (long)KEYCODE_KP_Divide;
   } else if (KCMP("KP_Decimal")) {
@@ -873,6 +884,15 @@ signed long kbd_arch_keyname_to_keynum(char *keyname) {
     return (long)KEYCODE_KP0;
   }
 
+
+
+
+  {
+    long da_bmx = keycode_from_vkm_token(keyname);
+    if (da_bmx > 0) {
+      return da_bmx;
+    }
+  }
   return 0;
 }
 
@@ -924,6 +944,11 @@ static int handle_key_combo_release(long key) {
       case BTN_ASSIGN_PIP_SWAP:
       case BTN_ASSIGN_40_80_COLUMN:
       case BTN_ASSIGN_FLUSH_DISK:
+
+
+
+      case BTN_ASSIGN_RIAVVIA_PI:
+      case BTN_ASSIGN_SPEGNI_PI:
         emu_quick_func_interrupt(key_combo_states[i].function);
         key_combo_states[i].invoked = 0;
         return 1;
@@ -958,6 +983,28 @@ static void handle_key_combo_function() {
       case BTN_ASSIGN_CART_MENU:
         emu_quick_func_interrupt(key_combo_states[i].function);
         break;
+
+
+
+
+
+
+      case BTN_ASSIGN_ATTACH_TAPE_2:
+      case BTN_ASSIGN_ATTACH_CART_2:
+      case BTN_ASSIGN_ATTACH_DISK_8_2:
+      case BTN_ASSIGN_ATTACH_DISK_9_2:
+      case BTN_ASSIGN_ATTACH_DISK_10_2:
+      case BTN_ASSIGN_ATTACH_DISK_11_2:
+      case BTN_ASSIGN_SID_OSD:
+        if (ui_lettore_sid_a_schermo()) {
+          overlay_avviso("NOT IN SID PLAYER");
+          break;
+        }
+        emu_quick_func_interrupt(key_combo_states[i].function);
+        break;
+      case BTN_ASSIGN_SCREENSHOT:
+        emu_quick_func_interrupt(key_combo_states[i].function);
+        break;
       default:
         break;
       }
@@ -973,6 +1020,60 @@ static int porta_di_tasti(int devd) {
   return devd == JOYDEV_NUMS_1 || devd == JOYDEV_NUMS_2 ||
          devd == JOYDEV_CURS_SP || devd == JOYDEV_CURS_LC ||
          devd == JOYDEV_KEYSET1 || devd == JOYDEV_KEYSET2;
+}
+
+
+
+
+
+
+
+
+static unsigned char super_tasto_giu[TASTI_QUANTI];
+static int super_attivi;
+static int super_usato;
+
+static int super_da_solo(long key, int giu) {
+  int k;
+  if (key < 0 || key >= TASTI_QUANTI) {
+    return 0;
+  }
+  if (key != KEYCODE_LeftSuper && key != KEYCODE_RightSuper) {
+    super_tasto_giu[key] = (unsigned char)(giu != 0);
+    if (giu && super_attivi) {
+      super_usato = 1;
+    }
+    return 0;
+  }
+  if (raw_keycode_func != NULL || emux_tasto_nella_mappa(key)) {
+    super_usato = 1;
+    return 0;
+  }
+  if (giu) {
+    if (!super_tasto_giu[key]) {
+      if (super_attivi == 0) {
+        super_usato = 0;
+        for (k = 0; k < TASTI_QUANTI; k++) {
+          if (k != key && super_tasto_giu[k]) {
+            super_usato = 1;
+          }
+        }
+      }
+      super_attivi++;
+      super_tasto_giu[key] = 1;
+    }
+  } else if (super_tasto_giu[key]) {
+    super_tasto_giu[key] = 0;
+    if (super_attivi > 0) {
+      super_attivi--;
+    }
+    if (super_attivi == 0 && !super_usato) {
+      circle_lock_acquire();
+      ui_toggle_pending = 2;
+      circle_lock_release();
+    }
+  }
+  return 1;
 }
 
 void emu_key_pressed(long key) {
@@ -991,6 +1092,20 @@ void emu_key_pressed(long key) {
 
 
   segna_mangiata(key, 0);
+
+
+  if (super_da_solo(key, 1)) {
+    segna_mangiata(key, 1);
+    return;
+  }
+
+
+
+  if (key == KEYCODE_PrintScreen && super_attivi > 0) {
+    emu_quick_func_interrupt(BTN_ASSIGN_SCREENSHOT);
+    segna_mangiata(key, 1);
+    return;
+  }
 
 
 
@@ -1203,12 +1318,31 @@ void emu_key_pressed(long key) {
 
 
 
+  } else if (emux_machine_class == BMC64_MACHINE_CLASS_C128 &&
+             key == KEYCODE_F11) {
+
+
+
+
+    emu_quick_func_interrupt(BTN_ASSIGN_COLONNE_2);
+    segna_mangiata(key, 1);
+  } else if (emux_machine_class == BMC64_MACHINE_CLASS_C128 &&
+             key == KEYCODE_Pause) {
+
+
+
+    c128_finto_dato[key] = KEYCODE_C128_CAPS;
+    emux_key_interrupt(KEYCODE_C128_CAPS, 1);
   } else {
     emux_key_interrupt(key, 1 /* down */);
   }
 }
 
 void emu_key_released(long key) {
+  if (super_da_solo(key, 0)) {
+    segna_mangiata(key, 0);
+    return;
+  }
   if (raw_keycode_func) {
     raw_keycode_func(key);
     return;

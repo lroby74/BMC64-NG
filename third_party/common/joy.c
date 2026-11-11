@@ -36,6 +36,7 @@
 #include "menu_keyset.h"
 #include "ui.h"
 #include "overlay.h"
+#include "menu_usb.h"
 
 // Global usb gamepad info.
 int joy_num_pads;
@@ -124,8 +125,12 @@ void joy_alza_tutto(void) {
       emu_spinner_alza(i);
       continue;
     }
+
+
+
     emux_joy_interrupt(PENDING_EMU_JOY_TYPE_ABSOLUTE, joydevs[i].port,
-                       joydevs[i].device, 0);
+                       joydevs[i].device,
+                       (pot_x_high_value << 5) | (pot_y_high_value << 13));
   }
 }
 
@@ -529,6 +534,9 @@ void emu_set_gamepad_info(int num_pads,
     joy_num_hats[k] = MIN(num_hats[k] , MAX_USB_HATS);
     joy_num_buttons[k] = MIN(num_buttons[k] , MAX_USB_BUTTONS);
   }
+
+
+  menu_usb_gamepad_info_changed();
 }
 
 

@@ -10,11 +10,22 @@ All the combinations use the **ALT** key. SHIFT, where present, activates the se
 |---|---|
 | **F12** | opens and closes the menu |
 | arrow keys, ENTER | inside the menu: move and choose |
-| letters, ENTER | in a file list: search by name (BACKSPACE deletes) |
-| a letter | inside the menu: jumps to the next entry that starts with that letter (S for Sound) |
+| **←** and **→** | inside the menu: close and open a folder. In a file list **←** goes to the folder above and **→** enters the one under the cursor; **→** on an image (D64, T64, TAP...) shows the programs inside it, with the Commodore characters, and **ENTER** on one starts it; **←** or **ESC** go back to the list |
+| **ENTER** on a text file | in a file list shows it (.txt, .md, .nfo, .log, .ini, .cfg, .vkm and the like, up to 8 KB); an arrow on the right tells whether there is more text above or below; **←** or **ESC** go back to the list |
+| **ENTER** held | on a name too long for the row shows its end, and on release the entry does not open. The delay is chosen in **Prefs**, **Enter shows name end** (Off, from 100 ms to 1 s) |
+| **↑** and **↓** on a text field | leaving it, what you typed counts as with **ENTER** (not in the search and in the names of files to save) |
+| **Reboot?** and **Power Off?** | the questions start on **CANCEL**: to restart or shut down you go up to **OK** |
+| **Super** key (Windows logo, raspberry) | on its own opens and closes the menu, like **F12**. With the **Maxi Positional** mapping it stays the Commodore key |
+| **AltGr** | in a text field, with the **Symbolic** mapping and an Italian or German keyboard: **[ ] { } @ # ~** as on the PC |
+| **SPACE** on an entry | in the main menu (a switch, a choice, a button, a number) puts it in one of the five slots of **Quick Access...**, at the top of the menu: choose the slot and **ENTER**. **ENTER** on a slot takes you to its entry, opening the folders |
+| **ESC** in the main menu | goes to **Quick Access...**; a second **ESC** closes the menu. The slots are kept with **Save settings** |
+| Opening the menu again (**F12**) | you are back on the last item you touched, with the folders open as you left them, whether you left with **F12** or with **ESC** (the jump to **Quick Access...** of the first **ESC** does not count) |
 | **ALT** + **↑** and **↓** | inside the menu: up and down by blocks, like **PgUp** and **PgDn** (held down, they keep going). With any keyboard, the 500+ too, where FN does not reach the computer. With the menu closed they are the tape PLAY and STOP |
 | **PgUp** and **PgDn**, **F3** and **F5** | inside the menu: up and down by blocks. On the 400 and the 500 they are **FN** + **↑** and **↓** |
 | **Home** and **End**, **F1** and **F7** | inside the menu: top and bottom. On the 400 and the 500 **Home** and **End** are **FN** + **←** and **→** |
+| letters | in a file list: search by name, already as you type; ENTER takes you to the first match (BACKSPACE deletes) |
+| a letter | inside the menu: jumps to the next entry that starts with that letter (S for Sound) |
+| mouse | inside the menu: the pointer picks the row, the left button is ENTER and the right one goes back; the wheel scrolls the list and, on an item with numbers, changes them (also by holding the left button and moving). With the menu closed the mouse belongs to the C64. It is turned off in **Prefs**, item **Mouse in Menu** |
 
 ## The tape (recorder)
 
@@ -80,6 +91,7 @@ With 8-SID tunes also **ALT + 5**, **ALT + 6**, **ALT + 7** and **ALT + 8**: fro
 | **ALT + SHIFT + R** | **soft** reset (does not clear the memory, ideal for changing or analyzing code in memory) |
 | **ALT + ESC** | restarts the Raspberry — asks for confirmation, press it a second time |
 | **ALT + SHIFT + ESC** | shuts down the Raspberry — same confirmation, on the Raspberry Pi 500 and 500+ you can use the dedicated button) |
+| **C= + F7**, held for 5 seconds | safe video mode, for when the screen cannot be seen: back to the C64 PAL on HDMI 720p, saves as a restart does and restarts (C= is the left CTRL) |
 | **ESC** alone | cancels the confirmation |
 
 ## Video
@@ -95,6 +107,7 @@ With 8-SID tunes also **ALT + 5**, **ALT + 6**, **ALT + 7** and **ALT + 8**: fro
 | **ALT + F7** | C128: as above, the 40/80 key |
 | **ALT + O** | removes the status bar, and pressing it again puts it back as it was |
 | **ALT + SHIFT + O** | turns the second line of the status bar on and off (temperature, frequency, speed) |
+| **SUPER + PRTSCN** | takes a screenshot, into the `/screenshots` folder of the card (**Prefs** > **Screenshots**) |
 
 ## Sound
 
@@ -148,3 +161,5 @@ They are on **ALT + F1…F8**, in the order in which they appear on the real mac
 | **ALT + F6** | LINE FEED |
 | **ALT + F7** | 40/80 DISPLAY |
 | **ALT + F8** | NO SCROLL |
+
+Seven of them also have a key of their own, as in Randy's BMC64: **F9** ESC, **F10** TAB, **F11** 40/80 DISPLAY, **END** HELP, **PAGE DOWN** LINE FEED, **SCROLL LOCK** NO SCROLL, **PAUSE** CAPS LOCK.

@@ -113,7 +113,40 @@ typedef enum {
 
   Setting_TapeSoundEmulation,
   Setting_TapeSoundEmulationVolume,
+
+  Setting_MouseType,
+  Setting_MouseSensitivity,
+
+  Setting_AutostartPrgMode,
 } IntSetting;
+
+
+
+
+
+typedef enum {
+  BMX_MOUSE_TYPE_1351 = 0,
+  BMX_MOUSE_TYPE_NEOS,
+  BMX_MOUSE_TYPE_AMIGA,
+  BMX_MOUSE_TYPE_CX22,
+  BMX_MOUSE_TYPE_ST,
+  BMX_MOUSE_TYPE_SMART,
+  BMX_MOUSE_TYPE_MICROMYS,
+
+  BMX_MOUSE_TYPE_DIGITAL,
+  BMX_MOUSE_TYPE_NUM
+} BmxMouseType;
+
+#define BMX_MOUSE_TYPE_DEFAULT BMX_MOUSE_TYPE_1351
+
+
+
+
+
+typedef enum {
+  BMX_AUTOSTART_PRG_RAM = 1,
+  BMX_AUTOSTART_PRG_DISK = 2,
+} BmxAutostartPrgMode;
 
 typedef enum {
   Setting_FSDeviceNDir,
@@ -355,7 +388,18 @@ void emux_display_tape_control_status(int control);
 void emux_display_tape_motor_status(int motor);
 
 // Autostart a file
+
+
+int emux_tasto_nella_mappa(long key);
 int emux_autostart_file(char* filename);
+
+
+
+int emux_autostart_file_n(char* filename, unsigned int program_number);
+int emux_image_contents(const char *path,
+                        void (*riga)(int tipo, unsigned int numero,
+                                     const char *testo, void *ctx),
+                        void *ctx);
 
 
 int emux_load_prg_file(char* filename);
@@ -392,6 +436,14 @@ int emux_real_drive_measure(int *v, int n);
 void emux_set_real_drive_veloce(int acceso);
 
 
+
+
+void emux_set_real_drive_commodore(int si);
+
+void emux_set_autofire(int porta, int livello);
+int emux_get_real_drive_commodore(void);
+
+
 void emux_real_drive_molla(void);
 
 
@@ -399,6 +451,25 @@ void emux_real_drive_molla(void);
 
 
 int emux_real_drive_recover(int unit, int *v, int n);
+
+
+
+
+
+
+int emux_real_drive_unit_result(int unit, int *stato, int *tipo);
+
+
+
+
+
+
+
+int emux_real_drive_directory(int unita,
+                              void (*riga)(int tipo, unsigned int numero,
+                                           const char *testo, void *ctx),
+                              void *ctx, char *perche, int perche_max,
+                              int *fermato);
 
 
 
@@ -417,6 +488,12 @@ void emux_leave_real_drive(int unit);
 void emux_use_emulated_drive(int unit);
 int emux_is_real_drive(int unit);
 void emux_refresh_drive_items(int unit);
+
+struct bmx_wic64_config;
+int emux_wic64_supported(void);
+const char *emux_wic64_timezone_name(unsigned index);
+int emux_get_wic64_config(struct bmx_wic64_config *config);
+int emux_apply_wic64(const struct bmx_wic64_config *config);
 
 
 extern struct menu_item *voce_tde[4];
@@ -520,6 +597,16 @@ void emux_drive_change_model(int unit);
 void emux_add_drive_option(struct menu_item* parent, int drive);
 
 void emux_add_keyboard_options(struct menu_item* parent);
+
+struct keymap_editor_model;
+int emux_keymap_editor_begin(struct keymap_editor_model *model,
+                             int *editable, char *error, size_t error_size);
+int emux_keymap_editor_save(const struct keymap_editor_model *model,
+                            char *error, size_t error_size);
+int emux_keymap_editor_restore_defaults(char *error, size_t error_size);
+int emux_keyboard_mapping_target_name(int row, int column, int flags,
+                                      char *buffer, size_t buffer_size);
+const char *emux_keyboard_mapping_file(void);
 
 // Create an empty disk image
 void emux_create_disk(struct menu_item* item, fullpath_func f_fullpath);

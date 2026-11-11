@@ -1414,6 +1414,13 @@ static void advance_waitloadready(void)
 /* After a reset a PRG file has to be injected into RAM */
 static void advance_inject(void)
 {
+
+
+
+
+    if (check("READY.", AUTOSTART_WAIT_BLINK) != YES) {
+        return;
+    }
     if (autostart_prg_perform_injection(autostart_log) < 0) {
         disable_warp_if_was_requested();
         autostart_disable();
@@ -1485,6 +1492,47 @@ void autostart_advance(void)
     }
 }
 
+#ifdef RASPI_COMPILE
+
+
+
+static void autostart_detach_cartridge(unsigned int mode)
+{
+    int type;
+
+    if (mode != AUTOSTART_HASDISK && mode != AUTOSTART_HASTAPE
+        && mode != AUTOSTART_INJECT) {
+        return;
+    }
+
+    switch (machine_class) {
+        case VICE_MACHINE_C64:
+        case VICE_MACHINE_C64SC:
+        case VICE_MACHINE_SCPU64:
+        case VICE_MACHINE_C128:
+        case VICE_MACHINE_VIC20:
+            type = cartridge_get_id(0);
+            if (type != CARTRIDGE_NONE) {
+
+
+
+                cartridge_detach_image(type);
+                log_message(autostart_log,
+                            "Cartridge (type %d) detached before autostart.", type);
+            }
+            break;
+        case VICE_MACHINE_PLUS4:
+        case VICE_MACHINE_CBM5x0:
+        case VICE_MACHINE_CBM6x0:
+
+
+            cartridge_detach_image(-1);
+            log_message(autostart_log, "Cartridges detached before autostart.");
+            break;
+    }
+}
+#endif
+
 /* Clean memory and reboot for autostart.  */
 static void reboot_for_autostart(const char *program_name, unsigned int mode,
                                  unsigned int runmode)
@@ -1495,6 +1543,12 @@ static void reboot_for_autostart(const char *program_name, unsigned int mode,
     if (!autostart_enabled) {
         return;
     }
+
+#ifdef RASPI_COMPILE
+
+
+    autostart_detach_cartridge(mode);
+#endif
 
     DBG(("reboot_for_autostart %s mode: %u runmode: %u", program_name, mode, runmode));
 

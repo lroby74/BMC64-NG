@@ -288,6 +288,7 @@ static char *clockport_device_names = NULL;
 static uint8_t mmcreplay_io1_read(uint16_t addr);
 static void mmcreplay_io1_store(uint16_t addr, uint8_t value);
 static uint8_t mmcreplay_io2_read(uint16_t addr);
+static uint8_t mmcreplay_io2_peek(uint16_t addr);
 static void mmcreplay_io2_store(uint16_t addr, uint8_t value);
 static int mmcreplay_dump(void);
 
@@ -321,7 +322,7 @@ static io_source_t mmcreplay_io2_device = {
     mmcreplay_io2_store,       /* store function */
     NULL,                      /* NO poke function */
     mmcreplay_io2_read,        /* read function */
-    NULL,                      /* TODO: peek function */
+    mmcreplay_io2_peek,        /* peek function */
     mmcreplay_dump,            /* device state information dump function */
     CARTRIDGE_MMC_REPLAY,      /* cartridge ID */
     IO_PRIO_NORMAL,            /* normal priority, device read needs to be checked for collisions */
@@ -1693,6 +1694,39 @@ uint8_t mmcreplay_io2_read(uint16_t addr)
     return 0;
 }
 
+
+static uint8_t mmcreplay_io2_peek(uint16_t addr)
+{
+    switch (addr & 0xff) {
+        case 0x10:
+
+            if (enable_mmc_regs) {
+                return 0; /* FIXME */
+            }
+            break;
+        case 0x11:
+        case 0x12:
+            if (enable_mmc_regs) {
+                return mmcreplay_io2_read(addr);
+            }
+            break;
+        case 0x13:
+            if (enable_extended_mode) {
+                return mmcreplay_io2_read(addr);
+            }
+            break;
+    }
+
+    if (enable_io2) {
+        if (enable_ram_io) {
+            return mmcr_ram[(io2_ram_bank << 13) + 0x1f00 + (addr & 0xff)];
+        }
+        return flash040core_peek(flashrom_state, (io2_ram_bank << 13) + 0x1f00 + (addr & 0xff));
+    }
+
+    return 0;
+}
+
 void mmcreplay_io2_store(uint16_t addr, uint8_t value)
 {
 /*    LOG(("MMCREPLAY: IO2 ST %04x %02x", addr, value)); */
@@ -2818,7 +2852,9 @@ int mmcreplay_bin_save(const char *filename)
             return -1;
         }
     }
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 
@@ -2870,7 +2906,9 @@ int mmcreplay_crt_save(const char *filename)
             data += 0x2000;
         }
     }
-    fclose(fd);
+    if (fclose(fd) != 0) {
+        return -1;
+    }
     return 0;
 }
 

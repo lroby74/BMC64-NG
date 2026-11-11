@@ -124,6 +124,37 @@ OBJS	+= pi4v3d/pi4_v3d.o pi4v3d/pi4_v3d_identity.o pi4v3d/pi4_v3d_mmu.o \
 endif
 endif
 
+
+
+
+ifeq ($(strip $(AARCH)),64)
+OBJS	+= screenshot/screenshot.o screenshot/storage.o screenshot/png.o \
+	   screenshot/layer_capture.o screenshot/snapshot.o \
+	   third_party/miniz/miniz_tinfl.o
+endif
+
+
+
+
+
+ifneq ($(MACHINE_CLASS),RASPI_PLUS4EMU)
+OBJS	+= wic64/service.o
+endif
+ifeq ($(MACHINE_CLASS),RASPI_C64)
+ifeq ($(filter -DRASPI_SCPU64,$(CPPFLAGS)),)
+OBJS	+= wic64_bmc.o wic64/engine.o wic64/policy.o wic64/reply_buffer.o wic64/persistence.o \
+	   network/io/deadline.o network/io/dns_query.o network/io/tcp_endpoint.o \
+	   network/io/circle_tcp_stream.o network/io/circle_tcp_stream_factory.o \
+	   network/tls/client_stream.o network/tls/circle_client_factory.o network/tls/web_profile.o \
+	   network/http/response_parser.o network/http/body_decoder.o network/http/url.o \
+	   network/http/multipart.o network/http/client.o network/http/circle_connection.o
+WIC64_LIBS = third_party/circle-stdlib/src/circle-mbedtls/libcircle-mbedtls.a \
+	third_party/circle-stdlib/libs/mbedtls/library/libmbedtls.a \
+	third_party/circle-stdlib/libs/mbedtls/library/libmbedx509.a \
+	third_party/circle-stdlib/libs/mbedtls/library/libmbedcrypto.a
+endif
+endif
+
 ifeq ($(MACHINE_CLASS),RASPI_PLUS4EMU)
 OBJS	+= plus4emulatorcore.o
 else
@@ -226,6 +257,9 @@ LIBS := $(VICELIBS) \
   	$(CIRCLEHOME)/lib/libcircle.a
 
 
+LIBS += $(WIC64_LIBS)
+
+
 
 kms/%.o: kms/%.cpp
 	@echo "  CPP   $@"
@@ -258,6 +292,64 @@ pi5v3d/%.o: pi5v3d/%.cpp
 pi5v3d/shaders/%.o: pi5v3d/shaders/%.cpp
 	@echo "  CPP   $@"
 	@$(CPP) $(CPPFLAGS) -I. -c -o $@ $<
+
+
+
+screenshot/%.o: screenshot/%.cpp
+	@echo "  CPP   $@"
+	@$(CPP) $(CPPFLAGS) -DNDEBUG -I. -c -o $@ $<
+
+third_party/miniz/miniz_tinfl.o: third_party/miniz/miniz_tinfl.c \
+		third_party/miniz/miniz.c third_party/miniz/miniz.h
+	@echo "  CC    $@"
+	@$(CC) $(CFLAGS) $(C_STANDARD) -DNDEBUG -Ithird_party/miniz -c -o $@ $<
+
+EXTRACLEAN += screenshot/*.o screenshot/*.d third_party/miniz/*.o third_party/miniz/*.d
+
+
+
+
+
+
+WIC64_FLAGS = -DNDEBUG -DRASPI_COMPILE -DHAVE_BMX_WIC64=1 -I. -Ithird_party/common \
+	-Ithird_party/circle-stdlib/include -Ithird_party/circle-stdlib/libs/mbedtls/include \
+	"-DMBEDTLS_CONFIG_FILE=<circle-mbedtls/config-circle-mbedtls.h>"
+
+wic64/%.o: wic64/%.cpp
+	@echo "  CPP   $@"
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -c -o $@ $<
+
+network/http/%.o: network/http/%.cpp
+	@echo "  CPP   $@"
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -c -o $@ $<
+
+network/io/%.o: network/io/%.cpp
+	@echo "  CPP   $@"
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -c -o $@ $<
+
+network/tls/%.o: network/tls/%.cpp
+	@echo "  CPP   $@"
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -c -o $@ $<
+
+wic64/%.d: wic64/%.cpp
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -M -MG -MT $(@:.d=.o) -MT $@ -MF $@ $<
+
+network/http/%.d: network/http/%.cpp
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -M -MG -MT $(@:.d=.o) -MT $@ -MF $@ $<
+
+network/io/%.d: network/io/%.cpp
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -M -MG -MT $(@:.d=.o) -MT $@ -MF $@ $<
+
+network/tls/%.d: network/tls/%.cpp
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -M -MG -MT $(@:.d=.o) -MT $@ -MF $@ $<
+
+wic64_bmc.o: CPPFLAGS += $(WIC64_FLAGS)
+
+wic64_bmc.d: wic64_bmc.cpp
+	@$(CPP) $(CPPFLAGS) $(WIC64_FLAGS) -M -MG -MT wic64_bmc.o -MT $@ -MF $@ $<
+
+EXTRACLEAN += wic64/*.o wic64/*.d network/http/*.o network/http/*.d network/io/*.o network/io/*.d \
+	network/tls/*.o network/tls/*.d
 
 
 

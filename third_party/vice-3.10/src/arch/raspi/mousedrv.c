@@ -28,12 +28,86 @@
 
 #include <stdio.h>
 
-// RASPI includes
-#include "videoarch.h"
+#include "emux_api.h"
+#include "joyport.h"
+#include "resources.h"
 
-static int mouse_x, mouse_y;
-static unsigned long mouse_timestamp = 0;
+
+#include "circle.h"
+
+#define MOUSE_SENSITIVITY_DEFAULT 100
+#define MOUSE_SENSITIVITY_MIN 10
+#define MOUSE_SENSITIVITY_MAX 200
+
+/* Circle delivers USB mouse movement on core 0; VICE consumes it on core 1. */
+static int mouse_pending_x;
+static int mouse_pending_y;
+static int mouse_sensitivity = MOUSE_SENSITIVITY_DEFAULT;
+static int bmx_mouse_type = BMX_MOUSE_TYPE_DEFAULT;
+static int mouse_resources_registered;
 static mouse_func_t mouse_funcs;
+
+static int set_mouse_sensitivity(int value, void *param) {
+  (void)param;
+
+  if (value < MOUSE_SENSITIVITY_MIN || value > MOUSE_SENSITIVITY_MAX) {
+    return -1;
+  }
+  __atomic_store_n(&mouse_sensitivity, value, __ATOMIC_RELEASE);
+  return 0;
+}
+
+static int set_bmx_mouse_type(int value, void *param) {
+  (void)param;
+
+  if (value < 0 || value >= BMX_MOUSE_TYPE_NUM) {
+    return -1;
+  }
+  bmx_mouse_type = value;
+  return 0;
+}
+
+static const resource_int_t mouse_resources_int[] = {
+    {"MouseSensitivity", MOUSE_SENSITIVITY_DEFAULT, RES_EVENT_SAME, NULL,
+     &mouse_sensitivity, set_mouse_sensitivity, NULL},
+    {"BMXMouseType", BMX_MOUSE_TYPE_DEFAULT, RES_EVENT_SAME, NULL,
+     &bmx_mouse_type, set_bmx_mouse_type, NULL},
+    RESOURCE_INT_LIST_END};
+
+int mousedrv_get_mouse_type(void) { return bmx_mouse_type; }
+
+int mousedrv_mouse_type_to_joyport_id(int type) {
+  switch (type) {
+    case BMX_MOUSE_TYPE_1351:
+      return JOYPORT_ID_MOUSE_1351;
+    case BMX_MOUSE_TYPE_NEOS:
+      return JOYPORT_ID_MOUSE_NEOS;
+    case BMX_MOUSE_TYPE_AMIGA:
+      return JOYPORT_ID_MOUSE_AMIGA;
+    case BMX_MOUSE_TYPE_CX22:
+      return JOYPORT_ID_MOUSE_CX22;
+    case BMX_MOUSE_TYPE_ST:
+      return JOYPORT_ID_MOUSE_ST;
+    case BMX_MOUSE_TYPE_SMART:
+      return JOYPORT_ID_MOUSE_SMART;
+    case BMX_MOUSE_TYPE_DIGITAL:
+      return JOYPORT_ID_MOUSE_DIGITAL;
+    case BMX_MOUSE_TYPE_MICROMYS:
+    default:
+      return JOYPORT_ID_MOUSE_MICROMYS;
+  }
+}
+
+static int take_scaled_mouse_delta(float *delta_x, float *delta_y) {
+  int raw_x = __atomic_exchange_n(&mouse_pending_x, 0, __ATOMIC_ACQ_REL);
+  int raw_y = __atomic_exchange_n(&mouse_pending_y, 0, __ATOMIC_ACQ_REL);
+  float scale = (float)__atomic_load_n(&mouse_sensitivity, __ATOMIC_ACQUIRE) /
+                100.0f;
+
+  *delta_x = (float)raw_x * scale;
+  *delta_y = (float)raw_y * scale;
+  return raw_x != 0 || raw_y != 0;
+}
 
 int mousedrv_resources_init(mouse_func_t *funcs) {
   mouse_funcs.mbl = funcs->mbl;
@@ -41,6 +115,13 @@ int mousedrv_resources_init(mouse_func_t *funcs) {
   mouse_funcs.mbm = funcs->mbm;
   mouse_funcs.mbu = funcs->mbu;
   mouse_funcs.mbd = funcs->mbd;
+
+  if (!mouse_resources_registered) {
+    if (resources_register_int(mouse_resources_int) < 0) {
+      return -1;
+    }
+    mouse_resources_registered = 1;
+  }
 
   return 0;
 }
@@ -51,16 +132,27 @@ void mousedrv_init(void) {}
 
 void mousedrv_mouse_changed(void) {}
 
-int mousedrv_get_x(void) { return mouse_x; }
+void mousedrv_poll(void) {
+  float delta_x;
+  float delta_y;
 
-int mousedrv_get_y(void) { return mouse_y; }
+  if (take_scaled_mouse_delta(&delta_x, &delta_y)) {
+    mouse_move(delta_x, delta_y);
+  }
+}
 
-unsigned long mousedrv_get_timestamp(void) { return mouse_timestamp; }
+int mousedrv_poll_scaled(float *delta_x, float *delta_y) {
+  return take_scaled_mouse_delta(delta_x, delta_y);
+}
+
+void mousedrv_clear_pending(void) {
+  __atomic_exchange_n(&mouse_pending_x, 0, __ATOMIC_ACQ_REL);
+  __atomic_exchange_n(&mouse_pending_y, 0, __ATOMIC_ACQ_REL);
+}
 
 void emu_mouse_move(int x, int y) {
-  mouse_x += x;
-  mouse_y -= y;
-  mouse_timestamp = vsyncarch_gettime();
+  __atomic_fetch_add(&mouse_pending_x, x, __ATOMIC_RELAXED);
+  __atomic_fetch_add(&mouse_pending_y, y, __ATOMIC_RELAXED);
 }
 
 void emu_mouse_button_left(int pressed) {

@@ -129,6 +129,33 @@ static const menu_text_key_t maxi_text_keys[] = {
  {KEYCODE_Slash, '/', '?'}, {KEYCODE_Space, ' ', ' '},
 };
 
+
+
+
+
+
+
+
+typedef struct {
+  long key;
+  char altgr;
+  char altgr_shifted;
+} menu_text_altgr_t;
+
+static const menu_text_altgr_t it_altgr_keys[] = {
+ {KEYCODE_LeftBracket, '[', '{'}, {KEYCODE_RightBracket, ']', '}'},
+ {KEYCODE_SemiColon, '@', '\0'}, {KEYCODE_SingleQuote, '#', '\0'},
+ {KEYCODE_Equals, '~', '\0'}, {KEYCODE_Dash, '`', '\0'},
+ {KEYCODE_7, '{', '\0'}, {KEYCODE_8, '[', '\0'}, {KEYCODE_9, ']', '\0'},
+ {KEYCODE_0, '}', '\0'},
+};
+
+static const menu_text_altgr_t de_altgr_keys[] = {
+ {KEYCODE_q, '@', '\0'}, {KEYCODE_7, '{', '\0'}, {KEYCODE_8, '[', '\0'},
+ {KEYCODE_9, ']', '\0'}, {KEYCODE_0, '}', '\0'}, {KEYCODE_Dash, '\\', '\0'},
+ {KEYCODE_RightBracket, '~', '\0'}, {KEYCODE_KP_BackSlash, '|', '\0'},
+};
+
 #define QUANTI(t) ((size_t)(sizeof(t) / sizeof((t)[0])))
 
 char menu_text_layout_key_to_char(long key, int shifted,
@@ -137,7 +164,9 @@ char menu_text_layout_key_to_char(long key, int shifted,
   size_t text_key_count = QUANTI(us_text_keys);
   size_t index;
 
-  if (keyboard_mapping == KEYBOARD_MAPPING_POS) {
+
+  if (keyboard_mapping == KEYBOARD_MAPPING_POS ||
+      keyboard_mapping == KEYBOARD_MAPPING_CUSTOM) {
     text_keys = positional_text_keys;
     text_key_count = QUANTI(positional_text_keys);
   } else if (keyboard_mapping == KEYBOARD_MAPPING_MAXI) {
@@ -167,6 +196,36 @@ char menu_text_layout_key_to_char(long key, int shifted,
   for (index = 0; index < text_key_count; index++) {
     if (text_keys[index].key == key) {
       return shifted ? text_keys[index].shifted : text_keys[index].normal;
+    }
+  }
+  return '\0';
+}
+
+char menu_text_layout_altgr_to_char(long key, int shifted,
+                                    int keyboard_mapping, int keyboard_layout) {
+  const menu_text_altgr_t *t;
+  size_t quanti;
+  size_t i;
+
+
+
+  if (keyboard_mapping == KEYBOARD_MAPPING_POS ||
+      keyboard_mapping == KEYBOARD_MAPPING_CUSTOM ||
+      keyboard_mapping == KEYBOARD_MAPPING_MAXI) {
+    return '\0';
+  }
+  if (keyboard_layout == MENU_TEXT_LAYOUT_IT) {
+    t = it_altgr_keys;
+    quanti = QUANTI(it_altgr_keys);
+  } else if (keyboard_layout == MENU_TEXT_LAYOUT_DE) {
+    t = de_altgr_keys;
+    quanti = QUANTI(de_altgr_keys);
+  } else {
+    return '\0';
+  }
+  for (i = 0; i < quanti; i++) {
+    if (t[i].key == key) {
+      return shifted ? t[i].altgr_shifted : t[i].altgr;
     }
   }
   return '\0';

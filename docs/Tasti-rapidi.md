@@ -10,11 +10,22 @@ Tutte le combinazioni usano il tasto **ALT**. Lo SHIFT, ove presente é per atti
 |---|---|
 | **F12** | apre e chiude il menu |
 | frecce, INVIO | dentro il menu: muoversi e scegliere |
-| lettere, INVIO | in una lista di file: la ricerca per nome (DEL cancella) |
-| una lettera | dentro il menu: porta alla voce successiva che comincia con quella lettera (S per Sound) |
+| **←** e **→** | dentro il menu: chiudono e aprono una cartella. In una lista di file **←** va alla cartella sopra e **→** entra in quella sotto il cursore; **→** su un'immagine (D64, T64, TAP...) mostra i programmi che ha dentro, coi caratteri del Commodore, e **INVIO** su uno lo fa partire; **←** o **ESC** tornano alla lista |
+| **INVIO** su un file di testo | in una lista di file lo mostra (.txt, .md, .nfo, .log, .ini, .cfg, .vkm e simili, fino a 8 KB); una freccia a destra dice se sopra o sotto c'è altro testo; **←** o **ESC** tornano alla lista |
+| **INVIO** tenuto | su un nome troppo lungo per la riga ne mostra la fine, e lasciandolo la voce non si apre. Il ritardo si sceglie in **Prefs**, **Enter shows name end** (Off, da 100 ms a 1 s) |
+| **↑** e **↓** su un campo di testo | lasciandolo, quello che hai scritto vale come con **INVIO** (non nella ricerca e nei nomi dei file da salvare) |
+| **Reboot?** e **Power Off?** | le domande partono su **CANCEL**: per riavviare o spegnere si sale su **OK** |
+| tasto **Super** (logo di Windows, lampone) | da solo apre e chiude il menu, come **F12**. Con la mappatura **Maxi Positional** resta il tasto Commodore |
+| **AltGr** | in un campo di testo, con la mappatura **Symbolic** e la tastiera italiana o tedesca: **[ ] { } @ # ~** come sul PC |
+| **SPAZIO** su una voce | nel menu principale (un interruttore, una scelta, un pulsante, un numero) la mette in uno dei cinque posti di **Quick Access...**, in cima al menu: si sceglie il posto e **INVIO**. **INVIO** su un posto porta alla sua voce, aprendo le cartelle |
+| **ESC** nel menu principale | porta su **Quick Access...**; un secondo **ESC** chiude il menu. I posti si salvano con **Save settings** |
+| Riaprendo il menu (**F12**) | si torna sull'ultima voce toccata, con le cartelle aperte come le avevi lasciate, sia uscendo con **F12** sia con **ESC** (il salto su **Quick Access...** del primo **ESC** non conta) |
 | **ALT** + **↑** e **↓** | dentro il menu: su e giú a blocchi, come **PgUp** e **PgDn** (tenuti premuti, continuano). Con ogni tastiera, anche sul 500+, dove FN non arriva al computer. A menu chiuso sono PLAY e STOP del nastro |
 | **PgUp** e **PgDn**, **F3** e **F5** | dentro il menu: su e giú a blocchi. Sul 400 e sul 500 sono **FN** + **↑** e **↓** |
 | **Home** e **End**, **F1** e **F7** | dentro il menu: in cima e in fondo. Sul 400 e sul 500 **Home** e **End** sono **FN** + **←** e **→** |
+| lettere | in una lista di file: la ricerca per nome, già mentre scrivi; INVIO porta sul primo trovato (DEL cancella) |
+| una lettera | dentro il menu: porta alla voce successiva che comincia con quella lettera (S per Sound) |
+| mouse | dentro il menu: la freccia sceglie la riga, il tasto sinistro fa INVIO e il destro torna indietro; la rotella scorre la lista e, su una voce coi numeri, li cambia (anche tenendo premuto il sinistro e spostando). A menu chiuso il mouse è del C64. Si spegne in **Prefs**, voce **Mouse in Menu** |
 
 ## Il nastro (registratore)
 
@@ -80,6 +91,7 @@ Coi brani a 8 SID anche **ALT + 5**, **ALT + 6**, **ALT + 7** e **ALT + 8**: dal
 | **ALT + SHIFT + R** | reset **dolce** (non cancella la memoria, ideale per modificare o analizzare un codice in memoria) |
 | **ALT + ESC** | riavvia il Raspberry — chiede conferma, si preme una seconda volta |
 | **ALT + SHIFT + ESC** | spegne il Raspberry — stessa conferma, sui Raspberry PI 500 e 500+ é possibile usare il pulsante apposito) |
+| **C= + F7**, tenuti 5 secondi | modo video sicuro, per quando lo schermo non si vede: torna al C64 PAL in HDMI 720p, salva come il riavvio e riavvia (C= è il CTRL di sinistra) |
 | **ESC** da solo | annulla la conferma |
 
 ## Video
@@ -95,6 +107,7 @@ Coi brani a 8 SID anche **ALT + 5**, **ALT + 6**, **ALT + 7** e **ALT + 8**: dal
 | **ALT + F7** | C128: come sopra, il tasto 40/80 |
 | **ALT + O** | toglie la barra di stato, e ripremendolo la rimette com'era |
 | **ALT + SHIFT + O** | accende e spegne la seconda riga della barra di stato (temperatura, frequenza, velocità) |
+| **SUPER + STAMP** | la fotografia dello schermo, nella cartella `/screenshots` della scheda (**Prefs** > **Screenshots**) |
 
 ## Suono
 
@@ -148,3 +161,5 @@ Stanno su **ALT + F1…F8**, nell'ordine in cui si trovano sulla macchina vera.
 | **ALT + F6** | LINE FEED |
 | **ALT + F7** | 40/80 DISPLAY |
 | **ALT + F8** | NO SCROLL |
+
+Sette di questi hanno anche un tasto da solo, come nel BMC64 di Randy: **F9** ESC, **F10** TAB, **F11** 40/80 DISPLAY, **FINE** HELP, **PAG GIÙ** LINE FEED, **BLOC SCORR** NO SCROLL, **PAUSA** CAPS LOCK.

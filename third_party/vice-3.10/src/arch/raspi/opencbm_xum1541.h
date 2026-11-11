@@ -64,9 +64,59 @@ int raspi_opencbm_get_veloce(void);
 
 
 
+void raspi_opencbm_set_commodore(int si);
+int raspi_opencbm_get_commodore(void);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void raspi_opencbm_unita_vere(unsigned int maschera);
+int raspi_opencbm_esito_unita(int unita, int *stato, int *tipo);
+
+
+
+
+void raspi_opencbm_prima_di_uscire(void);
+
+
+
+
+
+
 
 
 int raspi_opencbm_rimetti_in_piedi(int unita, int *v, int n);
+
+
+
+
+
+
+
+
+
+
+
+#define RASPI_DIR_1541 0
+#define RASPI_DIR_1571 1
+#define RASPI_DIR_1581 2
+int raspi_opencbm_dir_apri(int unita, char *stato, int stato_max);
+int raspi_opencbm_dir_settore(int traccia, int settore, unsigned char *buf,
+                              char *stato, int stato_max);
+void raspi_opencbm_dir_chiudi(void);
 
 
 

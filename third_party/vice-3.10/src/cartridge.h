@@ -106,6 +106,9 @@ void cartridge_release_freeze(void);
 const char *cartridge_get_filename_by_type(int type);
 int cartridge_type_enabled(int type);
 
+/* return filetype (CARTRIDGE_FILETYPE_BIN, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_NONE) */
+int cartridge_get_filetype(int crtid);
+
 /* save the primary (rom/ram)image of the give cart type to a file */
 int cartridge_save_image(int type, const char *filename);
 int cartridge_bin_save(int type, const char *filename);
@@ -124,6 +127,14 @@ int cartridge_flush_secondary_image(int type);
 
 int cartridge_can_flush_secondary_image(int crtid);
 int cartridge_can_save_secondary_image(int crtid);
+
+
+/* save the tertiary image of the give cart type to a file */
+int cartridge_save_tertiary_image(int type, const char *filename);
+int cartridge_flush_tertiary_image(int type);
+
+int cartridge_can_flush_tertiary_image(int crtid);
+int cartridge_can_save_tertiary_image(int crtid);
 
 /* load/write snapshot modules for attached cartridges */
 struct snapshot_s;
@@ -275,7 +286,8 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_PROFIDOS             84 /* profidos.c */
 #define CARTRIDGE_MAGIC_DESK_16        85 /* magicdesk16.c */
 #define CARTRIDGE_MEGABYTER            86 /* megabyter.c */
-#define CARTRIDGE_LAST                 86 /* cartconv: last cartridge in list */
+#define CARTRIDGE_MAGIC_DESK_PLUS      87 /* magicdeskplus.c */
+#define CARTRIDGE_LAST                 87 /* cartconv: last cartridge in list */
 
 /* list of canonical names for the c64 cartridges:
    note: often it is hard to determine "the" official name, let alone the way it
@@ -348,6 +360,7 @@ void cartridge_sound_chip_init(void);
 #define CARTRIDGE_NAME_LT_KERNAL          "Lt. Kernal Host Adaptor"
 #define CARTRIDGE_NAME_MACH5              "MACH 5" /* http://rr.pokefinder.org/wiki/MACH_5 */
 #define CARTRIDGE_NAME_MAGIC_DESK         "Magic Desk" /* also: "Domark, Hes Australia" */
+#define CARTRIDGE_NAME_MAGIC_DESK_PLUS    "Magic Desk Plus" /* https://github.com/crystalct/MagicDeskPlus */
 #define CARTRIDGE_NAME_MAGIC_DESK_16      "Magic Desk 16K" /* https://github.com/crystalct/MagicDesk2 */
 #define CARTRIDGE_NAME_MAGIC_FORMEL       "Magic Formel" /* http://rr.pokefinder.org/wiki/Magic_Formel */
 #define CARTRIDGE_NAME_MAGIC_VOICE        "Magic Voice" /* all lowercase on cart ? */

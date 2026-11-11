@@ -43,12 +43,15 @@ public:
 
 	boolean DisablePort (unsigned nPortIndex);	// nPortIndex is 0-based
 
+	unsigned PowerOffAllPorts (void);
+
 #if RASPPI >= 4
 	const TUSBHubInfo *GetHubInfo (void) const;
 #endif
 
 private:
 	boolean EnumeratePorts (void);
+	boolean RetryPort (unsigned nPortIndex, unsigned *pTry);
 
 	boolean StartStatusChangeRequest (void);
 	void CompletionRoutine (CUSBRequest *pURB);
@@ -67,6 +70,7 @@ private:
 	CUSBDevice *m_pDevice[USB_HUB_MAX_PORTS];
 	TUSBPortStatus *m_pStatus[USB_HUB_MAX_PORTS];
 	boolean m_bPortConfigured[USB_HUB_MAX_PORTS];
+	boolean m_bPortPowerCycled[USB_HUB_MAX_PORTS];
 
 #if RASPPI >= 4
 	TUSBHubInfo *m_pHubInfo;

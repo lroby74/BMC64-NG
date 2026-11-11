@@ -229,7 +229,7 @@ public:
     /**
      * Enable filter emulation.
      *
-     * @param enable false to turn off filter emulation
+
      */
     void enableFilter(bool enable);
 
@@ -333,11 +333,21 @@ public:
      * topbit is not pulled down, providing a stronger
      * sound.
      *
-     * @param enable
+
      *
      * @since 1.3
      */
     void enableStrongPS(bool enable);
+
+
+
+
+
+
+
+
+
+    void noiseLevel(int level);
 };
 
 }

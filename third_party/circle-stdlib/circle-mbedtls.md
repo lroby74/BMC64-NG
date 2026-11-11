@@ -28,6 +28,17 @@ subdirectory. Go to the subdirectory of the sample of your choice and do `make`.
 
 ## Current State
 
+V1.16 (BMX compatibility update):
+
+* Uses Mbed TLS 3.6.7 LTS from the checksum-pinned official release archive.
+* Enables certificate date validation and keeps Circle's hardware entropy and
+  scheduler mutex adapters.
+* Refuses client setup without a configured CA certificate; certificate and
+  hostname verification cannot silently fall back to `VERIFY_NONE`.
+* Uses finite TLS handshake and blocking receive deadlines. Applications can
+  reduce the defaults with `CTLSSocket::SetTimeouts()` and
+  `ReceiveWithTimeout()`.
+
 V1.15:
 
 * Uses Mbed TLS 2.28.10

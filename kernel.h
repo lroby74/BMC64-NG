@@ -98,6 +98,9 @@ public:
   void circle_clear_fbl(int layer);
   void circle_show_fbl(int layer);
   void circle_hide_fbl(int layer);
+  int TakeScreenshot(int stage, int maximum_width, int layer, int x, int y,
+                     int width, int height, int format, char *name,
+                     int name_size);
   int circle_shader_backend_available();
   int circle_shader_backend_available_for_layer(int layer);
   int circle_status_layer_can_coexist_with_ui();
@@ -106,6 +109,7 @@ public:
   void circle_set_palette32_fbl(int layer, uint8_t index, uint32_t argb);
   void circle_update_palette_fbl(int layer);
   void circle_set_stretch_fbl(int layer, double hstretch, double vstretch, int hintstr, int vintstr, int use_hintstr, int use_vintstr);
+  void circle_set_scale_fbl(int layer, int percent);
   void circle_set_center_offset(int layer, int cx, int cy);
   void circle_set_src_rect_fbl(int layer, int x, int y, int w, int h);
   void circle_set_valign_fbl(int layer, int align, int padding);
@@ -124,6 +128,9 @@ public:
   void circle_yield(void);
   void circle_check_gpio();
   void circle_reset_gpio(int gpio_config);
+  void circle_usb_spegni_per_riavvio();
+  int circle_usb_spegni_ms();
+  void circle_usb_spegni_imposta(int ms);
   void circle_lock_acquire();
   void circle_lock_release();
   void circle_boot_complete();

@@ -22,11 +22,14 @@
 
 using namespace CircleMbedTLS;
 
-CTLSSimpleClientSocket::CTLSSimpleClientSocket (CTLSSimpleSupport *pTLSSupport, int nProtocol)
-:	CTLSSocket (pTLSSupport->GetNet (), nProtocol),
+CTLSSimpleClientSocket::CTLSSimpleClientSocket (CTLSSimpleSupport *pTLSSupport, int nProtocol,
+					      boolean bExternalBIO)
+:	CTLSSocket (pTLSSupport->GetNet (), nProtocol, bExternalBIO),
 	m_pTLSSupport (pTLSSupport),
 	m_CTR_DRBG (&m_Entropy),
-	m_bCertAdded (FALSE)
+	m_bCertAdded (FALSE),
+	m_pVerifyCallback (0),
+	m_pVerifyParam (0)
 {
 }
 
@@ -73,6 +76,13 @@ int CTLSSimpleClientSocket::AddCertificatePath (const char *pPath)
 	return nResult;
 }
 
+void CTLSSimpleClientSocket::SetVerifyCallback (
+	int (*pCallback) (void *, mbedtls_x509_crt *, int, uint32_t *), void *pParam)
+{
+	m_pVerifyCallback = pCallback;
+	m_pVerifyParam = pParam;
+}
+
 int CTLSSimpleClientSocket::Setup (const char *pServername, const char *pPersonalizationString)
 {
 	int nResult = m_CTR_DRBG.Seed (pPersonalizationString);
@@ -88,19 +98,18 @@ int CTLSSimpleClientSocket::Setup (const char *pServername, const char *pPersona
 		return nResult;
 	}
 
-	if (m_bCertAdded)
+	if (!m_bCertAdded)
 	{
-		m_TLSConfig.SetAuthMode (MBEDTLS_SSL_VERIFY_REQUIRED);
-
-		assert (m_pTLSSupport != 0);
-		m_TLSConfig.SetCertProfile (m_pTLSSupport->GetCertProfile ());
-
-		m_TLSConfig.SetCA_Chain (&m_CertChain);
+		return MBEDTLS_ERR_SSL_BAD_INPUT_DATA;
 	}
-	else
-	{
-		m_TLSConfig.SetAuthMode (MBEDTLS_SSL_VERIFY_NONE);
-	}
+
+	m_TLSConfig.SetAuthMode (MBEDTLS_SSL_VERIFY_REQUIRED);
+
+	assert (m_pTLSSupport != 0);
+	m_TLSConfig.SetCertProfile (m_pTLSSupport->GetCertProfile ());
+
+	m_TLSConfig.SetCA_Chain (&m_CertChain);
+	m_TLSConfig.SetVerifyCallback (m_pVerifyCallback, m_pVerifyParam);
 
 	m_TLSConfig.SetRNG (&m_CTR_DRBG);
 	m_TLSConfig.SetDebugCallback (DebugCallback, stdout);

@@ -250,9 +250,19 @@ void blackbox9_detach(void)
 
 /* ---------------------------------------------------------------------*/
 
+
+
+
+
+
+
+
+
+
+
 static const char snap_module_name[] = "CARTBLACKBOX9";
 #define SNAP_MAJOR   0
-#define SNAP_MINOR   1
+#define SNAP_MINOR   2
 
 int blackbox9_snapshot_write_module(snapshot_t *s)
 {
@@ -267,8 +277,8 @@ int blackbox9_snapshot_write_module(snapshot_t *s)
     if (0
         || (SMW_B(m, (uint8_t)currmode) < 0)
         || (SMW_B(m, (uint8_t)currbank) < 0)
-        || (SMW_BA(m, roml_banks, 0x2000) < 0)
-        || (SMW_BA(m, romh_banks, 0x2000) < 0)) {
+        || (SMW_BA(m, roml_banks, 0x4000) < 0)
+        || (SMW_BA(m, romh_banks, 0x4000) < 0)) {
         snapshot_module_close(m);
         return -1;
     }
@@ -280,6 +290,7 @@ int blackbox9_snapshot_read_module(snapshot_t *s)
 {
     uint8_t vmajor, vminor;
     snapshot_module_t *m;
+    unsigned int romsize;
 
     m = snapshot_module_open(s, snap_module_name, &vmajor, &vminor);
 
@@ -293,11 +304,14 @@ int blackbox9_snapshot_read_module(snapshot_t *s)
         goto fail;
     }
 
+
+    romsize = snapshot_version_is_smaller(vmajor, vminor, 0, 2) ? 0x2000 : 0x4000;
+
     if (0
         || (SMR_B_INT(m, &currmode) < 0)
         || (SMR_B_INT(m, &currbank) < 0)
-        || (SMR_BA(m, roml_banks, 0x2000) < 0)
-        || (SMR_BA(m, romh_banks, 0x2000) < 0)) {
+        || (SMR_BA(m, roml_banks, romsize) < 0)
+        || (SMR_BA(m, romh_banks, romsize) < 0)) {
         goto fail;
     }
 

@@ -247,6 +247,26 @@ int cartridge_flush_secondary_image(int type)
     return -1;
 }
 
+int cartridge_flush_tertiary_image(int type)
+{
+    return -1;
+}
+
+int cartridge_save_tertiary_image(int type, const char *filename)
+{
+    return -1;
+}
+
+int cartridge_can_flush_tertiary_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_save_tertiary_image(int crtid)
+{
+    return 0;
+}
+
 int cartridge_can_save_image(int crtid)
 {
     return 0;
@@ -265,6 +285,11 @@ int cartridge_can_save_secondary_image(int crtid)
 int cartridge_can_flush_secondary_image(int crtid)
 {
     return 0;
+}
+
+int cartridge_get_filetype(int type)
+{
+    return CARTRIDGE_FILETYPE_NONE;
 }
 
 int cartridge_enable(int crtid)

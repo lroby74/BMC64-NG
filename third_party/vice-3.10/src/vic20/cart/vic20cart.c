@@ -237,6 +237,8 @@ static int set_cartridge_type(int val, void *param)
         case CARTRIDGE_VIC20_MEGACART:
         case CARTRIDGE_VIC20_MINIMON:
         case CARTRIDGE_VIC20_RABBIT:
+        case CARTRIDGE_VIC20_SUPEREXPANDER:
+        case CARTRIDGE_VIC20_MIKRO_ASSEMBLER:
         case CARTRIDGE_VIC20_FINAL_EXPANSION:
         case CARTRIDGE_VIC20_UM:
         case CARTRIDGE_VIC20_FP:
@@ -252,6 +254,7 @@ static int set_cartridge_type(int val, void *param)
         case CARTRIDGE_VIC20_4KB_A000:
         case CARTRIDGE_VIC20_8KB_A000:
         case CARTRIDGE_VIC20_4KB_B000:
+        case CARTRIDGE_VIC20_2KB_B000:
         case CARTRIDGE_VIC20_8KB_4000:
         case CARTRIDGE_VIC20_4KB_4000:
         case CARTRIDGE_VIC20_16KB_2000:
@@ -529,6 +532,14 @@ static int cart_getid_slotmain(void)
     return mem_cartridge_type;
 }
 
+/* FIXME: return filetype of cart with given crtid
+   (CARTRIDGE_FILETYPE_BIN, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_NONE) */
+int cartridge_get_filetype(int crtid)
+{
+    log_error(LOG_DEFAULT, "cartridge_get_filetype not implemented.");
+    return CARTRIDGE_FILETYPE_NONE;
+}
+
 /* ------------------------------------------------------------------------- */
 
 /* FIXME: type is passed, but vic20cart_type used instead? */
@@ -742,6 +753,8 @@ int cartridge_attach_image(int type, const char *filename)
     /* allocate temporary array */
     rawcart = lib_malloc(VIC20CART_IMAGE_LIMIT);
 
+    memset(rawcart, 0, VIC20CART_IMAGE_LIMIT);
+
     DBG(("CART: cartridge_attach_image type: %d ID: %d", type, carttype));
 
     log_message(LOG_DEFAULT, "Attached cartridge type %d, file=`%s'.", type, filename);
@@ -868,6 +881,8 @@ int cartridge_attach_add_image(int type, const char *filename)
     }
     /* allocate temporary array */
     rawcart = lib_malloc(VIC20CART_IMAGE_LIMIT);
+
+    memset(rawcart, 0, VIC20CART_IMAGE_LIMIT);
 
     DBG(("CART: cartridge_attach_add_image type: %d ID: %d", type, carttype));
 
@@ -1176,6 +1191,26 @@ int cartridge_save_secondary_image(int type, const char *filename)
             return megacart_save_nvram(filename);
     }
     return -1;
+}
+
+int cartridge_flush_tertiary_image(int type)
+{
+    return -1;
+}
+
+int cartridge_save_tertiary_image(int type, const char *filename)
+{
+    return -1;
+}
+
+int cartridge_can_flush_tertiary_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_save_tertiary_image(int crtid)
+{
+    return 0;
 }
 
 /* returns 1 if cartridge with given crtid is enabled */

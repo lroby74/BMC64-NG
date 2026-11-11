@@ -382,6 +382,9 @@ void joystick_set_poty_and(int port, uint8_t value);
 void joystick_set_potx_or(int port, uint8_t value);
 void joystick_set_poty_or(int port, uint8_t value);
 void joystick_set_paddle_value(int port, uint8_t value);
+
+uint8_t joystick_get_potx(int port);
+uint8_t joystick_get_poty(int port);
 #endif
 void joystick_clear(unsigned int joyport);
 void joystick_clear_all(void);

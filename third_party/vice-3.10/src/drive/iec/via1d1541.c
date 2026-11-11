@@ -217,6 +217,7 @@ static void store_prb(via_context_t *via_context, uint8_t byte, uint8_t p_oldpb,
     via1p = (drivevia1_context_t *)(via_context->prv);
 
     if (byte != p_oldpb) {
+        DRIVE_CAVO_TOCCATO();
         DEBUG_IEC_DRV_WRITE(byte);
 
         if (iecbus != NULL) {
@@ -299,7 +300,14 @@ static uint8_t read_pra(via_context_t *via_context, uint16_t addr)
         || via1p->diskunit->type == DRIVE_TYPE_1571CR) {
         uint8_t tmp;
         rotation_rotate_disk(via1p->drive);
+
+
+
+
+
+
         tmp = (via1p->drive->byte_ready_level ? 0 : 0x80)
+              | 0x7e
               | (via1p->drive->current_half_track == 2 ? 0 : 1);
         return (tmp & ~(via_context->via[VIA_DDRA]))
                | (via_context->via[VIA_PRA] & via_context->via[VIA_DDRA]);
@@ -344,6 +352,7 @@ static uint8_t read_prb(via_context_t *via_context)
 
     driveid = (via1p->number << 5) & 0x60;
 
+    DRIVE_CAVO_TOCCATO();
     if (iecbus != NULL) {
         uint8_t tmp = (iecbus->drv_port ^ 0x85) | 0x1a | driveid ;
         byte = ((via_context->via[VIA_PRB] & via_context->via[VIA_DDRB])

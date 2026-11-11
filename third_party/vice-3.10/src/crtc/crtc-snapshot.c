@@ -284,7 +284,12 @@ int crtc_snapshot_read_module(snapshot_t * s)
         crtc.screen_width = w;
     }
     if ((!ef) && !(ef = SMR_W(m, &w))) {
+#ifndef RASPI_COMPILE
         crtc.screen_height = w;
+#endif
+
+
+
     }
 
     if ((!ef) && !(ef = SMR_W(m, &w))) {

@@ -62,10 +62,12 @@
 #include "libsmb2-raw.h"
 #include "libsmb2-private.h"
 
+extern time_t bmc_smb_monotonic_seconds(void);
+
 static int wait_for_reply(struct smb2_context *smb2,
                           struct sync_cb_data *cb_data)
 {
-        time_t t = time(NULL);
+        time_t t = bmc_smb_monotonic_seconds();
 
         while (!cb_data->is_finished) {
 		struct pollfd pfd;
@@ -80,7 +82,7 @@ static int wait_for_reply(struct smb2_context *smb2,
                 if (smb2->timeout) {
                         smb2_timeout_pdus(smb2);
                 }
-		if (!SMB2_VALID_SOCKET(smb2->fd) && ((time(NULL) - t) > (smb2->timeout)))
+		if (!SMB2_VALID_SOCKET(smb2->fd) && ((bmc_smb_monotonic_seconds() - t) > (smb2->timeout)))
 		{
 			smb2_set_error(smb2, "Timeout expired and no connection exists\n");
 			return -1;

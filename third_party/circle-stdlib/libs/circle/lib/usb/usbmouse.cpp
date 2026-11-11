@@ -23,6 +23,7 @@
 #include <circle/usb/usbmouse.h>
 #include <circle/usb/usbhid.h>
 #include <circle/logger.h>
+#include <circle/util.h>
 #include <assert.h>
 
 // HID Report Items from HID 1.11 Section 6.2.2
@@ -175,6 +176,7 @@ boolean CUSBMouseDevice::Configure (void)
 		return FALSE;
 	}
 
+	memset (&m_MouseReport, 0, sizeof m_MouseReport);
 	DecodeReport ();
 
 
@@ -427,6 +429,13 @@ void CUSBMouseDevice::DecodeReport (void)
 			if (arg == HID_USAGE_MOUSE)
 			{
 				foundMouseUsage = TRUE;
+
+
+
+				if (id == 0)
+				{
+					parse = TRUE;
+				}
 			}
 			else if (arg == HID_USAGE_POINTER)
 			{
@@ -469,8 +478,13 @@ void CUSBMouseDevice::DecodeReport (void)
 			switch(arg)
 			{
 			case HID_USAGE_PAGE_BUTTONS:
-				itemIndexes[itemIndex] = MouseItemButtons;
-				itemIndex++;
+
+
+				if (itemIndex < MouseItemCount)
+				{
+					itemIndexes[itemIndex] = MouseItemButtons;
+					itemIndex++;
+				}
 				break;
 			}
 			break;
@@ -478,16 +492,25 @@ void CUSBMouseDevice::DecodeReport (void)
 			switch(arg)
 			{
 			case HID_USAGE_X:
-				itemIndexes[itemIndex] = MouseItemXAxis;
-				itemIndex++;
+				if (itemIndex < MouseItemCount)
+				{
+					itemIndexes[itemIndex] = MouseItemXAxis;
+					itemIndex++;
+				}
 				break;
 			case HID_USAGE_Y:
-				itemIndexes[itemIndex] = MouseItemYAxis;
-				itemIndex++;
+				if (itemIndex < MouseItemCount)
+				{
+					itemIndexes[itemIndex] = MouseItemYAxis;
+					itemIndex++;
+				}
 				break;
 			case HID_USAGE_WHEEL:
-				itemIndexes[itemIndex] = MouseItemWheel;
-				itemIndex++;
+				if (itemIndex < MouseItemCount)
+				{
+					itemIndexes[itemIndex] = MouseItemWheel;
+					itemIndex++;
+				}
 				break;
 			}
 			break;
@@ -504,7 +527,9 @@ void CUSBMouseDevice::DecodeReport (void)
 				u32 bitSize = 0;
 				u32 index = 0;
 				u32 item = 0;
-				assert(itemIndex < MouseItemCount);
+
+
+				assert(itemIndex <= MouseItemCount);
 				while (index < itemIndex)
 				{
 					item = itemIndexes[index];

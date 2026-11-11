@@ -126,6 +126,59 @@
 
 #endif
 
+//
+
+//
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//
+extern "C" {
+volatile unsigned bmc_emmc_riprese = 0;
+volatile unsigned bmc_emmc_arresi = 0;
+volatile unsigned bmc_emmc_da_stato = 0;
+volatile unsigned bmc_emmc_occupato = 0;
+volatile unsigned bmc_emmc_giro_max_us = 0;
+}
+
+static int s_bmc_fase = 0;
+static int s_bmc_blocco = 0;
+static u32 s_bmc_stato = 0;
+static int s_bmc_occupato_di_fila = 0;
+static int s_bmc_non_aspettare = 0;
+
+#if RASPPI >= 5
+	#define BMC_STATO_SI_GUARDA	1
+#elif RASPPI == 4
+	#define BMC_STATO_SI_GUARDA	(m_Device != SDCardExternal)
+#else
+	#define BMC_STATO_SI_GUARDA	0
+#endif
+
 #define SD_CMD_INDEX(a)			((a) << 24)
 #define SD_CMD_TYPE_NORMAL		0
 #define SD_CMD_TYPE_SUSPEND		(1 << 22)
@@ -999,6 +1052,49 @@ void CEMMCDevice::IssueCommandInt (u32 cmd_reg, u32 argument, int timeout)
 	}
 #endif
 
+
+	s_bmc_fase = 0;
+	s_bmc_blocco = 0;
+
+#ifndef EMMC_POLL_STATUS_REG
+
+
+
+	if (   BMC_STATO_SI_GUARDA
+	    && !s_bmc_non_aspettare)
+	{
+		u32 nOccupato = 1;
+		if (   (cmd_reg & SD_CMD_ISDATA)
+		    || (   (cmd_reg & SD_CMD_RSPNS_TYPE_MASK) == SD_CMD_RSPNS_TYPE_48B
+			&& (cmd_reg & SD_CMD_TYPE_MASK) != SD_CMD_TYPE_ABORT))
+		{
+			nOccupato |= 2;
+		}
+
+		if (read32 (EMMC_STATUS) & nOccupato)
+		{
+			unsigned nInizio = m_pTimer->GetClockTicks ();
+			while (   (read32 (EMMC_STATUS) & nOccupato)
+			       && m_pTimer->GetClockTicks () - nInizio < 10000 * (CLOCKHZ / 1000000))
+			{
+
+			}
+
+			bmc_emmc_occupato++;
+
+			if (!(read32 (EMMC_STATUS) & nOccupato))
+			{
+				s_bmc_occupato_di_fila = 0;
+			}
+			else if (++s_bmc_occupato_di_fila >= 8)
+			{
+				s_bmc_non_aspettare = 1;
+				LogWrite (LogWarning, "il controllore resta occupato (stato %08x): non lo aspetto piu'", read32 (EMMC_STATUS));
+			}
+		}
+	}
+#endif
+
 	// Set block size and block count
 	// For now, block size = 512 bytes, block count = 1,
 	if (m_blocks_to_transfer > 0xffff)
@@ -1033,6 +1129,8 @@ void CEMMCDevice::IssueCommandInt (u32 cmd_reg, u32 argument, int timeout)
 #endif
 		m_last_error = irpts & 0xffff0000;
 		m_last_interrupt = irpts;
+		s_bmc_fase = 1;
+		s_bmc_stato = read32 (EMMC_STATUS);
 
 		return;
 	}
@@ -1082,19 +1180,77 @@ void CEMMCDevice::IssueCommandInt (u32 cmd_reg, u32 argument, int timeout)
 
 		for (int nBlock = 0; nBlock < m_blocks_to_transfer; nBlock++)
 		{
-			TimeoutWait (EMMC_INTERRUPT, wr_irpt | 0x8000, 1, timeout);
+
+
+
+
+
+			boolean bDaStato = FALSE;
+			{
+				const u32 nLivello = is_write ? (1 << 10) : (1 << 11);
+				const unsigned nTetto = (unsigned) timeout * (CLOCKHZ / 1000000);
+				unsigned nInizio = m_pTimer->GetClockTicks ();
+				unsigned nPrima = nInizio;
+
+				while (!(read32 (EMMC_INTERRUPT) & (wr_irpt | 0x8000)))
+				{
+					unsigned nOra = m_pTimer->GetClockTicks ();
+					if (nOra - nPrima > bmc_emmc_giro_max_us)
+					{
+						bmc_emmc_giro_max_us = nOra - nPrima;
+					}
+					nPrima = nOra;
+
+					if (nOra - nInizio >= nTetto)
+					{
+						break;
+					}
+
+					if (   BMC_STATO_SI_GUARDA
+					    && nOra - nInizio >= 1000 * (CLOCKHZ / 1000000)
+					    && (read32 (EMMC_STATUS) & nLivello)
+					    && (read32 (EMMC_STATUS) & nLivello)
+					    && !(read32 (EMMC_INTERRUPT) & (wr_irpt | 0x8000)))
+					{
+						bDaStato = TRUE;
+
+						break;
+					}
+
+#ifdef NO_BUSY_WAIT
+					CScheduler::Get ()->Yield ();
+#endif
+				}
+			}
+
 			irpts = read32 (EMMC_INTERRUPT);
 			write32 (EMMC_INTERRUPT, 0xffff0000 | wr_irpt);
 
 			if ((irpts & (0xffff0000 | wr_irpt)) != wr_irpt)
 			{
-#ifdef EMMC_DEBUG2
-				LogWrite (LogWarning, "Error occured whilst waiting for data ready interrupt");
-#endif
-				m_last_error = irpts & 0xffff0000;
-				m_last_interrupt = irpts;
+				if (   bDaStato
+				    && (irpts & 0xffff0000) == 0)
+				{
 
-				return;
+					if (bmc_emmc_da_stato++ < 8)
+					{
+						LogWrite (LogWarning, "blocco %d di %d preso dallo stato: l'avviso non e' arrivato",
+							  nBlock + 1, m_blocks_to_transfer);
+					}
+				}
+				else
+				{
+#ifdef EMMC_DEBUG2
+					LogWrite (LogWarning, "Error occured whilst waiting for data ready interrupt");
+#endif
+					m_last_error = irpts & 0xffff0000;
+					m_last_interrupt = irpts;
+					s_bmc_fase = 2;
+					s_bmc_blocco = nBlock;
+					s_bmc_stato = read32 (EMMC_STATUS);
+
+					return;
+				}
 			}
 
 			// Transfer the block
@@ -1150,6 +1306,8 @@ void CEMMCDevice::IssueCommandInt (u32 cmd_reg, u32 argument, int timeout)
 #endif
 				m_last_error = irpts & 0xffff0000;
 				m_last_interrupt = irpts;
+				s_bmc_fase = 3;
+				s_bmc_stato = read32 (EMMC_STATUS);
 
 				return;
 			}
@@ -2541,9 +2699,37 @@ int CEMMCDevice::DoDataCommand (int is_write, u8 *buf, size_t buf_size, u32 bloc
 			LogWrite (LogWarning, "error sending CMD%d", command);
 			LogWrite (LogDebug, "error = %08x", m_last_error);
 
+			LogWrite (LogWarning, "fermo %s, blocco %d di %d, stato %08x, avvisi %08x",
+				  s_bmc_fase == 1 ? "al comando" : s_bmc_fase == 2 ? "nei dati"
+				  : s_bmc_fase == 3 ? "alla fine" : "prima del comando",
+				  s_bmc_fase == 2 ? s_bmc_blocco + 1 : 0, (int) (buf_size / m_block_size),
+				  s_bmc_stato, m_last_interrupt);
+
 			if (++retry_count < max_retries)
 			{
 				LogWrite (LogDebug, "Retrying");
+
+
+
+
+
+
+#ifndef USE_SDHOST
+				ResetCmd ();
+				ResetDat ();
+#endif
+				if (   EnsureDataMode () != 0
+				    && EnsureDataMode () != 0)
+				{
+					LogWrite (LogWarning, "la scheda non torna pronta");
+					retry_count = max_retries;
+
+					break;
+				}
+
+
+				m_blocks_to_transfer = buf_size / m_block_size;
+				m_buf = buf;
 			}
 			else
 			{
@@ -2555,8 +2741,16 @@ int CEMMCDevice::DoDataCommand (int is_write, u8 *buf, size_t buf_size, u32 bloc
 	if (retry_count == max_retries)
 	{
 		m_card_rca = CARD_RCA_INVALID;
+		bmc_emmc_arresi++;
 
 		return -1;
+	}
+
+	if (retry_count > 0)
+	{
+		bmc_emmc_riprese++;
+		LogWrite (LogWarning, "CMD%d rifatto dopo %d error%s: andato", command, retry_count,
+			  retry_count == 1 ? "e" : "i");
 	}
 
 	return 0;
@@ -2567,7 +2761,17 @@ int CEMMCDevice::DoRead (u8 *buf, size_t buf_size, u32 block_no)
 	// Check the status of the card
 	if (EnsureDataMode () != 0)
 	{
-		return -1;
+
+
+		if (EnsureDataMode () != 0)
+		{
+			bmc_emmc_arresi++;
+
+			return -1;
+		}
+
+		bmc_emmc_riprese++;
+		LogWrite (LogWarning, "la scheda non era pronta: reinizializzata, si continua");
 	}
 
 #ifdef EMMC_DEBUG2
@@ -2591,7 +2795,17 @@ int CEMMCDevice::DoWrite (u8 *buf, size_t buf_size, u32 block_no)
 	// Check the status of the card
 	if (EnsureDataMode() != 0)
 	{
-		return -1;
+
+
+		if (EnsureDataMode () != 0)
+		{
+			bmc_emmc_arresi++;
+
+			return -1;
+		}
+
+		bmc_emmc_riprese++;
+		LogWrite (LogWarning, "la scheda non era pronta: reinizializzata, si continua");
 	}
 
 #ifdef EMMC_DEBUG2

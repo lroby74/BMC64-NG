@@ -77,6 +77,10 @@ public:
 
 	boolean Initialize (void);
 
+
+
+	int RestartAutoNegotiation (void);
+
 	const CMACAddress *GetMACAddress (void) const;
 
 	// returns TRUE if TX ring has currently free buffers

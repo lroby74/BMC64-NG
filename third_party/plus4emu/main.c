@@ -2318,7 +2318,22 @@ void emux_set_real_drive_log(int acceso) { (void)acceso; }
 int emux_real_drive_measure(int *v, int n) { (void)v; (void)n; return 0; }
 void emux_set_real_drive_respiro(int us) { (void)us; }
 void emux_set_real_drive_veloce(int acceso) { (void)acceso; }
+void emux_set_real_drive_commodore(int si) { (void)si; }
+
+void emux_set_autofire(int porta, int livello) { (void)porta; (void)livello; }
+int emux_get_real_drive_commodore(void) { return 0; }
 void emux_real_drive_molla(void) { }
+
+int emux_real_drive_unit_result(int unit, int *stato, int *tipo) {
+  (void)unit;
+  if (stato != NULL) {
+    *stato = 99;
+  }
+  if (tipo != NULL) {
+    *tipo = 0;
+  }
+  return 0;
+}
 int emux_real_drive_recover(int unit, int *v, int n) {
   (void)unit; (void)v; (void)n; return 0;
 }
@@ -2326,6 +2341,17 @@ int emux_real_drive_turbo(int unit, char *nome, int nome_max,
                           char *dove, int dove_max, int *v, int n) {
   (void)unit; (void)nome; (void)nome_max; (void)dove; (void)dove_max;
   (void)v; (void)n; return 0;
+}
+
+int emux_real_drive_directory(int unita,
+                              void (*riga)(int tipo, unsigned int numero,
+                                           const char *testo, void *ctx),
+                              void *ctx, char *perche, int perche_max,
+                              int *fermato) {
+  (void)unita; (void)riga; (void)ctx;
+  if (perche != NULL && perche_max > 0) { perche[0] = 0; }
+  if (fermato != NULL) { *fermato = 0; }
+  return -1;
 }
 
 int emux_real_drive_counters(int *v, int n) { (void)v; (void)n; return 0; }
@@ -2339,6 +2365,11 @@ void emux_real_drive_tick(void) {}
 void emux_use_emulated_drive(int unit) { (void)unit; }
 int emux_is_real_drive(int unit) { (void)unit; return 0; }
 void emux_refresh_drive_items(int unit) { (void)unit; }
+
+int emux_wic64_supported(void) { return 0; }
+const char *emux_wic64_timezone_name(unsigned index) { (void)index; return ""; }
+int emux_get_wic64_config(struct bmx_wic64_config *config) { (void)config; return 1; }
+int emux_apply_wic64(const struct bmx_wic64_config *config) { (void)config; return 1; }
 
 void emux_leave_real_drive(int unit) { (void)unit; }
 
@@ -2476,6 +2507,32 @@ const char *emux_sid_velocita(void) { return ""; }
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+int emux_image_contents(const char *path,
+                        void (*riga)(int tipo, unsigned int numero,
+                                     const char *testo, void *ctx),
+                        void *ctx) {
+  (void)path;
+  (void)riga;
+  (void)ctx;
+  return -1;
+}
+
+int emux_autostart_file_n(char* filename, unsigned int program_number) {
+  (void)program_number;
+  return emux_autostart_file(filename);
+}
+
 int emux_load_prg_file(char* filename) {
   if (Plus4VM_LoadProgram(vm, filename) != PLUS4EMU_SUCCESS) {
      return -1;
@@ -2486,6 +2543,13 @@ int emux_load_prg_file(char* filename) {
 
 
 
+
+
+
+int emux_tasto_nella_mappa(long key) {
+  return keyboard_mapping == KEYBOARD_MAPPING_MAXI &&
+         (key == KEYCODE_LeftSuper || key == KEYCODE_RightSuper);
+}
 
 int emux_autostart_file(char* filename) {
   const char *punto = strrchr(filename, '.');
@@ -2603,6 +2667,40 @@ static void aggiorna_tastiera_del_menu(void) {
     ui_set_keyboard_layout(keyboard_layout_item->value);
   }
 }
+
+
+
+
+int emux_keymap_editor_begin(struct keymap_editor_model *model,
+                             int *editable, char *error, size_t error_size) {
+  (void)model;
+  if (editable != NULL) *editable = 0;
+  if (error != NULL && error_size > 0) {
+    snprintf(error, error_size, "Not available on this machine");
+  }
+  return 0;
+}
+
+int emux_keymap_editor_save(const struct keymap_editor_model *model,
+                            char *error, size_t error_size) {
+  return emux_keymap_editor_begin((struct keymap_editor_model *)model, NULL,
+                                  error, error_size);
+}
+
+int emux_keymap_editor_restore_defaults(char *error, size_t error_size) {
+  return emux_keymap_editor_begin(NULL, NULL, error, error_size);
+}
+
+int emux_keyboard_mapping_target_name(int row, int column, int flags,
+                                      char *buffer, size_t buffer_size) {
+  (void)row;
+  (void)column;
+  (void)flags;
+  if (buffer != NULL && buffer_size > 0) buffer[0] = '\0';
+  return 0;
+}
+
+const char *emux_keyboard_mapping_file(void) { return ""; }
 
 void emux_add_keyboard_options(struct menu_item* parent) {
   keyboard_mapping_item = ui_menu_add_multiple_choice(

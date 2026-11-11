@@ -34,6 +34,10 @@ void usblog_avvio(void);
 
 
 
+void usblog_vl805(void);
+
+
+
 void usblog_riga(const char *formato, ...);
 
 

@@ -185,9 +185,24 @@ ViceOptions::ViceOptions(void)
 
 
       m_bViceDopoUsb = strcmp(pValue, "1") == 0 || strcmp(pValue, "true") == 0;
+    } else if (strcmp(pOption, "usb_spegni_riavvio") == 0) {
+
+      const int v = atoi(pValue);
+      m_nUsbSpegniRiavvio = v == 1 ? 1500 : (v < 0 ? 0 : (v > 10000 ? 10000 : v));
     } else if (strcmp(pOption, "doppio_hdmi") == 0) {
 
       m_bDoppioHdmi = strcmp(pValue, "1") == 0 || strcmp(pValue, "true") == 0;
+#if RASPPI >= 4
+    } else if (strcmp(pOption, "ventola") == 0) {
+
+
+      if (pValue[0] >= '0' && pValue[0] <= '9') {
+        const int v = atoi(pValue);
+        m_nVentola = ((v > 100 ? 100 : v) + 5) / 10 * 10;
+      } else {
+        m_nVentola = -1;
+      }
+#endif
     } else if (strcmp(pOption, "composito") == 0) {
 
       m_bComposito = strcmp(pValue, "1") == 0 || strcmp(pValue, "true") == 0;
@@ -450,7 +465,14 @@ bool ViceOptions::Composito(void) const {
          CMachineInfo::Get()->GetMachineModel() == MachineModel4B;
 }
 bool ViceOptions::CompositoHvs(void) const { return m_bCompositoHvs; }
+#if RASPPI >= 4
+int ViceOptions::Ventola(void) const { return m_nVentola; }
+#endif
 bool ViceOptions::ViceDopoUsb(void) const { return m_bViceDopoUsb; }
+unsigned ViceOptions::UsbSpegniRiavvio(void) const { return m_nUsbSpegniRiavvio; }
+void ViceOptions::SetUsbSpegniRiavvio(unsigned ms) {
+  m_nUsbSpegniRiavvio = ms > 10000 ? 10000 : ms;
+}
 
 bool ViceOptions::V3DCrtEnabled(void) const { return m_bV3DCrtEnabled; }
 

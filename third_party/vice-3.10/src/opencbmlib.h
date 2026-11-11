@@ -28,6 +28,13 @@
 #define VICE_OPENCBMLIB_H
 
 #include "vice.h"
+
+
+
+#ifndef DBG
+#define DBG 0
+#endif
+
 #include "opencbm.h"
 
 typedef int (CBMAPIDECL *cbm_driver_open_t)(CBM_FILE *f, int port);

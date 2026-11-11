@@ -853,7 +853,186 @@ pi5kms::Plane make_kms_framebuffer_plane(const pi5kms::Framebuffer &fb) {
   return plane;
 }
 
+
+#if RASPPI >= 4
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static u32 s_bmc_v3d_scala = 1000U;
+static u32 s_bmc_v3d_scala_lavori = 0U;
+static u64 s_bmc_v3d_scala_us = 0ULL;
+static const u32 kBmcV3dScalaMin = 500U;
+static const u32 kBmcV3dScalaFinestra = 25U;
+
+static u32 bmc_radice_u64(u64 v) {
+  u64 r = 0ULL;
+  u64 bit = 1ULL << 62;
+  while (bit > v) {
+    bit >>= 2;
+  }
+  while (bit != 0ULL) {
+    if (v >= r + bit) {
+      v -= r + bit;
+      r = (r >> 1) + bit;
+    } else {
+      r >>= 1;
+    }
+    bit >>= 2;
+  }
+  return static_cast<u32>(r);
+}
+
+
+static void bmc_v3d_scala_conta(u32 us, unsigned long periodo_us) {
+  s_bmc_v3d_scala_us += us;
+  if (++s_bmc_v3d_scala_lavori < kBmcV3dScalaFinestra) {
+    return;
+  }
+  const u32 medio =
+      static_cast<u32>(s_bmc_v3d_scala_us / s_bmc_v3d_scala_lavori);
+  s_bmc_v3d_scala_lavori = 0U;
+  s_bmc_v3d_scala_us = 0ULL;
+  u32 periodo = static_cast<u32>(periodo_us);
+  if (periodo < 10000U || periodo > 40000U) {
+    periodo = 20000U;
+  }
+  const u32 alto = periodo * 80U / 100U;
+  const u32 obiettivo = periodo * 70U / 100U;
+  const u32 prima = s_bmc_v3d_scala;
+  u32 s = prima;
+  if (medio > alto) {
+    s = bmc_radice_u64(static_cast<u64>(s) * s * obiettivo / medio);
+    if (s < kBmcV3dScalaMin) {
+      s = kBmcV3dScalaMin;
+    }
+  } else if (s < 1000U) {
+    u32 su = s + s / 10U;
+    if (su > 1000U) {
+      su = 1000U;
+    }
+    const u64 previsto =
+        static_cast<u64>(medio) * su * su / (static_cast<u64>(s) * s);
+    if (previsto <= obiettivo) {
+      s = su;
+    }
+  }
+  if (s != prima) {
+    s_bmc_v3d_scala = s;
+    printf("boot: bmc64 v3d scala %u -> %u per mille: lavoro medio %u us, "
+           "quadro %u us\r\n",
+           (unsigned)prima, (unsigned)s, (unsigned)medio, (unsigned)periodo);
+  }
+}
+
 #if RASPPI == 4
+
+
+static void bmc_v3d_scala_lati(u32 *w, u32 *h) {
+  const u32 s = s_bmc_v3d_scala;
+  if (s >= 1000U || w == nullptr || h == nullptr) {
+    return;
+  }
+  u32 rw = (*w * s / 1000U) & ~31U;
+  u32 rh = (*h * s / 1000U) & ~1U;
+  if (rw < 32U) {
+    rw = 32U;
+  }
+  if (rh < 2U) {
+    rh = 2U;
+  }
+  *w = rw;
+  *h = rh;
+}
+#endif
+#if RASPPI == 5
+
+
+
+
+
+
+
+
+static void bmc_v3d_scala_larghezza(u32 *w) {
+  const u32 s = s_bmc_v3d_scala;
+  if (s >= 1000U || w == nullptr || *w < 64U) {
+    return;
+  }
+  u32 rw = static_cast<u32>(static_cast<u64>(*w) * s * s / 1000000ULL) & ~31U;
+  const u32 minimo = (*w / 2U) & ~31U;
+  if (rw < minimo) {
+    rw = minimo;
+  }
+  if (rw < *w) {
+    *w = rw;
+  }
+}
+#endif
+#endif
+
+
+#if RASPPI == 4
+
+
+
+
+
+
+
+
+
+
+static const u32 kBmcPi4V3dRigheMax = 720U;
+static const u32 kBmcPi4V3dColonneMax = 1280U;
+
+static void bmc_pi4_v3d_misura(u32 dst_w, u32 dst_h, u32 *w, u32 *h) {
+  u32 rw = dst_w;
+  u32 rh = dst_h;
+  if (rh > kBmcPi4V3dRigheMax) {
+    rw = (u32)(((u64)rw * kBmcPi4V3dRigheMax + rh / 2U) / rh);
+    rh = kBmcPi4V3dRigheMax;
+  }
+  if (rw > kBmcPi4V3dColonneMax) {
+    rw = kBmcPi4V3dColonneMax;
+  }
+  if (rw == 0U) {
+    rw = 1U;
+  }
+  *w = rw;
+  *h = rh;
+}
+
+
+
+static void bmc_pi4_v3d_dillo(u32 dst_w, u32 dst_h, u32 w, u32 h) {
+  static u32 s_dw = 0U, s_dh = 0U, s_w = 0U, s_h = 0U;
+  if (dst_w == s_dw && dst_h == s_dh && w == s_w && h == s_h) {
+    return;
+  }
+  s_dw = dst_w;
+  s_dh = dst_h;
+  s_w = w;
+  s_h = h;
+  printf("boot: bmc64 v3d pi4 disegno %ux%u per %ux%u (%s)\r\n",
+         (unsigned)w, (unsigned)h, (unsigned)dst_w, (unsigned)dst_h,
+         (w != dst_w || h != dst_h)
+             ? "al massimo un quadro 720p, ingrandisce l'HVS"
+             : "grande quanto lo schermo");
+}
+
 bool prepare_pi4_v3d_target(pi5kms::Framebuffer &fb,
                             u32 destination_x,
                             u32 destination_y,
@@ -933,8 +1112,13 @@ bool build_pi4_v3d_plane(const v3dcrt::OutputReadback &readback,
     readback.height,
     readback.depth,
     pi5kms::kPixelFormatRgb565,
-    g_interpolation_enabled ? pi5kms::kScaleFilterMitchell
-                            : pi5kms::kScaleFilterNearest,
+
+
+
+    (g_interpolation_enabled || readback.width != destination_width ||
+     readback.height != destination_height)
+        ? pi5kms::kScaleFilterMitchell
+        : pi5kms::kScaleFilterNearest,
     {0, 0, readback.width, readback.height},
     {destination_x, destination_y,
      destination_width, destination_height}
@@ -1160,6 +1344,12 @@ unsigned raspi_fb_display = 0;
 
 
 volatile unsigned long fbl_periodo_macchina_us = 0;
+#if RASPPI == 5
+
+
+
+void bmc_v3d_scala_lati_pi5(u32 *w, u32 *h) { (void) h; bmc_v3d_scala_larghezza(w); }
+#endif
 unsigned raspi_fb_pages = 0;
 unsigned raspi_fb_bpp = 0;
 unsigned raspi_fb_worker = 0;
@@ -2539,6 +2729,7 @@ struct BmcV3dLavoro {
   u16 palette[256];
   bool esito;
   u32 durata_us;
+  u32 disegno_us;
 };
 
 BmcV3dLavoro s_bmc_lavoro;
@@ -2796,6 +2987,15 @@ void bmc_v3d_aspetta() {
     return;
   }
   bmc_v3d_conta_lavoro(s_bmc_lavoro.durata_us);
+#if RASPPI >= 4
+
+
+
+  if (s_bmc_lavoro.esito &&
+      (s_bmc_lavoro.overlay_mask & FB_LAYER_MASK(FB_LAYER_UI)) == 0U) {
+    bmc_v3d_scala_conta(s_bmc_lavoro.disegno_us, fbl_periodo_macchina_us);
+  }
+#endif
   if (!s_bmc_lavoro.esito) {
     s_bmc_fallito = 1;
     printf("boot: bmc64 v3d core 3: il lavoro non e' andato, da qui lo fa "
@@ -2868,11 +3068,15 @@ bool bmc_v3d_esegui(BmcV3dLavoro &j) {
   (void)overlay_planes;
   (void)v3d_plane;
 
+
+
+  const u64 disegno_da_us = CTimer::GetClockTicks64();
   if (!v3dcrt::RenderFrame(source, target, params)) {
     record_v3d_fallback(kV3dFallbackRenderFailed);
     return false;
   }
   const u64 render_done_us = CTimer::GetClockTicks64();
+  j.disegno_us = static_cast<u32>(render_done_us - disegno_da_us);
 
 #if RASPPI == 4
   v3dcrt::OutputReadback pi4_readback = {};
@@ -2931,7 +3135,8 @@ bool bmc_v3d_esegui(BmcV3dLavoro &j) {
                v3d_plane.source.width, v3d_plane.source.height,
                j.dst_x, j.dst_y, j.dst_w, j.dst_h,
                screen_w, screen_h,
-               g_interpolation_enabled ? "mitchell" : "nearest");
+               v3d_plane.filter == pi5kms::kScaleFilterMitchell
+                   ? "mitchell" : "nearest");
       }
       g_kms_front_buffer_index = buffer_index;
       g_capture_v3d_layer = layer;
@@ -3149,10 +3354,23 @@ bool FrameBufferLayer::TryV3dPostprocess(FrameBufferLayer **layers,
     record_v3d_fallback(kV3dFallbackSourceGeometry);
     return false;
   }
-  if (layer->dst_x_ < 0 || layer->dst_y_ < 0 ||
-      layer->dst_w_ <= 0 || layer->dst_h_ <= 0 ||
-      layer->dst_x_ + layer->dst_w_ > screen_w ||
-      layer->dst_y_ + layer->dst_h_ > screen_h) {
+
+
+
+
+
+
+
+
+
+
+
+  BmcRitaglio bmc_v3d_pezzo;
+  if (layer->dst_w_ <= 0 || layer->dst_h_ <= 0 ||
+      !bmc_ritaglia_piano(layer->src_x_, layer->src_y_, layer->src_w_,
+                          layer->src_h_, layer->dst_x_, layer->dst_y_,
+                          layer->dst_w_, layer->dst_h_, screen_w, screen_h,
+                          &bmc_v3d_pezzo)) {
     record_v3d_fallback(kV3dFallbackDestinationGeometry);
     return false;
   }
@@ -3179,8 +3397,8 @@ bool FrameBufferLayer::TryV3dPostprocess(FrameBufferLayer **layers,
     layer->pal_565_,
     layer->palette_generation_,
     layer->pixelmode_ == 0 ? palette_signature_rgb565(layer->pal_565_) : 0U,
-    {(u32)layer->src_x_, (u32)layer->src_y_,
-     (u32)layer->src_w_, (u32)layer->src_h_},
+    {(u32)bmc_v3d_pezzo.src_x, (u32)bmc_v3d_pezzo.src_y,
+     (u32)bmc_v3d_pezzo.src_w, (u32)bmc_v3d_pezzo.src_h},
     0U
   };
   bool v3d_presented = false;
@@ -3197,8 +3415,16 @@ bool FrameBufferLayer::TryV3dPostprocess(FrameBufferLayer **layers,
   // completed target becomes the base HVS plane below, matching Pi5's direct
   // scanout ownership.  The KMS back buffer is touched only by the fallback.
   render_pixels = nullptr;
-  render_width = static_cast<u32>(layer->dst_w_);
-  render_height = static_cast<u32>(layer->dst_h_);
+
+
+  bmc_pi4_v3d_misura(static_cast<u32>(bmc_v3d_pezzo.dst_w),
+                     static_cast<u32>(bmc_v3d_pezzo.dst_h), &render_width,
+                     &render_height);
+
+  bmc_v3d_scala_lati(&render_width, &render_height);
+  bmc_pi4_v3d_dillo(static_cast<u32>(bmc_v3d_pezzo.dst_w),
+                    static_cast<u32>(bmc_v3d_pezzo.dst_h), render_width,
+                    render_height);
   render_pitch = render_width * sizeof(u16);
 #endif
   v3dcrt::OutputFramebuffer target = {
@@ -3211,8 +3437,8 @@ bool FrameBufferLayer::TryV3dPostprocess(FrameBufferLayer **layers,
     v3dcrt::kPixelFormatRgb565,
     (u32)screen_w,
     (u32)screen_h,
-    {(u32)layer->dst_x_, (u32)layer->dst_y_,
-     (u32)layer->dst_w_, (u32)layer->dst_h_},
+    {(u32)bmc_v3d_pezzo.dst_x, (u32)bmc_v3d_pezzo.dst_y,
+     (u32)bmc_v3d_pezzo.dst_w, (u32)bmc_v3d_pezzo.dst_h},
     wait_for_vblank,
     &v3d_presented,
     allow_direct_scanout,
@@ -3236,10 +3462,10 @@ bool FrameBufferLayer::TryV3dPostprocess(FrameBufferLayer **layers,
 
   BmcV3dLavoro &j = s_bmc_lavoro;
   j.layer = layer;
-  j.dst_x = layer->dst_x_;
-  j.dst_y = layer->dst_y_;
-  j.dst_w = static_cast<u32>(layer->dst_w_);
-  j.dst_h = static_cast<u32>(layer->dst_h_);
+  j.dst_x = bmc_v3d_pezzo.dst_x;
+  j.dst_y = bmc_v3d_pezzo.dst_y;
+  j.dst_w = static_cast<u32>(bmc_v3d_pezzo.dst_w);
+  j.dst_h = static_cast<u32>(bmc_v3d_pezzo.dst_h);
   j.screen_w = screen_w;
   j.screen_h = screen_h;
   j.wait_for_vblank = wait_for_vblank;
@@ -4089,6 +4315,16 @@ void FrameBufferLayer::Show() {
 
 
 
+  if (layer_ == FB_LAYER_UI && scale_percent_ > 0 && scale_percent_ != 100) {
+    dst_w = (int)((int64_t)dst_w * scale_percent_ / 100);
+    dst_h = (int)((int64_t)dst_h * scale_percent_ / 100);
+  }
+
+
+
+
+
+
 
 
 
@@ -4688,6 +4924,58 @@ bool FrameBufferLayer::CaptureDimensions(int *width, int *height) {
   *width = g_effective_width;
   *height = g_effective_height;
   return *width > 0 && *height > 0;
+}
+
+
+
+
+
+
+
+
+
+size_t FrameBufferLayer::CaptureSnapshotBytes() {
+  size_t snapshot_bytes =
+      (size_t)g_effective_width * g_effective_height * 2U + 16U;
+  for (unsigned i = 0; i < FB_NUM_LAYERS; ++i) {
+    FrameBufferLayer *l = g_layers[i];
+    if (l && l->allocated_ && l->pixels_)
+      snapshot_bytes +=
+          (size_t)l->fb_width_ * l->fb_height_ * l->bytes_per_pixel_ + 2U;
+  }
+  return snapshot_bytes;
+}
+
+bool FrameBufferLayer::CaptureInterpolation() { return g_interpolation_enabled; }
+
+bool FrameBufferLayer::CaptureProcessedSource(const uint8_t **pixels,
+                                              unsigned *width,
+                                              unsigned *height,
+                                              unsigned *pitch) {
+  bmc_v3d_aspetta();
+  v3dcrt::OutputReadback frame = {};
+  if (g_capture_v3d_layer != this || !v3dcrt::ReadCompletedFrame(&frame) ||
+      !frame.pixels || frame.depth != 16U || !frame.width || !frame.height ||
+      frame.pitch < frame.width * 2U) return false;
+  *pixels = frame.pixels; *width = frame.width;
+  *height = frame.height; *pitch = frame.pitch;
+  return true;
+}
+
+bool FrameBufferLayer::CaptureSnapshotScreen(
+    bmx::screenshot::Snapshot &snapshot) {
+  FrameBufferLayer *active[FB_NUM_LAYERS];
+  unsigned count = 0;
+  for (unsigned i = 0; i < FB_NUM_LAYERS; ++i)
+    if (g_layers[i] && g_layers[i]->Showing() && !bmc_sul_secondo(g_layers[i]))
+      active[count++] = g_layers[i];
+  sort_layers(active, count);
+  for (unsigned i = 0; i < count; ++i) {
+    FrameBufferLayer *l = active[i];
+    if (l->dst_w_ <= 0 || l->dst_h_ <= 0 || l->src_w_ <= 0 || l->src_h_ <= 0) continue;
+    if (!l->CaptureSnapshotLayer(snapshot, SCREENSHOT_SCREEN, 0, 0, 0, 0, true)) return false;
+  }
+  return true;
 }
 
 bool FrameBufferLayer::CaptureRgb888(uint8_t *output, int width, int height,

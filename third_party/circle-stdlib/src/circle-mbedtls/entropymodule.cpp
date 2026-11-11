@@ -18,7 +18,6 @@
 //
 #include <circle-mbedtls/entropymodule.h>
 #include <mbedtls/entropy.h>
-#include <mbedtls/entropy_poll.h>
 #include <circle/timer.h>
 #include <assert.h>
 
@@ -72,8 +71,8 @@ int CEntropyModule::EntropyPoll (void *pData, unsigned char *pOutput,
 }
 
 // implements the MBEDTLS_ENTROPY_HARDWARE_ALT config option
-int mbedtls_hardware_poll (void *pData, unsigned char *pOutput,
-			   size_t nLength, size_t *pResultLength)
+extern "C" int mbedtls_hardware_poll (void *pData, unsigned char *pOutput,
+				      size_t nLength, size_t *pResultLength)
 {
 	return CEntropyModule::EntropyPoll (pData, pOutput, nLength, pResultLength);
 }

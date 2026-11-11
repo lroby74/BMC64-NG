@@ -517,6 +517,11 @@ static void cbm2cart_detach_cartridges(void)
 #endif
     mem_cartridge_type = CARTRIDGE_NONE;
 
+
+    cbm2cart_type = CARTRIDGE_NONE;
+    crttype = CARTRIDGE_NONE;
+    util_string_set(&cartfile, NULL);
+
     cart_power_off();
 }
 
@@ -749,6 +754,8 @@ int cartridge_attach_image(int type, const char *filename)
     /* allocate temporary array */
     rawcartdata = lib_malloc(CBM2CART_IMAGE_LIMIT);
 
+    memset(rawcartdata, 0, CBM2CART_IMAGE_LIMIT);
+
     if (type == CARTRIDGE_CRT) {
         DBG(("CART: attach CRT ID: %d '%s'", carttype, filename));
         cartid = crt_attach(abs_filename, rawcartdata);
@@ -820,6 +827,26 @@ int cartridge_flush_secondary_image(int type)
     return -1;
 }
 
+int cartridge_flush_tertiary_image(int type)
+{
+    return -1;
+}
+
+int cartridge_save_tertiary_image(int type, const char *filename)
+{
+    return -1;
+}
+
+int cartridge_can_flush_tertiary_image(int crtid)
+{
+    return 0;
+}
+
+int cartridge_can_save_tertiary_image(int crtid)
+{
+    return 0;
+}
+
 int cartridge_can_save_image(int crtid)
 {
     return 0;
@@ -838,6 +865,14 @@ int cartridge_can_save_secondary_image(int crtid)
 int cartridge_can_flush_secondary_image(int crtid)
 {
     return 0;
+}
+
+/* FIXME: return filetype of cart with given crtid
+   (CARTRIDGE_FILETYPE_BIN, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_CRT, CARTRIDGE_FILETYPE_NONE) */
+int cartridge_get_filetype(int crtid)
+{
+    log_error(LOG_DEFAULT, "cartridge_get_filetype not implemented.");
+    return CARTRIDGE_FILETYPE_NONE;
 }
 
 int cartridge_enable(int crtid)
@@ -1051,9 +1086,8 @@ int cartridge_snapshot_read_modules(struct snapshot_s *s)
                 DBG(("CART snapshot read: cart %i handler missing", cart_ids[i]));
                 goto fail2;
         }
+        cart_attach_from_snapshot(cart_ids[i]);
     }
-
-    cart_attach_from_snapshot(cart_ids[i]);
 
     /* set up config */
     /* machine_update_memory_ptrs(); */
@@ -1071,4 +1105,3 @@ fail2:
     mem_cartridge_type = CARTRIDGE_NONE; /* Failed to load cartridge! */
     return -1;
 }
-

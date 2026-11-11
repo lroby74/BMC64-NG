@@ -5,12 +5,17 @@
 #include <circle/net/netsubsystem.h>
 #include <circle/net/ntpclient.h>
 #include <circle/sched/scheduler.h>
+#include <circle/sched/synchronizationevent.h>
 #include <circle/timer.h>
 
 #include <reent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+
+extern "C" {
+#include "third_party/common/circle.h"
+}
 
 bool ConfigureSystemTimeZone(int offset_minutes) {
   int absolute_offset = offset_minutes;
@@ -96,7 +101,77 @@ bool ConfigureDaylightSaving(int offset_minutes, int mode) {
   return ConfigureSystemTimeZone(offset_minutes) && ApplicaOraLegale();
 }
 
+
+
+
+
+
+
+static volatile int s_ntp_acceso = 1;
+static char s_ntp_server[128] = "pool.ntp.org";
+static char s_ntp_riserva[128] = "";
+static volatile int s_ntp_minuti = 15;
+static char s_ntp_dettaglio[96] = "";
+static volatile unsigned s_ntp_ultimo_utc = 0;
+static volatile unsigned s_ntp_ultimo_locale = 0;
+
+
+
+static bool OraArrivata(unsigned timestamp, const char *nome) {
+  if (timestamp == 0) {
+    snprintf(s_ntp_dettaglio, sizeof(s_ntp_dettaglio), "No answer from %s",
+             nome);
+    CLogger::Get()->Write("ntp", LogWarning,
+                          "Cannot get time from NTP server: %s", nome);
+    return false;
+  }
+  if (!OraDallaRete(timestamp)) {
+    snprintf(s_ntp_dettaglio, sizeof(s_ntp_dettaglio), "Cannot set the clock");
+    CLogger::Get()->Write("ntp", LogWarning, "Cannot set system time from NTP");
+    return false;
+  }
+  s_ntp_ultimo_utc = timestamp;
+  s_ntp_ultimo_locale = CTimer::Get()->GetLocalTime();
+  snprintf(s_ntp_dettaglio, sizeof(s_ntp_dettaglio), "%s", nome);
+  CLogger::Get()->Write("ntp", LogNotice, "System time set from NTP: %u UTC (%s)",
+                        timestamp, nome);
+  return true;
+}
+
 namespace {
+
+CSynchronizationEvent s_ntp_sveglia;
+volatile int s_ntp_stato = CIRCLE_NTP_WAITING_NETWORK;
+
+
+bool ProvaServer(CNetSubSystem *network, const char *nome) {
+  CIPAddress server;
+  CDNSClient dns(network);
+  if (!dns.Resolve(nome, &server)) {
+    snprintf(s_ntp_dettaglio, sizeof(s_ntp_dettaglio), "Cannot resolve %s",
+             nome);
+    CLogger::Get()->Write("ntp", LogWarning, "Cannot resolve NTP server: %s",
+                          nome);
+    return false;
+  }
+  CNTPClient client(network);
+  return OraArrivata(client.GetTime(server), nome);
+}
+
+
+
+void Aspetta(unsigned secondi) {
+  if (secondi == 0) {
+    s_ntp_sveglia.Wait();
+  } else {
+    while (secondi > 0 && !s_ntp_sveglia.GetState()) {
+      const unsigned pezzo = secondi > 3600U ? 3600U : secondi;
+      s_ntp_sveglia.WaitWithTimeout(pezzo * 1000000U);
+      secondi -= pezzo;
+    }
+  }
+  s_ntp_sveglia.Clear();
+}
 
 class NetworkTimeSyncTask : public CTask {
 public:
@@ -110,32 +185,22 @@ public:
     }
 
     for (;;) {
-      CIPAddress server;
-      CDNSClient dns(mNetwork);
-      if (!dns.Resolve("pool.ntp.org", &server)) {
-        CLogger::Get()->Write("ntp", LogWarning,
-                              "Cannot resolve NTP server: pool.ntp.org");
-        CScheduler::Get()->Sleep(300);
+      s_ntp_sveglia.Clear();
+      if (!s_ntp_acceso) {
+        s_ntp_stato = CIRCLE_NTP_OFF;
+        Aspetta(0);
         continue;
       }
+      s_ntp_stato = CIRCLE_NTP_SYNCING;
+      char server[sizeof(s_ntp_server)], riserva[sizeof(s_ntp_riserva)];
+      snprintf(server, sizeof(server), "%s", s_ntp_server);
+      snprintf(riserva, sizeof(riserva), "%s", s_ntp_riserva);
+      const bool ok = (server[0] != '\0' && ProvaServer(mNetwork, server)) ||
+                      (riserva[0] != '\0' && ProvaServer(mNetwork, riserva));
+      s_ntp_stato = ok ? CIRCLE_NTP_SYNCED : CIRCLE_NTP_FAILED;
 
-      CNTPClient client(mNetwork);
-      unsigned timestamp = client.GetTime(server);
-      if (timestamp == 0) {
-        CLogger::Get()->Write("ntp", LogWarning,
-                              "Cannot get time from NTP server: pool.ntp.org");
-        CScheduler::Get()->Sleep(300);
-        continue;
-      }
 
-      if (OraDallaRete(timestamp)) {
-        CLogger::Get()->Write("ntp", LogNotice,
-                              "System time set from NTP: %u UTC", timestamp);
-      } else {
-        CLogger::Get()->Write("ntp", LogWarning,
-                              "Cannot set system time from NTP");
-      }
-      CScheduler::Get()->Sleep(900);
+      Aspetta(ok ? (unsigned)s_ntp_minuti * 60U : 300U);
     }
   }
 
@@ -147,4 +212,41 @@ private:
 
 void StartNetworkTimeSync(CNetSubSystem *network) {
   new NetworkTimeSyncTask(network);
+}
+
+
+extern "C" void circle_ntp_imposta(int acceso, const char *server,
+                                   const char *riserva, int minuti) {
+  s_ntp_acceso = acceso ? 1 : 0;
+  snprintf(s_ntp_server, sizeof(s_ntp_server), "%s", server ? server : "");
+  snprintf(s_ntp_riserva, sizeof(s_ntp_riserva), "%s", riserva ? riserva : "");
+  s_ntp_minuti = minuti == 0 || minuti == 15 || minuti == 360 ||
+                         minuti == 720 || minuti == 1440
+                     ? minuti
+                     : 15;
+  if (!s_ntp_acceso) {
+    s_ntp_stato = CIRCLE_NTP_OFF;
+  } else if (s_ntp_stato == CIRCLE_NTP_OFF) {
+    s_ntp_stato = CIRCLE_NTP_WAITING_NETWORK;
+  }
+  printf("ntp: settings: %s server=%s fallback=%s interval=%d min\n",
+         s_ntp_acceso ? "on" : "off", s_ntp_server, s_ntp_riserva,
+         s_ntp_minuti);
+  s_ntp_sveglia.Set();
+}
+
+extern "C" void circle_ntp_adesso(void) {
+  printf("ntp: sync now\n");
+  s_ntp_sveglia.Set();
+}
+
+extern "C" int circle_ntp_stato(char *dettaglio, int n,
+                                unsigned *ultimo_locale) {
+  if (dettaglio != nullptr && n > 0) {
+    snprintf(dettaglio, (size_t)n, "%s", s_ntp_dettaglio);
+  }
+  if (ultimo_locale != nullptr) {
+    *ultimo_locale = s_ntp_ultimo_locale;
+  }
+  return s_ntp_stato;
 }

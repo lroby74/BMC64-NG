@@ -85,6 +85,31 @@ bool UploadRgba8TexturePhysical(uint8_t *destination,
                                 Rgba8TextureRegionSource source,
                                 void *source_context);
 
+enum TextureUploadFormat : uint32_t {
+  kTextureUploadRgb565,
+  kTextureUploadIndexed8
+};
+
+
+
+
+
+struct TextureUploadSource {
+  const uint8_t *pixels;
+  uint32_t pitch;
+  TextureUploadFormat format;
+  const uint32_t *palette_rgba8;
+  const uint16_t *rgb565_lut;
+  uint32_t left_edge_padding;
+};
+
+
+
+
+bool UploadConvertedRgba8TexturePhysical(
+    uint8_t *destination, uint32_t destination_size,
+    const Rgba8TextureLayout &layout, const TextureUploadSource &source);
+
 const char *Rgba8TextureTilingName(Rgba8TextureTiling tiling);
 
 }  // namespace v3dcrt

@@ -29,6 +29,9 @@ extern "C" void bmc_righe_boot_scrivi(FILE *fp);
 extern "C" int circle_fb_display_chiesto(void);
 extern "C" int circle_composito_chiesto(void);
 extern "C" const char *circle_nome_in_rete(void);
+extern "C" unsigned bmc_firmware_versione(void);
+extern "C" unsigned bmc_alimentazione_chiedi(void);
+extern "C" const char *bmc_alimentazione_it(unsigned v);
 #include "third_party/common/circle.h"
 #include <circle/sound/hdmisoundbasedevice.h>
 
@@ -472,12 +475,14 @@ static void diag_echo_file(FILE *out, const char *path, const char *keys[]) {
     return;
   }
   char line[512];
+
+
+
+
   while (fgets(line, sizeof(line) - 1, in)) {
-    if (feof(in)) {
-      break;
-    }
     for (int i = 0; keys[i] != NULL; i++) {
-      if (strstr(line, keys[i]) != NULL && line[0] != '#') {
+      if (strstr(line, keys[i]) != NULL &&
+          (line[0] != '#' || strncmp(line, "# BMC64-", 8) == 0)) {
         int n = strlen(line);
         while (n > 0 && (line[n - 1] == '\r' || line[n - 1] == '\n')) {
           line[--n] = '\0';
@@ -524,6 +529,17 @@ extern "C" void circle_diag_schermo(const char *quando) {
             kbd_tasti_arrivati, kbd_tasti_col_gs,
             (unsigned long)kbd_ultimo_tasto);
   }
+#if RASPPI >= 4
+
+
+
+
+  {
+    char riga[192];
+    circle_ventola_diag(riga, sizeof(riga));
+    fprintf(fp, "   ventola: %s\n", riga);
+  }
+#endif
   bmc_righe_boot_scrivi(fp);
   fclose(fp);
 
@@ -615,6 +631,7 @@ extern "C" void circle_diag_audio(const char *quando) {
 
 
 void ViceStdioApp::ScriviListeDopoLaUsb(void) {
+  usblog_vl805();
   usblog_elenco("dopo l'avvio della USB");
   circle_diag_schermo("dopo l'avvio della USB");
   circle_diag_audio("dopo l'avvio della USB");
@@ -682,6 +699,13 @@ void ViceStdioApp::WriteBootDiag(void) {
 
   fprintf(fp, "revisione         %06x\n",
           (unsigned)CMachineInfo::Get()->GetRevisionRaw());
+
+  {
+    const unsigned alimentazione = bmc_alimentazione_chiedi();
+    fprintf(fp, "firmware          %u\n", bmc_firmware_versione());
+    fprintf(fp, "alimentazione     %s (0x%08x)\n",
+            bmc_alimentazione_it(alimentazione), alimentazione);
+  }
   fprintf(fp, "jack cuffie       %s\n",
           uscita_audio_ha_il_jack(CMachineInfo::Get()->GetMachineModel())
               ? "si'" : "no (audio_out=analog suona dall'HDMI)");
@@ -714,7 +738,12 @@ void ViceStdioApp::WriteBootDiag(void) {
       "hdmi_group", "hdmi_mode", "hdmi_timings", "hdmi_cvt", "hdmi_drive",
       "sdtv_mode", "dpi_group", "dpi_mode", "dpi_timings",
       "dpi_output_format", "enable_dpi_lcd", "display_default_lcd",
-      "kernel=", "arm_freq", NULL
+      "kernel=", "arm_freq",
+
+
+
+      "_freq", "force_turbo", "over_voltage", "arm_boost", "[",
+      "BMC64-", NULL
     };
     static const char *cmd_keys[] = { "machine_timing", "hdmi_group",
                                       "v3dcrt", NULL };
@@ -760,9 +789,9 @@ void ViceStdioApp::InitBootStat() {
 
   char line[80];
   int num = 0;
+
+
   while (fgets(line, 79, fp)) {
-    if (feof(fp))
-      break;
     if (strlen(line) == 0)
       continue;
     if (line[0] == '#')
@@ -816,6 +845,7 @@ void ViceStdioApp::InitBootStat() {
   }
 
   fclose(fp);
+  printf("bootstat.txt: %d voci\n", num);
 
   CGlueStdioInitBootStat(num, mBootStatWhat, (const char **)mBootStatFile,
                          mBootStatSize);
@@ -864,7 +894,11 @@ void ViceStdioApp::LoadNetworkDevice() {
     return;
   }
 
-  char line[64];
+
+  char line[192];
+  int ntp_acceso = 1, ntp_minuti = 15;
+  char ntp_server[128] = "pool.ntp.org", ntp_riserva[128] = "";
+  bool ntp_letto = false;
   while (fgets(line, sizeof(line), settings) != nullptr) {
     int network_device;
     if (sscanf(line, "network_device=%d", &network_device) == 1 &&
@@ -892,6 +926,37 @@ void ViceStdioApp::LoadNetworkDevice() {
       mAddressMode = valore == 1 ? 1 : 0;
       continue;
     }
+
+
+    if (sscanf(line, "ntp_enabled=%d", &valore) == 1) {
+      ntp_acceso = valore ? 1 : 0;
+      continue;
+    }
+    if (sscanf(line, "ntp_interval_min=%d", &valore) == 1) {
+      ntp_minuti = valore;
+      continue;
+    }
+    {
+      static const char *const testi[2] = {"ntp_server=", "ntp_fallback="};
+      char *dove[2] = {ntp_server, ntp_riserva};
+      bool preso = false;
+      for (int i = 0; i < 2 && !preso; i++) {
+        size_t lunga = strlen(testi[i]);
+        if (strncmp(line, testi[i], lunga) == 0) {
+          size_t n = strcspn(line + lunga, "\r\n");
+          if (n > sizeof(ntp_server) - 1) {
+            n = sizeof(ntp_server) - 1;
+          }
+          memcpy(dove[i], line + lunga, n);
+          dove[i][n] = '\0';
+          ntp_letto = true;
+          preso = true;
+        }
+      }
+      if (preso) {
+        continue;
+      }
+    }
     static const char *const chiavi[4] = {
         "network_ip=", "network_netmask=", "network_gateway=", "network_dns="};
     for (int i = 0; i < 4; i++) {
@@ -903,6 +968,10 @@ void ViceStdioApp::LoadNetworkDevice() {
     }
   }
   fclose(settings);
+
+  if (ntp_letto || ntp_acceso != 1 || ntp_minuti != 15) {
+    circle_ntp_imposta(ntp_acceso, ntp_server, ntp_riserva, ntp_minuti);
+  }
 }
 
 
@@ -945,6 +1014,13 @@ void ViceStdioApp::InitializeNetwork() {
       delete mNet;
       mNet = nullptr;
     } else {
+#if RASPPI == 4
+
+
+      if (mNet->GetNetDeviceLayer()->RestartAutoNegotiation() < 0) {
+        mLogger.Write(GetKernelName(), LogWarning, "Ethernet link restart failed");
+      }
+#endif
       ViceNetworkSetSubsystem(mNet);
       StartNetworkTimeSync(mNet);
       SetNetworkStatus(CIRCLE_NETWORK_ETHERNET_WAITING_FOR_DHCP);
@@ -1209,6 +1285,30 @@ bool ViceStdioApp::Initialize(void) {
   f_mount(&mFileSystemFLP1, "FLP1:", 0);
   f_mount(&mFileSystemFLP2, "FLP2:", 0);
 
+  {
+
+
+
+
+    extern DWORD g_nFatUltimaDataNota;
+    char radice[VOLUME_NAME_LEN + 1];
+    DIR dir;
+    FILINFO info;
+    strcpy(radice, fatFsVol);
+    strcat(radice, "/");
+    if (f_opendir(&dir, radice) == FR_OK) {
+      while (f_readdir(&dir, &info) == FR_OK && info.fname[0] != 0) {
+        const DWORD data = ((DWORD)info.fdate << 16) | info.ftime;
+        const unsigned mese = (info.fdate >> 5) & 15;
+        if (mese >= 1 && mese <= 12 && (info.fdate & 31) != 0 &&
+            data > g_nFatUltimaDataNota) {
+          g_nFatUltimaDataNota = data;
+        }
+      }
+      f_closedir(&dir);
+    }
+  }
+
   WriteBootDiag();
 
 
@@ -1250,6 +1350,12 @@ bool ViceStdioApp::Initialize(void) {
   }
   InitializeNetwork();
   passo_nota("core 0: rete, fatta");
+#if defined(RASPI_C64) && !defined(RASPI_SCPU64)
+
+
+
+  bmc_wic64_avvia();
+#endif
   bmc_core0_dove = "lancio del VICE";
 
   // Now that emmc is initialized, launch

@@ -651,8 +651,8 @@ void CleanBufferRangeForV3d(const Buffer &buffer, u32 offset, u32 size) {
 
 bool CleanRenderJobDynamicUniforms(const Buffer &control,
                                    const RenderJob &job) {
-  u32 offset = 0U;
-  u32 size = 0U;
+  uint32_t offset = 0U;
+  uint32_t size = 0U;
   if (!RenderJobDynamicUniformRange(job, &offset, &size)) {
     return false;
   }
@@ -2949,55 +2949,32 @@ bool UploadFrameSource(const FrameSource &source) {
     }
   }
 
-  struct UploadContext {
-    const FrameSource *source;
-    const u16 *palette;
-    const u16 *output_response_lut;
-    u32 input_bytes;
-  } context = {
-    &source,
-    active_palette,
-    g_frame_output_response_enabled ? g_frame_output_response_lut : nullptr,
-    input_bytes
-  };
-  const auto region_source = [](void *opaque, u32 origin_x, u32 origin_y,
-                                u32 width, u32 height, u32 *rgba8,
-                                u32 stride_words) -> bool {
-    UploadContext *upload = static_cast<UploadContext *>(opaque);
-    if (upload == nullptr || rgba8 == nullptr || stride_words < width) {
-      return false;
-    }
-    for (u32 y = 0U; y < height; ++y) {
-      const u8 *row = upload->source->pixels +
-          (upload->source->source_y + origin_y + y) *
-              upload->source->pitch +
-          upload->source->source_x * upload->input_bytes;
-      for (u32 x = 0U; x < width; ++x) {
-        u32 source_x = 0U;
-        if (!ResolveLeftEdgePaddedSourceCoordinate(
-                origin_x + x, upload->source->source_width,
-                upload->source->left_edge_padding, &source_x)) {
-          return false;
-        }
-        u16 pixel = 0U;
-        if (upload->source->format == kFrameSourceRgb565) {
-          memcpy(&pixel, row + source_x * sizeof(u16), sizeof pixel);
-          if (upload->output_response_lut != nullptr) {
-            pixel = upload->output_response_lut[pixel];
-          }
-        } else {
-          pixel = upload->palette[row[source_x]];
-        }
-        rgba8[y * stride_words + x] = Rgba8WordFromRgb565(pixel);
-      }
-    }
-    return true;
-  };
 
+  static u16 previous_palette[256] = {};
+  static uint32_t rgba_palette[256] = {};
+  static bool palette_valid = false;
+  if (source.format == kFrameSourceIndexed8 &&
+      (!palette_valid || memcmp(previous_palette, active_palette,
+                                 sizeof previous_palette) != 0)) {
+    for (u32 i = 0U; i < 256U; ++i)
+      rgba_palette[i] = Rgba8WordFromRgb565(active_palette[i]);
+    memcpy(previous_palette, active_palette, sizeof previous_palette);
+    palette_valid = true;
+  }
+  const v3dcrt::TextureUploadSource upload = {
+    source.pixels + static_cast<size_t>(source.source_y) * source.pitch +
+        source.source_x * input_bytes,
+    source.pitch,
+    source.format == kFrameSourceIndexed8 ? v3dcrt::kTextureUploadIndexed8 :
+                                           v3dcrt::kTextureUploadRgb565,
+    source.format == kFrameSourceIndexed8 ? rgba_palette : nullptr,
+    g_frame_output_response_enabled ? g_frame_output_response_lut : nullptr,
+    source.left_edge_padding
+  };
   const unsigned upload_start = CTimer::GetClockTicks();
-  if (!v3d42::UploadRgba8TexturePhysical(
+  if (!v3dcrt::UploadConvertedRgba8TexturePhysical(
           g_frame_source.cpu, g_frame_source_bytes, g_frame_source_layout,
-          region_source, &context)) {
+          upload)) {
     return false;
   }
   CleanBufferForV3d(g_frame_source);
@@ -3122,9 +3099,9 @@ bool RunFrameSelfTest() {
     return false;
   }
 
-  const auto region_source = [](void *, u32 origin_x, u32 origin_y,
-                                u32 width, u32 height, u32 *rgba8,
-                                u32 stride_words) -> bool {
+  const auto region_source = [](void *, uint32_t origin_x, uint32_t origin_y,
+                                uint32_t width, uint32_t height, uint32_t *rgba8,
+                                uint32_t stride_words) -> bool {
     if (rgba8 == nullptr || stride_words < width) {
       return false;
     }
