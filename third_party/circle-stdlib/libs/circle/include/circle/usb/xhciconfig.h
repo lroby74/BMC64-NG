@@ -74,6 +74,15 @@
 
 #define XHCI_CONFIG_IMODI		40
 
+
+
+
+
+
+
+#define XHCI_IMODI_AVVIO_LENTO		500
+extern unsigned g_nXHCIIMODIAvvio;
+
 #define XHCI_CONFIG_MAX_EVENTS_PER_INTR	16		// max. events to be handled per interrupt
 
 #define XHCI_PAGE_SHIFT			12

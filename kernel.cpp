@@ -39,6 +39,8 @@ extern "C" {
 #include "third_party/common/gamepad_menu_navigation.h"
 #include "uscitaaudio.h"
 #include "usblog.h"
+
+#include <circle/usb/xhciconfig.h>
 }
 
 CKernel *static_kernel = NULL;
@@ -1511,6 +1513,22 @@ bool CKernel::Initialize(void) {
   }
 
   CLogger::Get()->RegisterPanicHandler(bmc_panico);
+
+
+
+
+
+
+
+  return true;
+}
+
+
+
+
+
+
+void CKernel::PrimaDelVice(void) {
 #if RASPPI >= 5
 
   bmc_ventola_pi5(mViceOptions.Ventola());
@@ -1520,11 +1538,11 @@ bool CKernel::Initialize(void) {
   bmc_ventola_gpio14(mViceOptions.Ventola(), &mInterrupt,
                      mViceOptions.SerialEnabled(), mViceOptions.DPIEnabled());
 #endif
-
-
-
-
-  return true;
+#if RASPPI >= 4
+  passo_nota(circle_ventola_presente()
+                 ? "core 0: ventola nostra, prima del VICE"
+                 : "core 0: ventola non nostra, prima del VICE");
+#endif
 }
 
 static void exec_button_func(int button_func, int is_press, int is_ui) {
@@ -1554,6 +1572,29 @@ static void exec_button_func(int button_func, int is_press, int is_ui) {
      case BTN_ASSIGN_FLUSH_DISK:
        if (is_press) {
           emu_quick_func_interrupt(button_func);
+       }
+       break;
+
+
+
+
+
+
+     case BTN_ASSIGN_PAD_ATTACH_TAPE:
+     case BTN_ASSIGN_PAD_ATTACH_CART:
+     case BTN_ASSIGN_PAD_ATTACH_DISK_8:
+     case BTN_ASSIGN_PAD_ATTACH_DISK_9:
+     case BTN_ASSIGN_PAD_ATTACH_DISK_10:
+     case BTN_ASSIGN_PAD_ATTACH_DISK_11:
+     case BTN_ASSIGN_PAD_SID_OSD:
+     case BTN_ASSIGN_PAD_SCREENSHOT:
+     case BTN_ASSIGN_PAD_RIAVVIA_PI:
+     case BTN_ASSIGN_PAD_SPEGNI_PI:
+     case BTN_ASSIGN_PAD_SD_SHARING:
+     case BTN_ASSIGN_PAD_MACHINE_SWITCH:
+     case BTN_ASSIGN_PAD_SID_PLAYER:
+       if (is_press && kbd_pad_ammesso(button_func)) {
+          emu_quick_func_interrupt(kbd_pad_tasto_rapido(button_func));
        }
        break;
      case BTN_ASSIGN_CUSTOM_KEY_1:
@@ -2219,8 +2260,58 @@ void CKernel::circle_usb_spegni_imposta(int ms) {
 #endif
 }
 
+#if RASPPI == 4
+
+
+
+
+
+
+
+
+
+
+
+
+
+static unsigned s_imod_primo_giro = 0;
+static unsigned s_imod_ultimo_cambio = 0;
+static int s_imod_fatto = 0;
+#endif
+
 void CKernel::UpdateUSBPlugAndPlay() {
-  if (mUSBHCII.UpdatePlugAndPlay()) {
+  const boolean cambiato = mUSBHCII.UpdatePlugAndPlay();
+#if RASPPI == 4
+  if (!s_imod_fatto && g_nXHCIIMODIAvvio != XHCI_CONFIG_IMODI) {
+    const unsigned ora = CTimer::GetClockTicks();
+    if (s_imod_primo_giro == 0) {
+      s_imod_primo_giro = ora != 0 ? ora : 1;
+      s_imod_ultimo_cambio = s_imod_primo_giro;
+    }
+    if (cambiato) {
+      s_imod_ultimo_cambio = ora;
+    }
+    const unsigned dal_primo = ora - s_imod_primo_giro;
+    if ((dal_primo >= 3000000U && ora - s_imod_ultimo_cambio >= 1000000U) ||
+        dal_primo >= 15000000U) {
+      s_imod_fatto = 1;
+
+
+
+      if (mUSBHCII.SetInterruptModeration(XHCI_CONFIG_IMODI)) {
+        CLogger::Get()->Write("xhci", LogNotice,
+            "IMOD %u us while the boot devices were found, now %u us "
+            "(%u ms after the first USB pass)",
+            g_nXHCIIMODIAvvio / 4, (unsigned)XHCI_CONFIG_IMODI / 4,
+            dal_primo / 1000);
+      } else {
+        CLogger::Get()->Write("xhci", LogNotice,
+            "IMOD not changed: no xHCI controller");
+      }
+    }
+  }
+#endif
+  if (cambiato) {
     SetupUSBKeyboard();
     SetupUSBMouse();
     SetupUSBGamepads();

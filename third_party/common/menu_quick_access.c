@@ -25,11 +25,17 @@ enum {
 #undef BMX_MENU_ID
 
 static const int quick_access_menu_ids[MENU_QUICK_ACCESS_SLOT_COUNT] = {
+
+    MENU_QUICK_ACCESS_SLOT_0,
     MENU_QUICK_ACCESS_SLOT_1,
     MENU_QUICK_ACCESS_SLOT_2,
     MENU_QUICK_ACCESS_SLOT_3,
     MENU_QUICK_ACCESS_SLOT_4,
     MENU_QUICK_ACCESS_SLOT_5,
+    MENU_QUICK_ACCESS_SLOT_6,
+    MENU_QUICK_ACCESS_SLOT_7,
+    MENU_QUICK_ACCESS_SLOT_8,
+    MENU_QUICK_ACCESS_SLOT_9,
 };
 
 void menu_quick_access_init(struct menu_quick_access_state *state) {

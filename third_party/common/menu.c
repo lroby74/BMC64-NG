@@ -153,7 +153,7 @@ void menu_modo_sicuro(void) {
 
 
 
-#define VERSIONE_BMC64_NG "1.4"
+#define VERSIONE_BMC64_NG "1.5"
 
 #ifdef RASPI_LITE
 #define VARIANT_STRING "-Lite"
@@ -444,14 +444,83 @@ struct menu_item *tape_sounds_vol_item;
 
 static struct menu_item *menu_radice = NULL;
 
-struct menu_item *hotkey_cf1_item;
-struct menu_item *hotkey_cf3_item;
-struct menu_item *hotkey_cf5_item;
-struct menu_item *hotkey_cf7_item;
-struct menu_item *hotkey_tf1_item;
-struct menu_item *hotkey_tf3_item;
-struct menu_item *hotkey_tf5_item;
-struct menu_item *hotkey_tf7_item;
+
+
+
+
+
+
+
+
+
+
+#define TASTI_RAPIDI 24
+static const struct {
+  int menu_id;
+  long tasto;
+  const char *chiave;
+  const char *voce;
+} tasti_rapidi[TASTI_RAPIDI] = {
+  { MENU_HOTKEY_CF1,  KEYCODE_F1,  "hotkey_cf1",  "C= + F1 Hotkey" },
+  { MENU_HOTKEY_CF2,  KEYCODE_F2,  "hotkey_cf2",  "C= + F2 Hotkey" },
+  { MENU_HOTKEY_CF3,  KEYCODE_F3,  "hotkey_cf3",  "C= + F3 Hotkey" },
+  { MENU_HOTKEY_CF4,  KEYCODE_F4,  "hotkey_cf4",  "C= + F4 Hotkey" },
+  { MENU_HOTKEY_CF5,  KEYCODE_F5,  "hotkey_cf5",  "C= + F5 Hotkey" },
+  { MENU_HOTKEY_CF6,  KEYCODE_F6,  "hotkey_cf6",  "C= + F6 Hotkey" },
+  { MENU_HOTKEY_CF7,  KEYCODE_F7,  "hotkey_cf7",  "C= + F7 Hotkey" },
+  { MENU_HOTKEY_CF8,  KEYCODE_F8,  "hotkey_cf8",  "C= + F8 Hotkey" },
+  { MENU_HOTKEY_CF9,  KEYCODE_F9,  "hotkey_cf9",  "C= + F9 Hotkey" },
+  { MENU_HOTKEY_CF10, KEYCODE_F10, "hotkey_cf10", "C= + F10 Hotkey" },
+  { MENU_HOTKEY_CF11, KEYCODE_F11, "hotkey_cf11", "C= + F11 Hotkey" },
+  { MENU_HOTKEY_CF12, KEYCODE_F12, "hotkey_cf12", "C= + F12 Hotkey" },
+  { MENU_HOTKEY_TF1,  KEYCODE_F1,  "hotkey_tf1",  "CTRL + F1 Hotkey" },
+  { MENU_HOTKEY_TF2,  KEYCODE_F2,  "hotkey_tf2",  "CTRL + F2 Hotkey" },
+  { MENU_HOTKEY_TF3,  KEYCODE_F3,  "hotkey_tf3",  "CTRL + F3 Hotkey" },
+  { MENU_HOTKEY_TF4,  KEYCODE_F4,  "hotkey_tf4",  "CTRL + F4 Hotkey" },
+  { MENU_HOTKEY_TF5,  KEYCODE_F5,  "hotkey_tf5",  "CTRL + F5 Hotkey" },
+  { MENU_HOTKEY_TF6,  KEYCODE_F6,  "hotkey_tf6",  "CTRL + F6 Hotkey" },
+  { MENU_HOTKEY_TF7,  KEYCODE_F7,  "hotkey_tf7",  "CTRL + F7 Hotkey" },
+  { MENU_HOTKEY_TF8,  KEYCODE_F8,  "hotkey_tf8",  "CTRL + F8 Hotkey" },
+  { MENU_HOTKEY_TF9,  KEYCODE_F9,  "hotkey_tf9",  "CTRL + F9 Hotkey" },
+  { MENU_HOTKEY_TF10, KEYCODE_F10, "hotkey_tf10", "CTRL + F10 Hotkey" },
+  { MENU_HOTKEY_TF11, KEYCODE_F11, "hotkey_tf11", "CTRL + F11 Hotkey" },
+  { MENU_HOTKEY_TF12, KEYCODE_F12, "hotkey_tf12", "CTRL + F12 Hotkey" },
+};
+static struct menu_item *hotkey_item[TASTI_RAPIDI];
+
+static int tasto_rapido_indice(int menu_id) {
+  int i;
+  for (i = 0; i < TASTI_RAPIDI; i++) {
+    if (tasti_rapidi[i].menu_id == menu_id) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+static int tasto_rapido_da_chiave(const char *chiave) {
+  int i;
+  for (i = 0; i < TASTI_RAPIDI; i++) {
+    if (strcmp(tasti_rapidi[i].chiave, chiave) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+
+
+
+
+static void tasto_rapido_applica(int i) {
+  struct menu_item *it = hotkey_item[i];
+  if (it == NULL || it->value <= 0 || it->value >= it->num_choices) {
+    kbd_set_hotkey_function(i, 0, BTN_ASSIGN_UNDEF);
+  } else {
+    kbd_set_hotkey_function(i, tasti_rapidi[i].tasto,
+                            it->choice_ints[it->value]);
+  }
+}
 struct menu_item *volume_item;
 struct menu_item *statusbar_item;
 struct menu_item *statusbar_padding_item;
@@ -1104,6 +1173,60 @@ static void condividi_scheda(void) {
   ui_menu_add_divider(root);
   ui_menu_add_button(MENU_SD_SHARING_STOP, root, "Stop Sharing");
   ui_select_first_interactive_item();
+}
+
+
+
+
+
+
+
+
+
+static void tasto_condivisione(void) {
+  if (ui_enabled) {
+    ui_dismiss_osd_if_active();
+    if (ui_enabled) {
+      condividi_scheda();
+    }
+    return;
+  }
+  ui_pop_all_and_toggle();
+  condividi_scheda();
+  ui_esc_chiude_tutto = 1;
+}
+
+
+
+
+
+
+
+
+static void switch_riempi(struct menu_item* holder, int col_timer);
+static void cambio_macchina_pagina(void) {
+  struct menu_item *root = ui_push_menu(-1, -1);
+  if (root == NULL) {
+    return;
+  }
+  switch_riempi(root, 0);
+  ui_select_first_interactive_item();
+
+
+
+}
+
+static void tasto_cambio_macchina(void) {
+  if (ui_enabled) {
+    ui_dismiss_osd_if_active();
+    if (ui_enabled) {
+      cambio_macchina_pagina();
+    }
+    return;
+  }
+  ui_pop_all_and_toggle();
+  cambio_macchina_pagina();
+  ui_esc_chiude_tutto = 1;
 }
 
 static void update_wifi_menu_enabled(void) {
@@ -2746,6 +2869,9 @@ static void tasto_apre_la_cartuccia(void) {
       break;
     default:
 
+
+
+      overlay_avviso("NO CARTRIDGE SLOT");
       break;
   }
 }
@@ -2754,6 +2880,11 @@ static void tasto_apre_la_cartuccia(void) {
 
 
 static void tasto_stacca_la_cartuccia(void) {
+
+  if (emux_machine_class == BMC64_MACHINE_CLASS_PET) {
+    overlay_avviso("NO CARTRIDGE SLOT");
+    return;
+  }
 
 
   emux_sid_lascia_la_porta();
@@ -3317,47 +3448,11 @@ static void drive_change_rom() {
 }
 
 static void ui_set_hotkeys() {
-  kbd_set_hotkey_function(0, 0, BTN_ASSIGN_UNDEF);
-  kbd_set_hotkey_function(1, 0, BTN_ASSIGN_UNDEF);
-  kbd_set_hotkey_function(2, 0, BTN_ASSIGN_UNDEF);
-  kbd_set_hotkey_function(3, 0, BTN_ASSIGN_UNDEF);
-  kbd_set_hotkey_function(4, 0, BTN_ASSIGN_UNDEF);
-  kbd_set_hotkey_function(5, 0, BTN_ASSIGN_UNDEF);
-  kbd_set_hotkey_function(6, 0, BTN_ASSIGN_UNDEF);
-  kbd_set_hotkey_function(7, 0, BTN_ASSIGN_UNDEF);
-
+  int i;
   // Apply hotkey selections to keyboard handler
-  if (hotkey_cf1_item->value > 0) {
-    kbd_set_hotkey_function(
-        0, KEYCODE_F1, hotkey_cf1_item->choice_ints[hotkey_cf1_item->value]);
-  }
-  if (hotkey_cf3_item->value > 0) {
-    kbd_set_hotkey_function(
-        1, KEYCODE_F3, hotkey_cf3_item->choice_ints[hotkey_cf3_item->value]);
-  }
-  if (hotkey_cf5_item->value > 0) {
-    kbd_set_hotkey_function(
-        2, KEYCODE_F5, hotkey_cf5_item->choice_ints[hotkey_cf5_item->value]);
-  }
-  if (hotkey_cf7_item->value > 0) {
-    kbd_set_hotkey_function(
-        3, KEYCODE_F7, hotkey_cf7_item->choice_ints[hotkey_cf7_item->value]);
-  }
-  if (hotkey_tf1_item->value > 0) {
-    kbd_set_hotkey_function(
-        4, KEYCODE_F1, hotkey_tf1_item->choice_ints[hotkey_tf1_item->value]);
-  }
-  if (hotkey_tf3_item->value > 0) {
-    kbd_set_hotkey_function(
-        5, KEYCODE_F3, hotkey_tf3_item->choice_ints[hotkey_tf3_item->value]);
-  }
-  if (hotkey_tf5_item->value > 0) {
-    kbd_set_hotkey_function(
-        6, KEYCODE_F5, hotkey_tf5_item->choice_ints[hotkey_tf5_item->value]);
-  }
-  if (hotkey_tf7_item->value > 0) {
-    kbd_set_hotkey_function(
-        7, KEYCODE_F7, hotkey_tf7_item->choice_ints[hotkey_tf7_item->value]);
+
+  for (i = 0; i < TASTI_RAPIDI; i++) {
+    tasto_rapido_applica(i);
   }
 }
 
@@ -3738,6 +3833,10 @@ static void next_integer_scaling(int layer,
 
 
 
+
+
+
+
 static struct menu_quick_access_state quick_access_state;
 static struct menu_item *quick_access_folder_item;
 static struct menu_item *quick_access_slot_items[MENU_QUICK_ACCESS_SLOT_COUNT];
@@ -3792,7 +3891,7 @@ static void build_quick_access_menu(struct menu_item *root) {
   quick_access_folder_item->id = MENU_QUICK_ACCESS_FOLDER;
   for (slot = 0; slot < MENU_QUICK_ACCESS_SLOT_COUNT; ++slot) {
     char label[16];
-    snprintf(label, sizeof label, "Slot %d", slot + 1);
+    snprintf(label, sizeof label, "Slot %d", slot);
     quick_access_slot_items[slot] = ui_menu_add_button(
         menu_quick_access_menu_id_for_slot(slot), quick_access_folder_item,
         label);
@@ -3815,7 +3914,8 @@ void menu_quick_access_try_assign(struct menu_item *item) {
 
   quick_access_pending_target.id = item->id;
   quick_access_pending_target.sub_id = item->sub_id;
-  picker = ui_push_menu(32, 7);
+
+  picker = ui_push_menu(32, 2 + MENU_QUICK_ACCESS_SLOT_COUNT);
   if (picker == NULL) {
     quick_access_pending_target.id = MENU_ID_DO_NOTHING;
     quick_access_pending_target.sub_id = MENU_SUB_NONE;
@@ -3828,7 +3928,7 @@ void menu_quick_access_try_assign(struct menu_item *item) {
   ui_menu_add_divider(picker);
   for (slot = 0; slot < MENU_QUICK_ACCESS_SLOT_COUNT; ++slot) {
     char label[16];
-    snprintf(label, sizeof label, "Slot %d", slot + 1);
+    snprintf(label, sizeof label, "Slot %d", slot);
     picker_item = ui_menu_add_button(
         menu_quick_access_menu_id_for_slot(slot), picker, label);
     picker_item->sub_id = MENU_SUB_QUICK_ACCESS_ASSIGN;
@@ -3842,7 +3942,9 @@ static int quick_access_setting_slot(const char *name) {
   char expected[24];
   if (name == NULL) return -1;
   for (slot = 0; slot < MENU_QUICK_ACCESS_SLOT_COUNT; ++slot) {
-    snprintf(expected, sizeof expected, "quick_slot_%d", slot + 1);
+
+
+    snprintf(expected, sizeof expected, "quick_slot_%d", slot);
     if (strcmp(name, expected) == 0) return slot;
   }
   return -1;
@@ -3977,14 +4079,10 @@ static int save_settings() {
     }
     fprintf(fp, "usb_mapping_%d=%d\n", k, menu_usb_mapping_mode(k));
   }
-  fprintf(fp, "hotkey_cf1=%d\n", hotkey_cf1_item->value);
-  fprintf(fp, "hotkey_cf3=%d\n", hotkey_cf3_item->value);
-  fprintf(fp, "hotkey_cf5=%d\n", hotkey_cf5_item->value);
-  fprintf(fp, "hotkey_cf7=%d\n", hotkey_cf7_item->value);
-  fprintf(fp, "hotkey_tf1=%d\n", hotkey_tf1_item->value);
-  fprintf(fp, "hotkey_tf3=%d\n", hotkey_tf3_item->value);
-  fprintf(fp, "hotkey_tf5=%d\n", hotkey_tf5_item->value);
-  fprintf(fp, "hotkey_tf7=%d\n", hotkey_tf7_item->value);
+
+  for (int i = 0; i < TASTI_RAPIDI; i++) {
+    fprintf(fp, "%s=%d\n", tasti_rapidi[i].chiave, hotkey_item[i]->value);
+  }
 
   if (emux_machine_class != BMC64_MACHINE_CLASS_PLUS4EMU) {
     int prg_modo = BMX_AUTOSTART_PRG_DISK;
@@ -4013,7 +4111,7 @@ static int save_settings() {
     const char *id_name = assignment != NULL
                               ? menu_quick_access_id_name(assignment->id)
                               : NULL;
-    fprintf(fp, "quick_slot_%d=%s\n", slot + 1,
+    fprintf(fp, "quick_slot_%d=%s\n", slot,
             id_name != NULL ? id_name : "");
   }
   if (drive_flush_item != NULL) {
@@ -4568,7 +4666,8 @@ static int load_settings() {
       }
     } else if (strcmp(name, "alt_f12") == 0) {
       // Old. Equivalent to cf7 = Menu
-      hotkey_cf7_item->value = HOTKEY_CHOICE_MENU;
+      hotkey_item[tasto_rapido_indice(MENU_HOTKEY_CF7)]->value =
+          HOTKEY_CHOICE_MENU;
     } else if (strcmp(name, "overlay") == 0) { // legacy name
       statusbar_item->value = value;
     } else if (strcmp(name, "overlay_padding") == 0) { // legacy name
@@ -4591,22 +4690,12 @@ static int load_settings() {
       pot_y_high_value = value;
     } else if (strcmp(name, "pot_y_low") == 0) {
       pot_y_low_value = value;
-    } else if (strcmp(name, "hotkey_cf1") == 0) {
-      hotkey_cf1_item->value = value;
-    } else if (strcmp(name, "hotkey_cf3") == 0) {
-      hotkey_cf3_item->value = value;
-    } else if (strcmp(name, "hotkey_cf5") == 0) {
-      hotkey_cf5_item->value = value;
-    } else if (strcmp(name, "hotkey_cf7") == 0) {
-      hotkey_cf7_item->value = value;
-    } else if (strcmp(name, "hotkey_tf1") == 0) {
-      hotkey_tf1_item->value = value;
-    } else if (strcmp(name, "hotkey_tf3") == 0) {
-      hotkey_tf3_item->value = value;
-    } else if (strcmp(name, "hotkey_tf5") == 0) {
-      hotkey_tf5_item->value = value;
-    } else if (strcmp(name, "hotkey_tf7") == 0) {
-      hotkey_tf7_item->value = value;
+    } else if (tasto_rapido_da_chiave(name) >= 0) {
+
+
+      struct menu_item *t_r = hotkey_item[tasto_rapido_da_chiave(name)];
+      t_r->value = (value >= 0 && value < t_r->num_choices) ? value
+                                                          : HOTKEY_CHOICE_NONE;
     } else if (strcmp(name, "menu_scale") == 0) {
 
       if (ui_set_menu_scale_percent(value)) {
@@ -6790,6 +6879,45 @@ static void tasto_sid(void) {
 
 
   ui_esc_chiude_tutto = 1;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+static int sid_macchina = 0;
+static int sid_macchina_chiesto = 0;
+
+static void sid_macchina_apre_elenco(void) {
+  sid_macchina_chiesto = 0;
+  if (!sid_macchina || ui_enabled || emux_sid_quanti_brani() > 0) {
+    return;
+  }
+  ui_pop_all_and_toggle();
+  show_files(DIR_SIDS, FILTER_SID, MENU_SID_FILE, 0);
+
+
+
+
+
+
+}
+
+
+
+void menu_sid_macchina_tick(void) {
+  if (sid_macchina && !sid_macchina_chiesto && !ui_enabled &&
+      emux_sid_quanti_brani() <= 0) {
+    sid_macchina_chiesto = 1;
+    emu_quick_func_interrupt(BTN_ASSIGN_SID_MACCHINA);
+  }
 }
 
 static void menu_machine_reset(int type, int pop) {
@@ -10183,7 +10311,13 @@ static void menu_value_changed(struct menu_item *item) {
     nas_prova();
     return;
   case MENU_SD_SHARING_STOP:
-    ui_pop_menu();
+
+
+    if (ui_esc_chiude_tutto) {
+      ui_pop_all_and_toggle();
+    } else {
+      ui_pop_menu();
+    }
     return;
   case MENU_NETWORK_MODEM:
     if (!circle_set_acia_network_enabled(item->value)) {
@@ -10408,37 +10542,34 @@ static void menu_value_changed(struct menu_item *item) {
   case MENU_CALC_TIMING:
     configure_timing();
     return;
+
   case MENU_HOTKEY_CF1:
-    kbd_set_hotkey_function(
-        0, KEYCODE_F1, hotkey_cf1_item->choice_ints[hotkey_cf1_item->value]);
-    return;
+  case MENU_HOTKEY_CF2:
   case MENU_HOTKEY_CF3:
-    kbd_set_hotkey_function(
-        1, KEYCODE_F3, hotkey_cf3_item->choice_ints[hotkey_cf3_item->value]);
-    return;
+  case MENU_HOTKEY_CF4:
   case MENU_HOTKEY_CF5:
-    kbd_set_hotkey_function(
-        2, KEYCODE_F5, hotkey_cf5_item->choice_ints[hotkey_cf5_item->value]);
-    return;
+  case MENU_HOTKEY_CF6:
   case MENU_HOTKEY_CF7:
-    kbd_set_hotkey_function(
-        3, KEYCODE_F7, hotkey_cf7_item->choice_ints[hotkey_cf7_item->value]);
-    return;
+  case MENU_HOTKEY_CF8:
+  case MENU_HOTKEY_CF9:
+  case MENU_HOTKEY_CF10:
+  case MENU_HOTKEY_CF11:
+  case MENU_HOTKEY_CF12:
   case MENU_HOTKEY_TF1:
-    kbd_set_hotkey_function(
-        4, KEYCODE_F1, hotkey_tf1_item->choice_ints[hotkey_tf1_item->value]);
-    return;
+  case MENU_HOTKEY_TF2:
   case MENU_HOTKEY_TF3:
-    kbd_set_hotkey_function(
-        5, KEYCODE_F3, hotkey_tf3_item->choice_ints[hotkey_tf3_item->value]);
-    return;
+  case MENU_HOTKEY_TF4:
   case MENU_HOTKEY_TF5:
-    kbd_set_hotkey_function(
-        6, KEYCODE_F5, hotkey_tf5_item->choice_ints[hotkey_tf5_item->value]);
-    return;
+  case MENU_HOTKEY_TF6:
   case MENU_HOTKEY_TF7:
-    kbd_set_hotkey_function(
-        7, KEYCODE_F7, hotkey_tf7_item->choice_ints[hotkey_tf7_item->value]);
+  case MENU_HOTKEY_TF8:
+  case MENU_HOTKEY_TF9:
+  case MENU_HOTKEY_TF10:
+  case MENU_HOTKEY_TF11:
+  case MENU_HOTKEY_TF12:
+    if (tasto_rapido_indice(item->id) >= 0) {
+      tasto_rapido_applica(tasto_rapido_indice(item->id));
+    }
     return;
   case MENU_VIC20_MEMORY_3K:
     emux_set_int(Setting_RAMBlock0, item->value);
@@ -11205,7 +11336,9 @@ void emu_get_usb_pref(int device, int *usb_pref_dst, int *x_axis, int *y_axis,
 static void set_hotkey_choices(struct menu_item *item) {
 
 
-  item->num_choices = 26;
+
+
+  item->num_choices = 29;
   strcpy(item->choices[HOTKEY_CHOICE_NONE], function_to_string(BTN_ASSIGN_UNDEF));
   strcpy(item->choices[HOTKEY_CHOICE_MENU], function_to_string(BTN_ASSIGN_MENU));
   strcpy(item->choices[HOTKEY_CHOICE_WARP], function_to_string(BTN_ASSIGN_WARP));
@@ -11232,6 +11365,9 @@ static void set_hotkey_choices(struct menu_item *item) {
   strcpy(item->choices[HOTKEY_CHOICE_ATTACH_DISK_11], function_to_string(BTN_ASSIGN_ATTACH_DISK_11_2));
   strcpy(item->choices[HOTKEY_CHOICE_SID_OSD], function_to_string(BTN_ASSIGN_SID_OSD));
   strcpy(item->choices[HOTKEY_CHOICE_SCREENSHOT], function_to_string(BTN_ASSIGN_SCREENSHOT));
+  strcpy(item->choices[HOTKEY_CHOICE_SD_SHARING], function_to_string(BTN_ASSIGN_SD_SHARING));
+  strcpy(item->choices[HOTKEY_CHOICE_MACHINE_SWITCH], function_to_string(BTN_ASSIGN_MACHINE_SWITCH));
+  strcpy(item->choices[HOTKEY_CHOICE_SID_PLAYER], function_to_string(BTN_ASSIGN_SID_2));
   item->choice_ints[HOTKEY_CHOICE_NONE] = BTN_ASSIGN_UNDEF;
   item->choice_ints[HOTKEY_CHOICE_MENU] = BTN_ASSIGN_MENU;
   item->choice_ints[HOTKEY_CHOICE_WARP] = BTN_ASSIGN_WARP;
@@ -11258,6 +11394,9 @@ static void set_hotkey_choices(struct menu_item *item) {
   item->choice_ints[HOTKEY_CHOICE_ATTACH_DISK_11] = BTN_ASSIGN_ATTACH_DISK_11_2;
   item->choice_ints[HOTKEY_CHOICE_SID_OSD] = BTN_ASSIGN_SID_OSD;
   item->choice_ints[HOTKEY_CHOICE_SCREENSHOT] = BTN_ASSIGN_SCREENSHOT;
+  item->choice_ints[HOTKEY_CHOICE_SD_SHARING] = BTN_ASSIGN_SD_SHARING;
+  item->choice_ints[HOTKEY_CHOICE_MACHINE_SWITCH] = BTN_ASSIGN_MACHINE_SWITCH;
+  item->choice_ints[HOTKEY_CHOICE_SID_PLAYER] = BTN_ASSIGN_SID_2;
 
   if (emux_machine_class == BMC64_MACHINE_CLASS_VIC20) {
      item->choice_disabled[HOTKEY_CHOICE_SWAP_PORTS] = 1;
@@ -11290,17 +11429,26 @@ static void set_hotkey_choices(struct menu_item *item) {
       emux_machine_class == BMC64_MACHINE_CLASS_PLUS4EMU) {
      item->choice_disabled[HOTKEY_CHOICE_SID_OSD] = 1;
   }
+
+
+  if (emux_machine_class != BMC64_MACHINE_CLASS_C64) {
+     item->choice_disabled[HOTKEY_CHOICE_SID_PLAYER] = 1;
+  }
 }
 
-static void menu_build_machine_switch(struct menu_item* parent) {
-  struct menu_item* holder = ui_menu_add_folder(parent, "Switch");
 
+
+
+
+
+static void switch_riempi(struct menu_item* holder, int col_timer) {
   struct menu_item* vic20_r = ui_menu_add_folder(holder, "VIC20");
   struct menu_item* c64_r = ui_menu_add_folder(holder, "C64");
   struct menu_item* scpu64_r = ui_menu_add_folder(holder, "SCPU64");
   struct menu_item* c128_r = ui_menu_add_folder(holder, "C128");
   struct menu_item* plus4_r = ui_menu_add_folder(holder, "Plus/4");
   struct menu_item* pet_r = ui_menu_add_folder(holder, "PET");
+  struct menu_item* sid_r = ui_menu_add_folder(holder, "SID Player");
 
   struct machine_entry* head;
   load_machines(&head);
@@ -11317,7 +11465,10 @@ static void menu_build_machine_switch(struct menu_item* parent) {
          item = ui_menu_add_button(MENU_SWITCH_MACHINE, vic20_r, ptr->desc);
          break;
       case BMC64_MACHINE_CLASS_C64:
-         item = ui_menu_add_button(MENU_SWITCH_MACHINE, c64_r, ptr->desc);
+
+         item = ui_menu_add_button(MENU_SWITCH_MACHINE,
+                                   ptr->variante == 2 ? sid_r : c64_r,
+                                   ptr->desc);
          break;
       case BMC64_MACHINE_CLASS_SCPU64:
          item = ui_menu_add_button(MENU_SWITCH_MACHINE, scpu64_r, ptr->desc);
@@ -11352,6 +11503,9 @@ static void menu_build_machine_switch(struct menu_item* parent) {
 
   free_machines(head);
 
+  if (!col_timer) {
+    return;
+  }
 
 
 
@@ -11361,6 +11515,11 @@ static void menu_build_machine_switch(struct menu_item* parent) {
   switch_timer_item = ui_menu_add_toggle(MENU_SWITCH_TIMER, holder,
                                          "Safety timer (15s)",
                                          vidtrial_timer_on());
+}
+
+static void menu_build_machine_switch(struct menu_item* parent) {
+  struct menu_item* holder = ui_menu_add_folder(parent, "Switch");
+  switch_riempi(holder, 1);
 }
 
 struct menu_item* add_joyport_options(struct menu_item* parent, int port) {
@@ -11938,6 +12097,41 @@ int menu_poweroff_annulla(void) {
 
 
 
+
+
+
+
+
+static void lettore_domanda(void) {
+  static char scritta[40];
+  char testo[40];
+  const int left = menu_poweroff_left();
+
+  if (left < 0 || ui_enabled || !ui_lettore_sid_a_schermo()) {
+    if (scritta[0] != 0) {
+      scritta[0] = 0;
+      ui_lettore_sid_domanda(NULL);
+    }
+    return;
+  }
+  snprintf(testo, sizeof(testo), "%s? AGAIN=YES ESC=NO %2ds",
+           poweroff_e_riavvio ? "REBOOT" : "POWER OFF", left);
+  if (strcmp(testo, scritta) != 0) {
+    if (scritta[0] == 0) {
+      passo_nota(poweroff_e_riavvio
+                     ? "lettore di SID: la domanda del riavvio nella sua riga in basso"
+                     : "lettore di SID: la domanda dello spegnimento nella sua riga in basso");
+    }
+    snprintf(scritta, sizeof(scritta), "%s", testo);
+    ui_lettore_sid_domanda(testo);
+  }
+}
+
+
+
+
+
+
 void menu_poweroff_tick(void) {
 
 
@@ -11948,12 +12142,37 @@ void menu_poweroff_tick(void) {
     if (poweroff_armed) {
       poweroff_disarm();
       overlay_avviso("CANCELLED");
+
+      lettore_domanda();
+      if (ui_lettore_sid_a_schermo() && !ui_enabled) {
+        ui_lettore_sid_avviso("CANCELLED");
+      }
     }
     return;
   }
   if (poweroff_key_pending) {
     poweroff_key_pending = 0;
     if (ui_enabled) {
+
+
+
+
+
+      const int domanda_id = poweroff_e_riavvio ? MENU_REBOOT_PI
+                                                : MENU_POWEROFF;
+      if (ui_cima_conferma(domanda_id)) {
+        passo_nota("tasto di accensione di nuovo col riquadro in cima: si'");
+        ui_pop_menu();
+        if (poweroff_e_riavvio) {
+          riavvia();
+        } else {
+          spegni();
+        }
+        return;
+      }
+      passo_nota(poweroff_e_riavvio
+                     ? "tasto di accensione col menu aperto: il riquadro Reboot?"
+                     : "tasto di accensione col menu aperto: il riquadro Power Off?");
 
 
 
@@ -11988,6 +12207,7 @@ void menu_poweroff_tick(void) {
       (long)(circle_get_ticks() - poweroff_deadline) >= 0) {
     poweroff_disarm();
   }
+  lettore_domanda();
 }
 
 
@@ -12026,6 +12246,34 @@ void menu_banco_rom_a_caldo(void) {
   esito = emux_handle_rom_change(&finta, fullpath);
   printf("[ROM] 1541 -> 1541-II a caldo, esito %d\n", esito);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -12976,6 +13224,55 @@ void menu_banco_player2(int porta) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 void menu_banco_aspetto(int largo) {
   metti_aspetto(VIC_INDEX, largo);
 }
@@ -13041,6 +13338,9 @@ static void build_overclock_menu(struct menu_item *root) {
     }
     ventola_item->value = scelta < 0 ? 0 : scelta / 10 + 1;
   }
+
+
+  passo_nota(ventola_item != NULL ? "menu: voce Fan" : "menu: niente voce Fan");
 #endif
 
 
@@ -13426,6 +13726,13 @@ void build_menu(struct menu_item *root) {
 
   root->cursor_listener_func = main_menu_cursor_listener;
   menu_radice = root;
+
+
+  sid_macchina = emux_machine_class == BMC64_MACHINE_CLASS_C64 &&
+                 cmdline_cifra("lettore_sid") == 1;
+  if (sid_macchina) {
+    passo_nota("menu: la macchina e' il lettore di SID");
+  }
   int k;
   int tmp;
 
@@ -14632,42 +14939,18 @@ void build_menu(struct menu_item *root) {
         "Down","Up");
   }
 
-  child = hotkey_cf1_item =
-      ui_menu_add_multiple_choice(MENU_HOTKEY_CF1, parent, "C= + F1 Hotkey");
-  child->value = HOTKEY_CHOICE_NONE;
-  set_hotkey_choices(hotkey_cf1_item);
-  child = hotkey_cf3_item =
-      ui_menu_add_multiple_choice(MENU_HOTKEY_CF3, parent, "C= + F3 Hotkey");
-  child->value = HOTKEY_CHOICE_NONE;
-  set_hotkey_choices(hotkey_cf3_item);
-  child = hotkey_cf5_item =
-      ui_menu_add_multiple_choice(MENU_HOTKEY_CF5, parent, "C= + F5 Hotkey");
-  child->value = HOTKEY_CHOICE_NONE;
-  set_hotkey_choices(hotkey_cf5_item);
-  child = hotkey_cf7_item =
-      ui_menu_add_multiple_choice(MENU_HOTKEY_CF7, parent, "C= + F7 Hotkey");
-  child->value = HOTKEY_CHOICE_MENU;
-  set_hotkey_choices(hotkey_cf7_item);
-  child = hotkey_tf1_item =
-      ui_menu_add_multiple_choice(MENU_HOTKEY_TF1, parent,
-         "CTRL + F1 Hotkey");
-  child->value = HOTKEY_CHOICE_NONE;
-  set_hotkey_choices(hotkey_tf1_item);
-  child = hotkey_tf3_item =
-      ui_menu_add_multiple_choice(MENU_HOTKEY_TF3, parent,
-         "CTRL + F3 Hotkey");
-  child->value = HOTKEY_CHOICE_NONE;
-  set_hotkey_choices(hotkey_tf3_item);
-  child = hotkey_tf5_item =
-      ui_menu_add_multiple_choice(MENU_HOTKEY_TF5, parent,
-         "CTRL + F5 Hotkey");
-  child->value = HOTKEY_CHOICE_NONE;
-  set_hotkey_choices(hotkey_tf5_item);
-  child = hotkey_tf7_item =
-      ui_menu_add_multiple_choice(MENU_HOTKEY_TF7, parent,
-         "CTRL + F7 Hotkey");
-  child->value = HOTKEY_CHOICE_MENU;
-  set_hotkey_choices(hotkey_tf7_item);
+
+
+  {
+    int i;
+    for (i = 0; i < TASTI_RAPIDI; i++) {
+      child = hotkey_item[i] = ui_menu_add_multiple_choice(
+          tasti_rapidi[i].menu_id, parent, tasti_rapidi[i].voce);
+      child->value = tasti_rapidi[i].tasto == KEYCODE_F7 ? HOTKEY_CHOICE_MENU
+                                                         : HOTKEY_CHOICE_NONE;
+      set_hotkey_choices(child);
+    }
+  }
 
 
 
@@ -15529,6 +15812,8 @@ static const char *nome_del_tasto_rapido(int b) {
     case BTN_ASSIGN_ATTACH_DISK_10_2: return "disco sulla 10";
     case BTN_ASSIGN_ATTACH_DISK_11_2: return "disco sulla 11";
     case BTN_ASSIGN_SID_OSD:          return "riquadro del SID";
+    case BTN_ASSIGN_SD_SHARING:       return "condivisione della scheda";
+    case BTN_ASSIGN_MACHINE_SWITCH:   return "cambio di macchina";
     default:                          return "";
   }
 }
@@ -15678,6 +15963,15 @@ static void menu_quick_func_dentro(int button_assignment) {
   case BTN_ASSIGN_ATTACH_DISK_11_2:
     unit = 11;
     tasto_apre_i_file(DIR_DISKS, FILTER_DISK, MENU_DISK_FILE);
+    break;
+  case BTN_ASSIGN_SD_SHARING:
+    tasto_condivisione();
+    break;
+  case BTN_ASSIGN_MACHINE_SWITCH:
+    tasto_cambio_macchina();
+    break;
+  case BTN_ASSIGN_SID_MACCHINA:
+    sid_macchina_apre_elenco();
     break;
   case BTN_ASSIGN_SID_OSD:
 
@@ -15957,7 +16251,9 @@ static void menu_quick_func_dentro(int button_assignment) {
 
 
 
-    if (emux_machine_class == BMC64_MACHINE_CLASS_PLUS4EMU) {
+    if (emux_machine_class == BMC64_MACHINE_CLASS_PLUS4EMU ||
+        emux_machine_class == BMC64_MACHINE_CLASS_PET) {
+
       tasto_apre_la_cartuccia();
     } else {
       emux_show_cart_osd_menu();
@@ -16031,6 +16327,12 @@ int emu_get_num_joysticks(void) {
 }
 
 const char* function_to_string(int button_func) {
+
+
+  if (button_func >= BTN_ASSIGN_PAD_ATTACH_TAPE &&
+      button_func <= BTN_ASSIGN_PAD_SID_PLAYER) {
+    button_func = kbd_pad_tasto_rapido(button_func);
+  }
   switch (button_func) {
     case BTN_ASSIGN_UNDEF:
        return "None";
@@ -16121,6 +16423,15 @@ const char* function_to_string(int button_func) {
        return "SID OSD";
     case BTN_ASSIGN_SCREENSHOT:
        return "Screenshot";
+
+    case BTN_ASSIGN_SD_SHARING:
+       return "SD Card Sharing";
+
+    case BTN_ASSIGN_MACHINE_SWITCH:
+       return "Machine Switch OSD";
+
+    case BTN_ASSIGN_SID_2:
+       return "SID Player OSD";
     default:
        return "Unknown";
   }

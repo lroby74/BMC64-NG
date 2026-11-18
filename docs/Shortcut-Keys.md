@@ -17,7 +17,7 @@ All the combinations use the **ALT** key. SHIFT, where present, activates the se
 | **Reboot?** and **Power Off?** | the questions start on **CANCEL**: to restart or shut down you go up to **OK** |
 | **Super** key (Windows logo, raspberry) | on its own opens and closes the menu, like **F12**. With the **Maxi Positional** mapping it stays the Commodore key |
 | **AltGr** | in a text field, with the **Symbolic** mapping and an Italian or German keyboard: **[ ] { } @ # ~** as on the PC |
-| **SPACE** on an entry | in the main menu (a switch, a choice, a button, a number) puts it in one of the five slots of **Quick Access...**, at the top of the menu: choose the slot and **ENTER**. **ENTER** on a slot takes you to its entry, opening the folders |
+| **SPACE** on an entry | in the main menu (a switch, a choice, a button, a number) puts it in one of the ten slots of **Quick Access...**, from **Slot 0** to **Slot 9**, at the top of the menu: choose the slot and **ENTER**. **ENTER** on a slot takes you to its entry, opening the folders |
 | **ESC** in the main menu | goes to **Quick Access...**; a second **ESC** closes the menu. The slots are kept with **Save settings** |
 | Opening the menu again (**F12**) | you are back on the last item you touched, with the folders open as you left them, whether you left with **F12** or with **ESC** (the jump to **Quick Access...** of the first **ESC** does not count) |
 | **ALT** + **↑** and **↓** | inside the menu: up and down by blocks, like **PgUp** and **PgDn** (held down, they keep going). With any keyboard, the 500+ too, where FN does not reach the computer. With the menu closed they are the tape PLAY and STOP |

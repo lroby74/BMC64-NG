@@ -40,7 +40,14 @@
 #include "menu_switch.h"
 #include "ui.h"
 
-#define NUM_KEY_COMBOS 8
+
+
+
+
+
+
+#define NUM_KEY_COMBOS 24
+#define COMBO_CTRL 12
 #define TICKS_PER_SECOND 1000000L
 
 static int commodore_down = 0;
@@ -119,7 +126,59 @@ static int combo_ammessa(int funzione) {
 
 
          funzione == BTN_ASSIGN_ATTACH_CART_2 ||
-         funzione == BTN_ASSIGN_SCREENSHOT;
+         funzione == BTN_ASSIGN_SCREENSHOT ||
+
+
+         funzione == BTN_ASSIGN_SD_SHARING ||
+
+
+         funzione == BTN_ASSIGN_MACHINE_SWITCH;
+}
+
+
+
+
+int kbd_pad_tasto_rapido(int b) {
+  switch (b) {
+    case BTN_ASSIGN_PAD_ATTACH_TAPE:    return BTN_ASSIGN_ATTACH_TAPE_2;
+    case BTN_ASSIGN_PAD_ATTACH_CART:    return BTN_ASSIGN_ATTACH_CART_2;
+    case BTN_ASSIGN_PAD_ATTACH_DISK_8:  return BTN_ASSIGN_ATTACH_DISK_8_2;
+    case BTN_ASSIGN_PAD_ATTACH_DISK_9:  return BTN_ASSIGN_ATTACH_DISK_9_2;
+    case BTN_ASSIGN_PAD_ATTACH_DISK_10: return BTN_ASSIGN_ATTACH_DISK_10_2;
+    case BTN_ASSIGN_PAD_ATTACH_DISK_11: return BTN_ASSIGN_ATTACH_DISK_11_2;
+    case BTN_ASSIGN_PAD_SID_OSD:        return BTN_ASSIGN_SID_OSD;
+    case BTN_ASSIGN_PAD_SCREENSHOT:     return BTN_ASSIGN_SCREENSHOT;
+    case BTN_ASSIGN_PAD_RIAVVIA_PI:     return BTN_ASSIGN_RIAVVIA_PI;
+    case BTN_ASSIGN_PAD_SPEGNI_PI:      return BTN_ASSIGN_SPEGNI_PI;
+    case BTN_ASSIGN_PAD_SD_SHARING:     return BTN_ASSIGN_SD_SHARING;
+    case BTN_ASSIGN_PAD_MACHINE_SWITCH: return BTN_ASSIGN_MACHINE_SWITCH;
+    case BTN_ASSIGN_PAD_SID_PLAYER:     return BTN_ASSIGN_SID_2;
+    default:                            return BTN_ASSIGN_UNDEF;
+  }
+}
+
+
+
+
+
+int kbd_pad_ammesso(int b) {
+  int f = kbd_pad_tasto_rapido(b);
+  if (f == BTN_ASSIGN_UNDEF) {
+    return 0;
+  }
+  if (!combo_ammessa(f)) {
+    overlay_avviso("NOT ON C64 GS");
+    return 0;
+  }
+  if (ui_lettore_sid_a_schermo() &&
+      (f == BTN_ASSIGN_ATTACH_TAPE_2 || f == BTN_ASSIGN_ATTACH_CART_2 ||
+       f == BTN_ASSIGN_ATTACH_DISK_8_2 || f == BTN_ASSIGN_ATTACH_DISK_9_2 ||
+       f == BTN_ASSIGN_ATTACH_DISK_10_2 || f == BTN_ASSIGN_ATTACH_DISK_11_2 ||
+       f == BTN_ASSIGN_SID_OSD)) {
+    overlay_avviso("NOT IN SID PLAYER");
+    return 0;
+  }
+  return 1;
 }
 
 
@@ -618,6 +677,59 @@ static unsigned long video_reset_time_delay = TICKS_PER_SECOND * 5;
 
 key_combo_state_t key_combo_states[NUM_KEY_COMBOS];
 
+
+
+static long combo_tasto_fisico[NUM_KEY_COMBOS];
+
+
+
+
+
+
+static long tasto_rapido_f(long key) {
+  if (shift_down) {
+    switch (key) {
+      case KEYCODE_F1: return KEYCODE_F2;
+      case KEYCODE_F3: return KEYCODE_F4;
+      case KEYCODE_F5: return KEYCODE_F6;
+      case KEYCODE_F7: return KEYCODE_F8;
+      default: break;
+    }
+  }
+  return key;
+}
+
+
+
+
+
+
+static int combo_in_corso(long key) {
+  int i;
+  for (i = 0; i < NUM_KEY_COMBOS; i++) {
+    if (key_combo_states[i].invoked && combo_tasto_fisico[i] == key) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 extern void reboot(void);
 
 void kbd_arch_init(void) {}
@@ -628,6 +740,7 @@ void kbd_set_hotkey_function(unsigned int slot, long key, int function) {
   key_combo_states[slot].second_key = key;
   key_combo_states[slot].invoked = 0;
   key_combo_states[slot].function = function;
+  combo_tasto_fisico[slot] = 0;
 }
 
 // Tests keyname var against given string
@@ -903,22 +1016,27 @@ void kbd_initialize_numpad_joykeys(int *joykeys) {}
 // Return 1 if press is consumed
 static int handle_key_combo_press(long key) {
   int i;
+
+
+  long f = tasto_rapido_f(key);
   // CBM Commodore key checks
   if (commodore_down) {
-    for (i = 0; i < 4; i++) {
-      if (key_combo_states[i].second_key == key &&
+    for (i = 0; i < COMBO_CTRL; i++) {
+      if (key_combo_states[i].second_key == f &&
           combo_ammessa(key_combo_states[i].function)) {
         key_combo_states[i].invoked = 1;
+        combo_tasto_fisico[i] = key;
         return 1;
       }
     }
   }
   // CBM Control key checks
   if (control_down) {
-    for (i = 4; i < 8; i++) {
-      if (key_combo_states[i].second_key == key &&
+    for (i = COMBO_CTRL; i < NUM_KEY_COMBOS; i++) {
+      if (key_combo_states[i].second_key == f &&
           combo_ammessa(key_combo_states[i].function)) {
         key_combo_states[i].invoked = 1;
+        combo_tasto_fisico[i] = key;
         return 1;
       }
     }
@@ -931,7 +1049,8 @@ static int handle_key_combo_press(long key) {
 static int handle_key_combo_release(long key) {
   int i;
   for (i = 0; i < NUM_KEY_COMBOS; i++) {
-    if (key_combo_states[i].second_key == key && key_combo_states[i].invoked) {
+
+    if (combo_tasto_fisico[i] == key && key_combo_states[i].invoked) {
       // Can we do this now?
       // KEEP THIS IN SYNC WITH kernel.cpp
       switch (key_combo_states[i].function) {
@@ -1003,6 +1122,15 @@ static void handle_key_combo_function() {
         emu_quick_func_interrupt(key_combo_states[i].function);
         break;
       case BTN_ASSIGN_SCREENSHOT:
+        emu_quick_func_interrupt(key_combo_states[i].function);
+        break;
+
+
+      case BTN_ASSIGN_SD_SHARING:
+      case BTN_ASSIGN_MACHINE_SWITCH:
+
+
+      case BTN_ASSIGN_SID_2:
         emu_quick_func_interrupt(key_combo_states[i].function);
         break;
       default:
@@ -1204,6 +1332,14 @@ void emu_key_pressed(long key) {
   if (!alt_down && !control_down && !commodore_down && !ui_enabled &&
       ui_lettore_sid_a_schermo()) {
     int b = 0;
+
+
+
+
+
+
+
+    const long f = tasto_rapido_f(key);
     if (key >= KEYCODE_1 && key <= KEYCODE_9) {
       b = BTN_ASSIGN_SID_VOCE_1 + (int)(key - KEYCODE_1);
     } else if (key == KEYCODE_v) {
@@ -1242,35 +1378,48 @@ void emu_key_pressed(long key) {
     } else if (key == KEYCODE_BackSlash || key == KEYCODE_KP_BackSlash ||
                key == KEYCODE_BackQuote) {
       b = BTN_ASSIGN_ASPETTO_2;
-    } else if (key == KEYCODE_F1 || key == KEYCODE_F2 || key == KEYCODE_F3 ||
-               key == KEYCODE_F4) {
+    } else if (f == KEYCODE_F1 || f == KEYCODE_F2 || f == KEYCODE_F3 ||
+               f == KEYCODE_F4) {
 
 
 
 
 
-      b = BTN_ASSIGN_SID_LATO_1 + (key == KEYCODE_F1 ? 0 :
-                                   key == KEYCODE_F2 ? 1 :
-                                   key == KEYCODE_F3 ? 2 : 3);
-    } else if ((key == KEYCODE_F5 || key == KEYCODE_F6 || key == KEYCODE_F7 ||
-                key == KEYCODE_F8) && ui_lettore_sid_quanti() > 4) {
+      b = BTN_ASSIGN_SID_LATO_1 + (f == KEYCODE_F1 ? 0 :
+                                   f == KEYCODE_F2 ? 1 :
+                                   f == KEYCODE_F3 ? 2 : 3);
+    } else if ((f == KEYCODE_F5 || f == KEYCODE_F6 || f == KEYCODE_F7 ||
+                f == KEYCODE_F8) && ui_lettore_sid_quanti() > 4) {
 
 
 
 
-      b = BTN_ASSIGN_SID_LATO_5 + (key == KEYCODE_F5 ? 0 :
-                                   key == KEYCODE_F6 ? 1 :
-                                   key == KEYCODE_F7 ? 2 : 3);
+      b = BTN_ASSIGN_SID_LATO_5 + (f == KEYCODE_F5 ? 0 :
+                                   f == KEYCODE_F6 ? 1 :
+                                   f == KEYCODE_F7 ? 2 : 3);
     } else if (key == KEYCODE_Left || key == KEYCODE_Right) {
 
 
 
-      b = key == KEYCODE_Left ? BTN_ASSIGN_SID_INDIETRO : BTN_ASSIGN_SID_AVANTI;
+
+
+
+
+
+
+
+
+
+      b = (key == KEYCODE_Left || shift_down) ? BTN_ASSIGN_SID_INDIETRO
+                                              : BTN_ASSIGN_SID_AVANTI;
     } else if (key == KEYCODE_Up || key == KEYCODE_Down) {
 
 
 
-      b = key == KEYCODE_Up ? BTN_ASSIGN_VOLUME_SU : BTN_ASSIGN_VOLUME_GIU;
+
+
+      b = (key == KEYCODE_Up || shift_down) ? BTN_ASSIGN_VOLUME_SU
+                                            : BTN_ASSIGN_VOLUME_GIU;
     }
     if (b != 0) {
       emu_quick_func_interrupt(b);
@@ -1416,6 +1565,15 @@ void emu_key_released(long key) {
 
        emu_modo_sicuro_interrupt();
     }
+  }
+
+
+
+
+
+  if (combo_in_corso(key)) {
+    handle_key_combo_release(key);
+    return;
   }
 
   if (key == KEYCODE_F12) {

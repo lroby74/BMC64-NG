@@ -162,6 +162,9 @@ int fsimage_gcr_read_half_track(const disk_image_t *image, unsigned int half_tra
         raw->size = track_len;
 
         if (fread(raw->data, track_len, 1, fsimage->fd) < 1) {
+            lib_free(raw->data);
+            raw->data = NULL;
+            raw->size = 0;
             log_error(fsimage_gcr_log, "Could not read GCR disk image.");
             return -1;
         }
@@ -289,7 +292,7 @@ int fsimage_gcr_read_sector(const disk_image_t *image, uint8_t *buf, const disk_
 {
     fdc_err_t rf;
 
-    if (dadr->track > image->tracks) {
+    if (dadr->track < 1 || dadr->track > image->tracks) {
         log_error(fsimage_gcr_log,
                   "Track %u out of bounds.  Cannot read GCR track.",
                   dadr->track);
@@ -350,7 +353,7 @@ int fsimage_gcr_read_sector(const disk_image_t *image, uint8_t *buf, const disk_
 int fsimage_gcr_write_sector(disk_image_t *image, const uint8_t *buf,
                              const disk_addr_t *dadr)
 {
-    if (dadr->track > image->tracks) {
+    if (dadr->track < 1 || dadr->track > image->tracks) {
         log_error(fsimage_gcr_log,
                   "Track %u out of bounds.  Cannot write GCR sector",
                   dadr->track);

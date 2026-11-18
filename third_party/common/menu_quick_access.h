@@ -5,7 +5,9 @@
 
 struct menu_item;
 
-#define MENU_QUICK_ACCESS_SLOT_COUNT 5
+
+
+#define MENU_QUICK_ACCESS_SLOT_COUNT 10
 
 struct menu_quick_access_slot {
   int id;

@@ -1277,6 +1277,14 @@ static unsigned long let_avviso_da = 0;
 
 
 
+
+
+
+static char let_domanda[40];
+static int let_domanda_visibile = 0;
+
+
+
 static int let_salto_fino = -1;
 static int let_salto_brano = 0;
 
@@ -1426,6 +1434,12 @@ static int lettore_colore(int seg, int acceso, int picco) {
   return acceso ? LET_VERDE : LET_VERDE_SPENTO;
 }
 
+
+
+
+
+
+
 static void lettore_testo(const char *s, int x, int y, int colore) {
   char buf[64];
   int n = 0;
@@ -1443,8 +1457,38 @@ static void lettore_testo(const char *s, int x, int y, int colore) {
   if (x < 0) {
     x = let_ax + (let_aw - n * 8) / 2;
   }
+
+
+
+
+
   ui_draw_text_buf(buf, x, y, colore, ui_fb, ui_fb_pitch, 1);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 static void lettore_testo_in_mezzo(const char *s, int y, int colore, int margine) {
@@ -1710,7 +1754,9 @@ static void lettore_disegna_tutto(void) {
   } else {
     snprintf(riga, sizeof(riga), "DEFAULT TUNE (%d IN FILE)", quanti);
   }
-  if (let_avviso_visibile) {
+  if (let_domanda_visibile) {
+    lettore_testo(let_domanda, -1, let_ay + let_ah - 10, LET_GIALLO);
+  } else if (let_avviso_visibile) {
     lettore_testo(let_avviso, -1, let_ay + let_ah - 10, LET_GIALLO);
   } else {
     lettore_testo(riga, -1, let_ay + let_ah - 10, LET_GRIGIO);
@@ -1745,6 +1791,64 @@ void ui_lettore_sid_avviso(const char *testo) {
   let_avviso_visibile = 1;
   let_avviso_da = circle_get_ticks();
   let_ridisegna = 1;
+}
+
+
+
+
+void ui_lettore_sid_domanda(const char *testo) {
+  if (testo == NULL) {
+    if (!let_domanda_visibile) {
+      return;
+    }
+    let_domanda_visibile = 0;
+  } else {
+    if (let_domanda_visibile && strcmp(let_domanda, testo) == 0) {
+      return;
+    }
+    snprintf(let_domanda, sizeof(let_domanda), "%s", testo);
+    let_domanda_visibile = 1;
+  }
+  let_ridisegna = 1;
+}
+
+
+
+
+
+
+int ui_lettore_sid_pausa_tick(void) {
+  if (ui_fb == NULL || ui_enabled || !lettore_mostrato || !ui_showing) {
+    return 0;
+  }
+  if (let_avviso_visibile &&
+      circle_get_ticks() - let_avviso_da >= LET_AVVISO_US) {
+    let_avviso_visibile = 0;
+    let_ridisegna = 1;
+  }
+  if (!let_ridisegna) {
+    return 0;
+  }
+  let_ridisegna = 0;
+  lettore_disegna_tutto();
+  return 1;
+}
+
+
+
+
+int ui_cima_conferma(int ok_id) {
+  struct menu_item *it;
+
+  if (!ui_enabled || current_menu < 0) {
+    return 0;
+  }
+  for (it = menu_roots[current_menu].first_child; it != NULL; it = it->next) {
+    if (it->id == MENU_CONFIRM_OK && it->sub_id == ok_id) {
+      return 1;
+    }
+  }
+  return 0;
 }
 
 
@@ -1869,6 +1973,9 @@ int ui_lettore_sid_tick(void) {
   if (ui_fb == NULL || ui_enabled) {
     return 0;
   }
+
+
+  menu_sid_macchina_tick();
   for (i = 0; i < 24; i++) {
     livello[i] = -1;
   }
@@ -2792,6 +2899,42 @@ static const char *testo_della_voce(struct menu_item *node,
   nome_che_scorre(intero, ora - scorre_da, finestra, buf, n);
   return buf;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

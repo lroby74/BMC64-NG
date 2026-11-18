@@ -341,6 +341,13 @@ protected:
 
 
 
+
+  virtual void PrimaDelVice(void) {}
+
+
+
+
+
   void ScriviListeDopoLaUsb(void);
 
   CUSBHCIDevice mUSBHCII;

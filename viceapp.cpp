@@ -38,6 +38,8 @@ extern "C" const char *bmc_alimentazione_it(unsigned v);
 
 extern "C" int vidtrial_pending(void);
 #include <circle/usb/usbdevicefactory.h>
+#include <circle/usb/xhciconfig.h>
+#include <circle/net/tcpconnection.h>
 #include <circle/synchronize.h>
 #include <circle/bcm2835.h>
 #include <circle/memio.h>
@@ -992,6 +994,19 @@ CNetSubSystem *ViceStdioApp::NuovaRete(TNetDeviceType tipo) {
     mLogger.Write(GetKernelName(), LogNotice, "Networking: static IP %u.%u.%u.%u",
                   ip[0], ip[1], ip[2], ip[3]);
   }
+
+
+
+
+
+
+
+
+  const unsigned finestra_tcp = 44;
+  CTCPConnection::SetReceiveWindow(finestra_tcp);
+  mLogger.Write(GetKernelName(), LogNotice,
+                "TCP receive window: %u segments (%s)", finestra_tcp,
+                tipo == NetDeviceTypeWLAN ? "Wi-Fi" : "Ethernet");
   return new CNetSubSystem(ip, maschera, gateway, dns, circle_nome_in_rete(),
                            tipo);
 }
@@ -1358,6 +1373,17 @@ bool ViceStdioApp::Initialize(void) {
 #endif
   bmc_core0_dove = "lancio del VICE";
 
+
+
+
+
+
+
+
+
+
+  PrimaDelVice();
+
   // Now that emmc is initialized, launch
   // the emulator main loop on CORE 1 before USBHCII.
   int timing_int = mViceOptions.GetMachineTiming();
@@ -1409,6 +1435,12 @@ bool ViceStdioApp::Initialize(void) {
       mViceOptions.GetAudioOut() == VCHIQSoundDestinationUSB);
 #endif
 
+#if RASPPI == 4
+
+
+
+  g_nXHCIIMODIAvvio = XHCI_IMODI_AVVIO_LENTO;
+#endif
   // This takes 1.5 seconds to init.
   bmc_core0_dove = "USB: inizializzazione (1,5 s)";
   if (!mUSBHCII.Initialize()) {

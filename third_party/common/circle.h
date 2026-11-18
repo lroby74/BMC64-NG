@@ -290,6 +290,33 @@ const char *circle_missing_wifi_firmware(void);
 #define BTN_ASSIGN_RESET_MENU 29
 #define BTN_ASSIGN_FLUSH_DISK 30
 
+
+
+
+
+
+
+
+#define BTN_ASSIGN_PAD_ATTACH_TAPE    31
+#define BTN_ASSIGN_PAD_ATTACH_CART    32
+#define BTN_ASSIGN_PAD_ATTACH_DISK_8  33
+#define BTN_ASSIGN_PAD_ATTACH_DISK_9  34
+#define BTN_ASSIGN_PAD_ATTACH_DISK_10 35
+#define BTN_ASSIGN_PAD_ATTACH_DISK_11 36
+#define BTN_ASSIGN_PAD_SID_OSD        37
+#define BTN_ASSIGN_PAD_SCREENSHOT     38
+#define BTN_ASSIGN_PAD_RIAVVIA_PI     39
+#define BTN_ASSIGN_PAD_SPEGNI_PI      40
+#define BTN_ASSIGN_PAD_SD_SHARING     41
+
+
+
+#define BTN_ASSIGN_PAD_MACHINE_SWITCH 42
+
+
+
+#define BTN_ASSIGN_PAD_SID_PLAYER     43
+
 // These are intermediate values not meant to
 // be directly assigned to buttons. Never used as
 // an index into anything.
@@ -497,6 +524,25 @@ extern volatile unsigned long bmc_scheda_da;
 #define BTN_ASSIGN_ATTACH_DISK_10_2 1013
 #define BTN_ASSIGN_ATTACH_DISK_11_2 1014
 #define BTN_ASSIGN_SID_OSD         1015
+
+
+
+
+
+#define BTN_ASSIGN_SD_SHARING      1016
+
+
+
+#define BTN_ASSIGN_MACHINE_SWITCH  1017
+
+
+
+#define BTN_ASSIGN_SID_MACCHINA    1018
+
+
+
+extern int kbd_pad_tasto_rapido(int b);
+extern int kbd_pad_ammesso(int b);
 enum { SCREENSHOT_EMULATOR, SCREENSHOT_SCALED, SCREENSHOT_CRT, SCREENSHOT_SCREEN };
 enum { SCREENSHOT_FORMAT_PPM, SCREENSHOT_FORMAT_PNG };
 extern int circle_take_screenshot(int stage, int maximum_width, int layer,

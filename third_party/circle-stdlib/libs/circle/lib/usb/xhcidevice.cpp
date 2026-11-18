@@ -354,6 +354,17 @@ CXHCIMMIOSpace *CXHCIDevice::GetMMIOSpace (void)
 	return m_pMMIO;
 }
 
+
+boolean CXHCIDevice::SetInterruptModeration (u32 nIMODI)
+{
+	if (m_pMMIO == 0)
+	{
+		return FALSE;
+	}
+	m_pMMIO->rt_write32 (0, XHCI_REG_RT_IR_IMOD, nIMODI & XHCI_REG_RT_IR_IMOD_IMODI__MASK);
+	return TRUE;
+}
+
 CXHCISlotManager *CXHCIDevice::GetSlotManager (void)
 {
 	assert (m_pSlotManager != 0);

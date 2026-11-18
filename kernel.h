@@ -60,6 +60,8 @@ public:
   CKernel(void);
 
   bool Initialize(void) override;
+
+  void PrimaDelVice(void) override;
   TShutdownMode Run(void);
 
   static void MouseStatusHandler(unsigned nButtons, int nPosX, int nPosY,

@@ -95,6 +95,8 @@ struct machine_entry {
 
 
 
+
+
    int variante;
 
 

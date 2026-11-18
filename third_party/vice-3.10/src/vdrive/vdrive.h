@@ -245,6 +245,7 @@ void vdrive_set_last_read(unsigned int track, unsigned int sector, uint8_t *buff
 void vdrive_alloc_buffer(struct bufferinfo_s *p, int mode);
 void vdrive_free_buffer(struct bufferinfo_s *p);
 void vdrive_set_disk_geometry(vdrive_t *vdrive);
+int vdrive_check_track_sector(vdrive_t *vdrive, unsigned int track, unsigned int sector);
 int vdrive_read_sector(vdrive_t *vdrive, uint8_t *buf, unsigned int track, unsigned int sector);
 int vdrive_write_sector(vdrive_t *vdrive, const uint8_t *buf, unsigned int track, unsigned int sector);
 int vdrive_read_sector_physical(vdrive_t *vdrive, uint8_t *buf, unsigned int track, unsigned int sector);

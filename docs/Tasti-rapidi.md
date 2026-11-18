@@ -17,7 +17,7 @@ Tutte le combinazioni usano il tasto **ALT**. Lo SHIFT, ove presente é per atti
 | **Reboot?** e **Power Off?** | le domande partono su **CANCEL**: per riavviare o spegnere si sale su **OK** |
 | tasto **Super** (logo di Windows, lampone) | da solo apre e chiude il menu, come **F12**. Con la mappatura **Maxi Positional** resta il tasto Commodore |
 | **AltGr** | in un campo di testo, con la mappatura **Symbolic** e la tastiera italiana o tedesca: **[ ] { } @ # ~** come sul PC |
-| **SPAZIO** su una voce | nel menu principale (un interruttore, una scelta, un pulsante, un numero) la mette in uno dei cinque posti di **Quick Access...**, in cima al menu: si sceglie il posto e **INVIO**. **INVIO** su un posto porta alla sua voce, aprendo le cartelle |
+| **SPAZIO** su una voce | nel menu principale (un interruttore, una scelta, un pulsante, un numero) la mette in uno dei dieci posti di **Quick Access...**, da **Slot 0** a **Slot 9**, in cima al menu: si sceglie il posto e **INVIO**. **INVIO** su un posto porta alla sua voce, aprendo le cartelle |
 | **ESC** nel menu principale | porta su **Quick Access...**; un secondo **ESC** chiude il menu. I posti si salvano con **Save settings** |
 | Riaprendo il menu (**F12**) | si torna sull'ultima voce toccata, con le cartelle aperte come le avevi lasciate, sia uscendo con **F12** sia con **ESC** (il salto su **Quick Access...** del primo **ESC** non conta) |
 | **ALT** + **↑** e **↓** | dentro il menu: su e giú a blocchi, come **PgUp** e **PgDn** (tenuti premuti, continuano). Con ogni tastiera, anche sul 500+, dove FN non arriva al computer. A menu chiuso sono PLAY e STOP del nastro |

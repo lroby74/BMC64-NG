@@ -34,7 +34,9 @@
 #define RASPI_MENU_H
 
 // Make sure does not exceed max choices in ui.h
-#define NUM_BUTTON_ASSIGNMENTS 31
+
+
+#define NUM_BUTTON_ASSIGNMENTS 44
 
 // Never used as values. Can be reorged.
 typedef enum {
@@ -373,6 +375,24 @@ typedef enum {
    MENU_HOTKEY_TF3,
    MENU_HOTKEY_TF5,
    MENU_HOTKEY_TF7,
+
+
+   MENU_HOTKEY_CF2,
+   MENU_HOTKEY_CF4,
+   MENU_HOTKEY_CF6,
+   MENU_HOTKEY_CF8,
+   MENU_HOTKEY_CF9,
+   MENU_HOTKEY_CF10,
+   MENU_HOTKEY_CF11,
+   MENU_HOTKEY_CF12,
+   MENU_HOTKEY_TF2,
+   MENU_HOTKEY_TF4,
+   MENU_HOTKEY_TF6,
+   MENU_HOTKEY_TF8,
+   MENU_HOTKEY_TF9,
+   MENU_HOTKEY_TF10,
+   MENU_HOTKEY_TF11,
+   MENU_HOTKEY_TF12,
 
    MENU_SAVE_EASYFLASH,
    MENU_CART_FREEZE,
@@ -735,11 +755,17 @@ typedef enum {
 
 
    MENU_QUICK_ACCESS_FOLDER,
+
+   MENU_QUICK_ACCESS_SLOT_0,
    MENU_QUICK_ACCESS_SLOT_1,
    MENU_QUICK_ACCESS_SLOT_2,
    MENU_QUICK_ACCESS_SLOT_3,
    MENU_QUICK_ACCESS_SLOT_4,
    MENU_QUICK_ACCESS_SLOT_5,
+   MENU_QUICK_ACCESS_SLOT_6,
+   MENU_QUICK_ACCESS_SLOT_7,
+   MENU_QUICK_ACCESS_SLOT_8,
+   MENU_QUICK_ACCESS_SLOT_9,
 
    MENU_MENU_SCALE,
    MENU_MENU_ROW_GAP,
@@ -816,7 +842,10 @@ typedef enum {
    MENU_AUTOFIRE_1,
    MENU_AUTOFIRE_2,
 
-   MENU_REALDRIVE_DIRECTORY
+   MENU_REALDRIVE_DIRECTORY,
+
+   MENU_EASYFLASH_WRITE_CRT,
+   MENU_EASYFLASH_OPTIMIZE_CRT
 } MenuID;
 
 typedef enum {
@@ -843,6 +872,7 @@ typedef enum {
    KEYBOARD_MAPPING_MAXI,
    KEYBOARD_MAPPING_PETSCIIBOARD,
    KEYBOARD_MAPPING_CUSTOM,
+   KEYBOARD_MAPPING_KEYRAH,
 } MenuKeyboardMapping;
 
 
@@ -915,6 +945,12 @@ typedef enum {
    HOTKEY_CHOICE_ATTACH_DISK_11,
    HOTKEY_CHOICE_SID_OSD,
    HOTKEY_CHOICE_SCREENSHOT,
+
+   HOTKEY_CHOICE_SD_SHARING,
+
+   HOTKEY_CHOICE_MACHINE_SWITCH,
+
+   HOTKEY_CHOICE_SID_PLAYER,
 } HotKeyChoice;
 
 enum {
@@ -1027,6 +1063,10 @@ int menu_nastro_pronto(void);
 void menu_poweroff_key(void);
 
 void menu_shader_lettore(int attivo);
+
+
+
+void menu_sid_macchina_tick(void);
 void menu_poweroff_tick(void);
 int menu_poweroff_left(void);
 int menu_poweroff_annulla(void);

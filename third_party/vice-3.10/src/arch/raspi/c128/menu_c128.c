@@ -416,6 +416,22 @@ struct menu_item* emux_add_cartridge_options(struct menu_item* root) {
   ui_menu_add_button(MENU_SAVE_EASYFLASH, parent, "Save EasyFlash Now");
 
 
+
+
+
+
+  {
+    int scrivi = 1;
+    resources_get_int("EasyFlashWriteCRT", &scrivi);
+    ui_menu_add_toggle(MENU_EASYFLASH_WRITE_CRT, parent,
+                       "EasyFlash Write CRT", scrivi);
+    scrivi = 1;
+    resources_get_int("EasyFlashOptimizeCRT", &scrivi);
+    ui_menu_add_toggle(MENU_EASYFLASH_OPTIMIZE_CRT, parent,
+                       "EasyFlash Optimize CRT", scrivi);
+  }
+
+
   ui_menu_add_button(MENU_SAVE_MAGICDESKPLUS, parent, "Save Magic Desk Plus Now");
   {
     int scrivi = 1;

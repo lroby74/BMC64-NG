@@ -575,10 +575,23 @@ int easyflash_crt_attach(FILE *fd, uint8_t *rawcart, const char *filename)
     return easyflash_common_attach(filename);
 }
 
+
+
+
+
+
+
+int easyflash_flash_scritta(void);
+
 void easyflash_detach(void)
 {
     if (easyflash_crt_write) {
-        easyflash_flush_image();
+        if (easyflash_flash_scritta()) {
+            easyflash_flush_image();
+            log_message(LOG_DEFAULT, "EasyFlash: .crt scritto allo stacco");
+        } else {
+            log_message(LOG_DEFAULT, "EasyFlash: stacco, il gioco non ha scritto: .crt non toccato");
+        }
     }
     flash040core_shutdown(easyflash_state_low);
     flash040core_shutdown(easyflash_state_high);

@@ -59,7 +59,7 @@ There's no Linux underneath: the Pi boots straight into the Commodore.
 2. Format it as **FAT32** with a normal cluster (allocation unit) size: **32 KB**, as the SD Association's SD Card Formatter does, or the Windows default.
    - **Do not use 512-byte clusters.** The Raspberry Pi then reads its own start-up files and the kernel in tiny pieces: a Pi 4 or 400 waits 9-10 seconds before BMC64-NG even begins, and with a 32 GB card it took 45 seconds. With normal clusters, power-on to the BASIC prompt takes about 11 seconds. Changing machine restarts the Pi, so it gets the same benefit.
    - For cards bigger than 32 GB use a tool such as FAT32Format.
-3. Download the full archive of the latest release, such as `BMC64-NG V1.4.7z`, from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
+3. Download the full archive of the latest release, such as `BMC64-NG V1.5.7z`, from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
 4. Copy the Commodore ROMs into the machine folders of the card: see [ROM files](#rom-files) below.
 5. Put the card in the Pi and switch it on. It starts as a PAL Commodore 64 (cycle exact) on HDMI, 1080p at 50 Hz; Machine > Switch changes machine and video mode.
 
@@ -125,8 +125,8 @@ In any file list, type the first letters of a name: the list narrows as you type
 ## Updating
 
 Every release has two archives:
-- the full one, such as `BMC64-NG V1.4.7z`, for a new card;
-- the update, such as `BMC64-NG Update V1.4.7z`, with only the files that changed since the previous release. Copy its whole content onto your card and replace the files that are already there. If you skipped a release, apply its update first, or start again from the full archive.
+- the full one, such as `BMC64-NG V1.5.7z`, for a new card;
+- the update, such as `BMC64-NG Update V1.5.7z`, with only the files that changed since the previous release. Copy its whole content onto your card and replace the files that are already there. If you skipped a release, apply its update first, or start again from the full archive.
 
 The update never contains `config.txt`, `cmdline.txt`, `machines.txt`, `wpa_supplicant.conf` or the `settings*.txt` files: they hold your own settings. Replace one of them only when the release notes say so. Neither archive contains ROMs, and the ones already on your card stay where they are.
 
@@ -164,6 +164,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 - **Adjustable scanlines.** Set them from 0 to 100 for the look of a tube monitor; ALT + SHIFT + "+" and ALT + SHIFT + "−" change them on the fly.
 - **Aspect ratio on custom modes.** On the 768x545 and 768x525 modes, which run at the machine's exact frequency, BMC64-NG reads the TV's real shape at power-on and assumes 16:9 if the TV doesn't say. 16:9 then fills the screen and 4:3 comes out really 4:3, as at 720p.
 - **Picture adjustments.** Set brightness, contrast, colour and gamma, and the geometry: width, height and centring.
+- **Picture scaling on the Pi 4 and Pi 5.** Video > Scaling Interpolation chooses how the picture is enlarged: On (the default) softens it with a filter, Off keeps it sharp. The `scaling_kernel` option of `config.txt` is a firmware setting for the older Raspberry Pi models and is not used on the Pi 4 and Pi 5, where BMC64-NG draws the picture itself. Save settings keeps the choice.
 - **720p or 1080p.** Video > HDMI Resolution chooses between the two for the running machine, PAL or NTSC as it is now, and the menu asks to restart. In the Switch menu every machine has both entries next to each other. A new card made with the full archive starts at 1080p.
 - **CRT shader presets.** The CRT Shader menu adjusts the shader, and Save as preset... keeps the adjustments in a `.crt` file of the `/crt` folder, with the name you type. If you choose another preset with changes not saved, the menu asks what to do with them. Save settings remembers the preset, or the adjustments changed by hand.
 - **No slowdown past the edges.** When H Center, V Center or a wider picture push the image a little past the screen edges, the part outside is simply cut and the emulation doesn't slow down.
@@ -195,6 +196,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 ### SID player
 
 - **Built-in .SID player.** Copy your .SID files into the `/sids` folder on the card, then press ALT + S to browse and play them, including tunes for two and three SIDs. ALT + SHIFT + S stops the tune and resets.
+- **The SID player as a machine of its own.** In the Switch menu the SID Player folder restarts the Raspberry as the SID player, and it stays so at the next power-ons. At start the list of the `/sids` folder opens by itself, and BASIC never shows up.
 - **Four-SID tunes.** The player also plays 4-SID files (PSID v4E, the SID-Wizard ones) with 12 VU bars. Under each group it shows the SID number, model and side, for example "1 8580 L".
 - **Eight-SID tunes.** Files with up to eight SIDs play too, such as The Tuneful Eight, four 2-SID tunes written to play together on eight SIDs: 24 VU bars half as wide, with the SID number, side and model under each group, odd SIDs on the left and even ones on the right at the start. F1 to F8 change the side of each SID and ALT + 1 to ALT + 8 turn whole SIDs off and on; single voices can't be muted. These tunes start on reSID, in Fast mode on the Pi 4 and 400, with the SIDs split among the cores; S switches them to reSIDfp, which with eight SIDs on the Pi 4 needs CPU Clock at +20% (at the stock clock stay on reSID). Leaving the player brings back the engine you chose.
 - **The model of each SID.** With tunes for more SIDs each SID plays with the model written in the file, up to the eighth; if the file does not say, with the model of the first SID.
@@ -219,7 +221,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 - **The disk at every power-on.** Drives > Default disk chooses an image and a unit (8, 9, 10 or 11). At every power-on that image is attached by itself, if the unit is empty, and if the unit is off it is switched on by itself. By default there is no image.
 - **Tapes with recorder controls.** `.tap` and `.t64` tapes come with a tape counter and recorder keys: ALT + ↑ is PLAY, ALT + ↓ is STOP, ALT + → fast-forwards and ALT + ← rewinds, twice as fast with SHIFT. ALT + DEL resets the counter.
 - **Cartridges at power-on too.** Insert `.crt` and `.bin` cartridges with ALT + C and remove them with ALT + SHIFT + C. On the C64 and C128, Cartridge > Set current cart default makes the inserted cartridge start at every power-on and saves by itself; choose it again after removing the cartridge to undo it.
-- **EasyFlash saves.** What a game writes into the flash goes back into its `.crt` file, with Cartridge > Save EasyFlash Now or by itself when you remove or change the cartridge. It also saves when you power off, restart or switch machine, if the game wrote to it.
+- **EasyFlash saves.** What a game writes into the flash goes back into its `.crt` file, with Cartridge > Save EasyFlash Now or by itself when you remove or change the cartridge. It also saves when you power off, restart or switch machine. The `.crt` is rewritten only if the game wrote to the flash: a game that only reads leaves its file untouched. Cartridge > EasyFlash Write CRT and EasyFlash Optimize CRT are the two VICE settings for it (both on by default): with Write CRT off the file is never touched by itself, and with Optimize CRT off the saved file keeps the empty blocks too.
 - **Magic Desk Plus saves.** On the C64 and C128, what the program writes to the cartridge's SRAM and EEPROM stays in two files next to the `.crt`, with the same name and the extensions `.srm` and `.eep`. Cartridge > Save Magic Desk Plus Now writes them at once, and Auto-save Magic Desk Plus, on by default, writes them by itself when the cartridge is detached or another one is attached, and also when you power off, restart or switch machine.
 - **Programs and autostart.** Load `.prg` programs directly, or pick a PRG or disk file with ALT + A and it starts by itself. With true drive emulation, VICE puts the `.prg` on a disk it writes in the card's root, such as `autostart-PLUS4.d64`; you can delete it, and it comes back next time. On the PET, Autostart Prg... starts `.prg` files.
 - **PRG loading.** The PRG loading item of the main menu says how a `.prg` starts with autostart: Via disk image, the default, or Direct to RAM, which always puts it straight into RAM, even with the drive on.
@@ -255,19 +257,20 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 ### Keyboard and controls
 
 - **Keyboard maps.** There are positional and symbolic keyboard maps, and US, IT, UK and DE layouts.
+- **Keyrah V3.** In Keyboard, Mapping has a Keyrah V3 choice (after Custom) on the C64, the normal C64 and the SuperCPU: the map made for the Keyrah V3, which sends Page Down, End and Backslash for the C64 keys =, £ and up arrow. Save settings keeps it.
 - **Your own keyboard map.** In Keyboard, set Mapping to Custom and open Mapping Editor...: one row for every key of the machine (C64, C128, VIC-20, SuperCPU, PET and Plus/4 with VICE), and ENTER and then the PC key to give it. Save & Apply saves it and uses it at once, and Restore Defaults... goes back to the Positional one.
 - **Caps Lock.** The Caps Lock of a USB keyboard is SHIFT LOCK on every machine and with every mapping, as in VICE, also together with a real C64 keyboard on a Keyrah. On the C128 the CAPS LOCK key stays on ALT + F4.
 - **The C128's extra keys.** ESC, TAB, ALT, CAPS LOCK, HELP, LINE FEED, 40/80 DISPLAY and NO SCROLL are on ALT + F1 to ALT + F8, in the order of the real machine. Seven also have a key of their own: F9 ESC, F10 TAB, F11 40/80 DISPLAY, End HELP, Page Down LINE FEED, Scroll Lock NO SCROLL, Pause CAPS LOCK.
 - **RESTORE key.** The RESTORE key is there, the one that triggers the non-maskable interrupt on the real C64.
 - **Keyboard as joystick.** Keyset turns keys you choose into a joystick. PotX and PotY are the second and third button, for the games that use them, as on USB gamepads.
-- **Restart and shutdown from the real C64 keyboard.** In the Keyboard menu, the C= + F1…F7 and CTRL + F1…F7 hotkeys can be Reboot BMC64 or Power Off BMC64, for the C64 keyboard on a Keyrah, which has neither ALT nor a power key. The hotkey asks REBOOT? or POWER OFF? at the bottom: the same hotkey again within five seconds confirms, ESC (RUN/STOP on the C64 keyboard) cancels.
-- **More hotkey choices.** The same hotkeys can also be Attach Tape, Attach Cart, Attach Drive 8, 9, 10 or 11 (the file list while the machine runs), Screenshot, or SID OSD: a box with the SID entries of the Sound menu, changed with the arrow keys while the music plays.
+- **Restart and shutdown from the real C64 keyboard.** In the Keyboard menu, the C= + F1…F12 and CTRL + F1…F12 hotkeys can be Reboot BMC64 or Power Off BMC64, for the C64 keyboard on a Keyrah, which has neither ALT nor a power key. The hotkey asks REBOOT? or POWER OFF? at the bottom: the same hotkey again within five seconds confirms, ESC (RUN/STOP on the C64 keyboard) cancels.
+- **More hotkey choices.** The same hotkeys can also be Attach Tape, Attach Cart, Attach Drive 8, 9, 10 or 11 (the file list while the machine runs), Screenshot, SID OSD (a box with the SID entries of the Sound menu, changed with the arrow keys while the music plays), SD Card Sharing, Machine Switch OSD (the machine folders of the Switch menu) or SID Player OSD (the list of the .SID files, like ALT + S, also from a real C64 keyboard). The same functions can be put on the gamepad buttons, in Assignments by Button... and Assignments by Function...
 
 ### Menu and usability
 
 - **One-key menu.** F12 opens and closes the menu; the arrow keys move, ENTER chooses, and a letter jumps to the next entry that starts with it (S for Sound). ALT + ↑ and ALT + ↓ jump by blocks, like PgUp and PgDn, on the Pi 400, 500 and 500+ keyboards and on USB keyboards. Save settings keeps your setup for the next start.
 - **Back where you left it.** F12 opens the menu again on the last item you touched, with the folders open as you left them.
-- **Quick Access.** SPACE on a switch, a choice, a button or a number of the main menu puts it in one of the five slots of Quick Access..., at the top of the menu, and ENTER on a slot takes you to its entry, opening the folders. ESC in the main menu goes to Quick Access..., and a second ESC closes the menu.
+- **Quick Access.** SPACE on a switch, a choice, a button or a number of the main menu puts it in one of the ten slots of Quick Access..., at the top of the menu, and ENTER on a slot takes you to its entry, opening the folders. ESC in the main menu goes to Quick Access..., and a second ESC closes the menu.
 - **Mouse in the menu.** Inside the menu the pointer picks the row, the left button is ENTER and the right one goes back; the wheel scrolls the list and changes the numbers. With the menu closed the mouse belongs to the Commodore. Prefs > Mouse in Menu turns it off.
 - **Menu size.** Prefs > Menu Scale % sets the size of the menu, from 75 to 115%, and Row Gap px the space between the rows.
 - **Inside images and text files.** In a file list, ← goes to the folder above and → enters the one under the cursor; → on a disk image shows its programs, and ENTER starts one. ENTER on a text file shows it, up to 8 KB.
@@ -282,7 +285,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 - **Warp speed.** ALT + W runs the machine as fast as the Pi allows, to skip long loading times.
 - **Machine snapshots.** Save the exact state of the machine and pick it up later.
 - **Hard and soft reset.** ALT + R is a hard reset that clears memory, the one that restarts a game; ALT + SHIFT + R is a soft reset that keeps memory, handy for changing or studying code in memory.
-- **Pi restart and shutdown.** ALT + ESC restarts the Pi and ALT + SHIFT + ESC shuts it down, each after a second press to confirm; ESC alone cancels. On the Pi 500 and 500+ the power button works too, and on the Pi 400 Fn + F10.
+- **Pi restart and shutdown.** ALT + ESC restarts the Pi and ALT + SHIFT + ESC shuts it down, each after a second press to confirm; ESC alone cancels. On the Pi 500 and 500+ the power button works too, and on the Pi 400 Fn + F10. They also work with the menu open, and in the SID player.
 - **Overclock and underclock.** CPU Clock... sets the CPU from -20% to +20% of the stock frequency of that Raspberry, and GPU Clock... raises the GPU by 10% or 20%, with frequencies that have already been tested. The choice belongs to the Pi it was made on: the same card in another Pi starts at that Pi's frequencies.
 - **Overclocking...** For those who want to go beyond CPU Clock and GPU Clock, this item of the main menu has Voltage Offset, Temperature Limit, Core Clock and V3D Clock. Apply & Reboot writes them to config.txt and restarts, and Restore Defaults sets Auto again. `force_turbo` is never written from here.
 - **The warranty bit.** The firmware sets it for good when it finds `force_turbo=1` together with a raised voltage, and BMC64-NG never writes the two together.

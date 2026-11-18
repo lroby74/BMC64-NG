@@ -24,6 +24,9 @@
 
 static const char From[] = "xhcievt";
 
+
+unsigned g_nXHCIIMODIAvvio = XHCI_CONFIG_IMODI;
+
 CXHCIEventManager::CXHCIEventManager (CXHCIDevice *pXHCIDevice)
 :	m_pXHCIDevice (pXHCIDevice),
 	m_pMMIO (pXHCIDevice->GetMMIOSpace ()),
@@ -50,7 +53,7 @@ CXHCIEventManager::CXHCIEventManager (CXHCIDevice *pXHCIDevice)
 	m_pMMIO->rt_write32 (0, XHCI_REG_RT_IR_ERSTSZ, 1);
 	m_pMMIO->rt_write64 (0, XHCI_REG_RT_IR_ERSTBA_LO, XHCI_TO_DMA (m_pERST));
 	m_pMMIO->rt_write64 (0, XHCI_REG_RT_IR_ERDP_LO, XHCI_TO_DMA (m_EventRing.GetFirstTRB ()));
-	m_pMMIO->rt_write32 (0, XHCI_REG_RT_IR_IMOD, XHCI_CONFIG_IMODI);
+	m_pMMIO->rt_write32 (0, XHCI_REG_RT_IR_IMOD, g_nXHCIIMODIAvvio);
 	m_pMMIO->rt_write32 (0, XHCI_REG_RT_IR_IMAN,   m_pMMIO->rt_read32 (0, XHCI_REG_RT_IR_IMAN)
 						     | XHCI_REG_RT_IR_IMAN_IE);
 }

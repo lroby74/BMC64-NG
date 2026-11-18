@@ -272,6 +272,12 @@ int ui_lettore_sid_mostra(int cosa);
 int ui_lettore_sid_salta(int secondi);
 void ui_lettore_sid_avviso(const char *testo);
 
+
+
+void ui_lettore_sid_domanda(const char *testo);
+int ui_lettore_sid_pausa_tick(void);
+int ui_cima_conferma(int ok_id);
+
 void ui_lettore_sid_motore(const char *testo);
 int ui_lettore_sid_quanti(void);
 int ui_osd_attivo(void);

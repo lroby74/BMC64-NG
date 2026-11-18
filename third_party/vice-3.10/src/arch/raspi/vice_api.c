@@ -3285,6 +3285,11 @@ void emux_add_tape_options(struct menu_item* parent) {
 
 #define BMC_INDICE_CUSTOM (KBD_INDEX_USERPOS + 100)
 
+
+
+#define BMC_INDICE_KEYRAH (KBD_INDEX_USERPOS + 101)
+#define BMC_FILE_KEYRAH "rpi_keyrah_v3_pos.vkm"
+
 static int layout_conta_per_indice(int idx) {
   return idx == KBD_INDEX_SYM || idx == KBD_INDEX_POS;
 }
@@ -3333,6 +3338,7 @@ static int mappatura_per_il_menu(int idx) {
   case KBD_INDEX_POS:     return KEYBOARD_MAPPING_POS;
   case KBD_INDEX_USERPOS: return KEYBOARD_MAPPING_MAXI;
   case BMC_INDICE_CUSTOM:  return KEYBOARD_MAPPING_CUSTOM;
+  case BMC_INDICE_KEYRAH:  return KEYBOARD_MAPPING_KEYRAH;
   default:                return KEYBOARD_MAPPING_SYM;
   }
 }
@@ -3427,7 +3433,7 @@ static int user_pos_keymap_is(const char *expected) {
 }
 
 static int indice_vice(int scelta) {
-   return scelta == BMC_INDICE_CUSTOM ? KBD_INDEX_USERPOS : scelta;
+   return (scelta == BMC_INDICE_CUSTOM || scelta == BMC_INDICE_KEYRAH) ? KBD_INDEX_USERPOS : scelta;
 }
 
 static int emux_active_keyboard_matrix(BmxKeyboardMatrix *matrix) {
@@ -3864,6 +3870,11 @@ void emux_add_keyboard_options(struct menu_item* parent) {
     strcpy(keyboard_mapping_item->choices[n_map], "Custom");
     keyboard_mapping_item->choice_ints[n_map++] = BMC_INDICE_CUSTOM;
   }
+
+  if (keymap_esiste(BMC_FILE_KEYRAH)) {
+    strcpy(keyboard_mapping_item->choices[n_map], "Keyrah V3");
+    keyboard_mapping_item->choice_ints[n_map++] = BMC_INDICE_KEYRAH;
+  }
   keyboard_mapping_item->num_choices = n_map;
 
   int tmp_value;
@@ -3872,6 +3883,8 @@ void emux_add_keyboard_options(struct menu_item* parent) {
   int scelta_salvata = tmp_value;
   if (tmp_value == KBD_INDEX_USERPOS && user_pos_keymap_is(BMC_FILE_CUSTOM)) {
     scelta_salvata = BMC_INDICE_CUSTOM;
+  } else if (tmp_value == KBD_INDEX_USERPOS && user_pos_keymap_is(BMC_FILE_KEYRAH)) {
+    scelta_salvata = BMC_INDICE_KEYRAH;
   }
   keyboard_mapping_item->value = 0;
   for (i = 0; i < n_map; i++) {
@@ -5267,6 +5280,20 @@ int emux_handle_menu_change(struct menu_item* item) {
       resources_set_int("MagicDeskPlusEEPROMWrite", item->value);
       resources_get_int("MagicDeskPlusSRAMWrite", &item->value);
       return 1;
+
+
+
+
+    case MENU_EASYFLASH_WRITE_CRT:
+      resources_set_int("EasyFlashWriteCRT", item->value);
+      resources_get_int("EasyFlashWriteCRT", &item->value);
+      log_message(LOG_DEFAULT, "EasyFlash Write CRT: %s", item->value ? "On" : "Off");
+      return 1;
+    case MENU_EASYFLASH_OPTIMIZE_CRT:
+      resources_set_int("EasyFlashOptimizeCRT", item->value);
+      resources_get_int("EasyFlashOptimizeCRT", &item->value);
+      log_message(LOG_DEFAULT, "EasyFlash Optimize CRT: %s", item->value ? "On" : "Off");
+      return 1;
     case MENU_REU_SAVE_IMAGE:
       if (cartridge_flush_image(CARTRIDGE_REU) < 0) {
         ui_error("Problem saving");
@@ -5328,6 +5355,9 @@ int emux_handle_menu_change(struct menu_item* item) {
       if (idx_nuovo == BMC_INDICE_CUSTOM) {
 
          resources_set_string("KeymapUserPosFile", BMC_FILE_CUSTOM);
+      } else if (idx_nuovo == BMC_INDICE_KEYRAH) {
+
+         resources_set_string("KeymapUserPosFile", BMC_FILE_KEYRAH);
       } else if (idx_nuovo == KBD_INDEX_USERPOS) {
          resources_set_string("KeymapUserPosFile", "rpi_maxi_pos.vkm");
       }

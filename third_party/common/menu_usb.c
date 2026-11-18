@@ -199,6 +199,29 @@ static int button_assignment_available(int assignment) {
       emux_machine_class == BMC64_MACHINE_CLASS_PET) {
     return 0;
   }
+
+
+
+
+  if (assignment == BTN_ASSIGN_PAD_ATTACH_TAPE &&
+      emux_machine_class == BMC64_MACHINE_CLASS_SCPU64) {
+    return 0;
+  }
+  if (assignment == BTN_ASSIGN_PAD_ATTACH_CART &&
+      emux_machine_class == BMC64_MACHINE_CLASS_PET) {
+    return 0;
+  }
+  if (assignment == BTN_ASSIGN_PAD_SID_OSD &&
+      (emux_machine_class == BMC64_MACHINE_CLASS_VIC20 ||
+       emux_machine_class == BMC64_MACHINE_CLASS_PLUS4EMU)) {
+    return 0;
+  }
+
+
+  if (assignment == BTN_ASSIGN_PAD_SID_PLAYER &&
+      emux_machine_class != BMC64_MACHINE_CLASS_C64) {
+    return 0;
+  }
   return 1;
 }
 
@@ -618,6 +641,10 @@ static void add_button_choices(struct menu_item *tmp_item) {
   strcpy(tmp_item->choices[BTN_ASSIGN_VKBD_TOGGLE], function_to_string(BTN_ASSIGN_VKBD_TOGGLE));
   strcpy(tmp_item->choices[BTN_ASSIGN_FLUSH_DISK], function_to_string(BTN_ASSIGN_FLUSH_DISK));
 
+  for (int b = BTN_ASSIGN_PAD_ATTACH_TAPE; b <= BTN_ASSIGN_PAD_SID_PLAYER; b++) {
+    strcpy(tmp_item->choices[b], function_to_string(b));
+  }
+
   char scratch[32];
   for (int n = 0; n < 6; n++) {
      sprintf (scratch, "Key %d (%s)", n+1, keycode_to_string(key_bindings[n]));
@@ -645,7 +672,30 @@ static void add_button_choices(struct menu_item *tmp_item) {
   if (emux_machine_class == BMC64_MACHINE_CLASS_PET) {
     tmp_item->choice_disabled[BTN_ASSIGN_VKBD_TOGGLE] = 1;
   }
+
+
+
+  for (int b = BTN_ASSIGN_PAD_ATTACH_TAPE; b <= BTN_ASSIGN_PAD_SID_PLAYER; b++) {
+    tmp_item->choice_disabled[b] = !button_assignment_available(b);
+  }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -70,6 +70,7 @@ REQUIRED_FILES=(
     # C64 files
     "C64/PUT_ROMS_HERE"
     "C64/bootstat.txt"
+    "C64/rpi_keyrah_v3_pos.vkm"
     "C64/rpi_maxi_pos.vkm"
     "C64/rpi_petsciiboard_sym.vkm"
     "C64/rpi_pos.vkm"

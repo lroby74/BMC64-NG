@@ -55,6 +55,10 @@ public:
 
 public:
 	CXHCIMMIOSpace *GetMMIOSpace (void);
+
+
+
+	boolean SetInterruptModeration (u32 nIMODI);
 	CXHCISlotManager *GetSlotManager (void);
 	CXHCICommandManager *GetCommandManager (void);
 	CXHCIRootHub *GetRootHub (void);

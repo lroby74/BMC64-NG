@@ -166,7 +166,8 @@ char menu_text_layout_key_to_char(long key, int shifted,
 
 
   if (keyboard_mapping == KEYBOARD_MAPPING_POS ||
-      keyboard_mapping == KEYBOARD_MAPPING_CUSTOM) {
+      keyboard_mapping == KEYBOARD_MAPPING_CUSTOM ||
+      keyboard_mapping == KEYBOARD_MAPPING_KEYRAH) {
     text_keys = positional_text_keys;
     text_key_count = QUANTI(positional_text_keys);
   } else if (keyboard_mapping == KEYBOARD_MAPPING_MAXI) {
@@ -211,6 +212,7 @@ char menu_text_layout_altgr_to_char(long key, int shifted,
 
   if (keyboard_mapping == KEYBOARD_MAPPING_POS ||
       keyboard_mapping == KEYBOARD_MAPPING_CUSTOM ||
+      keyboard_mapping == KEYBOARD_MAPPING_KEYRAH ||
       keyboard_mapping == KEYBOARD_MAPPING_MAXI) {
     return '\0';
   }

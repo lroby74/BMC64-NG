@@ -392,6 +392,16 @@ void emu_pause_trap(uint16_t addr, void *data) {
 
     ui_handle_toggle_or_quick_func();
 
+
+
+
+
+
+
+
+
+    menu_poweroff_tick();
+
     ui_render_single_frame();
 
 
@@ -430,8 +440,17 @@ void emu_sid_pausa_trap(uint16_t addr, void *data) {
     ui_handle_toggle_or_quick_func();
 
 
+
+
+    menu_poweroff_tick();
+    int strati = FB_LAYER_MASK(FB_LAYER_STATUS);
+    if (ui_lettore_sid_pausa_tick()) {
+      strati |= FB_LAYER_MASK(FB_LAYER_UI);
+    }
+
+
     overlay_dirty = 0;
-    circle_present_fbl(FB_LAYER_MASK(FB_LAYER_STATUS), 1);
+    circle_present_fbl(strati, 1);
 
 
 

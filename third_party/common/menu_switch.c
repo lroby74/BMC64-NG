@@ -295,6 +295,13 @@ static int new_section(struct machine_entry** new_section, char* line) {
      entry->class = BMC64_MACHINE_CLASS_C64;
      entry->variante = 1;
   }
+  else if (strcasecmp(video_nam,"sidplayer") == 0) {
+
+
+
+     entry->class = BMC64_MACHINE_CLASS_C64;
+     entry->variante = 2;
+  }
 
   if (strcasecmp(video_std,"ntsc") == 0)
      entry->video_standard = BMC64_VIDEO_STANDARD_NTSC;
@@ -831,6 +838,76 @@ static struct machine_entry *aggiungi_risoluzioni(struct machine_entry *primo,
   return coda;
 }
 
+
+
+
+
+
+
+
+
+static struct machine_entry *clona_voce_lettore(const struct machine_entry *s) {
+  struct machine_entry *e = (struct machine_entry *)malloc(sizeof(*e));
+  struct machine_option *o;
+  struct machine_option **coda;
+  if (e == NULL) {
+    return NULL;
+  }
+  *e = *s;
+  e->id = next_id();
+  e->variante = 2;
+  e->options = NULL;
+  e->next = NULL;
+  coda = &e->options;
+  for (o = s->options; o != NULL; o = o->next) {
+    struct machine_option *c =
+        (struct machine_option *)malloc(sizeof(*c));
+    if (c == NULL) {
+      break;
+    }
+    *c = *o;
+    c->next = NULL;
+    *coda = c;
+    coda = &c->next;
+  }
+  return e;
+}
+
+static void aggiungi_lettore(struct machine_entry *primo) {
+  struct machine_entry *p;
+  struct machine_entry *fine;
+  struct machine_entry *ultima;
+  int n = 0;
+  if (primo == NULL) {
+    return;
+  }
+  for (p = primo; p != NULL; p = p->next) {
+    if (p->class == BMC64_MACHINE_CLASS_C64 && p->variante == 2) {
+      return;
+    }
+  }
+  for (fine = primo; fine->next != NULL; fine = fine->next) {
+  }
+  ultima = fine;
+  for (p = primo; p != NULL; p = p->next) {
+    if (p->class == BMC64_MACHINE_CLASS_C64 && p->variante == 0) {
+      struct machine_entry *c = clona_voce_lettore(p);
+      if (c == NULL) {
+        break;
+      }
+      ultima->next = c;
+      ultima = c;
+      n++;
+    }
+    if (p == fine) {
+      break;
+    }
+  }
+  if (n > 0) {
+    printf("[SWI] voci del lettore di SID (come il C64): %d\n", n);
+  }
+}
+
 // Load and parse the machine config from machines.txt
 // Returns non-zero on error.
 int load_machines(struct machine_entry** head) {
@@ -872,6 +949,7 @@ int load_machines(struct machine_entry** head) {
 
   current_section = aggiungi_risoluzioni(first_section, current_section);
   aggiungi_compositi(first_section, current_section);
+  aggiungi_lettore(first_section);
   *head = first_section;
   return 0;
 }
@@ -1793,7 +1871,7 @@ static int apply_config(struct machine_entry* head, int pi_model, struct s_cfg_f
      case BMC64_MACHINE_CLASS_C64:
 
 
-        if (head->variante) {
+        if (head->variante == 1) {
            suffisso = ".c64-normale";
            strcat(kernel_name,suffisso);
         }
@@ -1860,7 +1938,7 @@ static int apply_config(struct machine_entry* head, int pi_model, struct s_cfg_f
 
   char line[CONFIG_TXT_LINE_LEN];
   cfg_flags->need_kernel=head->class != BMC64_MACHINE_CLASS_C64 ||
-                        head->variante;
+                        head->variante == 1;
 #if defined(__aarch64__)
   const int per_famiglia = (pi_model == 4 || pi_model == 5);
 #else
@@ -3128,7 +3206,11 @@ static int variante_adesso(void) {
     return 0;
   }
   n = strlen(e);
-  return n >= 4 && strcmp(e + n - 4, " x64") == 0;
+  if (n >= 4 && strcmp(e + n - 4, " x64") == 0) {
+    return 1;
+  }
+
+  return cmdline_cifra("lettore_sid") == 1 ? 2 : 0;
 }
 
 
@@ -3196,6 +3278,13 @@ int switch_apply_files(struct machine_entry* head) {
   }
   status |= apply_config(head, circle_get_model(), &cfg_flags);
   status |= apply_cmdline(head, &cfg_flags);
+
+
+  status |= cmdline_opzione("lettore_sid",
+                            head->class == BMC64_MACHINE_CLASS_C64 &&
+                                    head->variante == 2
+                                ? "1"
+                                : NULL);
   if (composito) {
     status |= tvout_applica(1);
   } else {
