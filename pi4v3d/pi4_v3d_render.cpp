@@ -885,14 +885,34 @@ bool BuildTextureState(const RenderAddresses &addresses,
   return true;
 }
 
+
+uint32_t g_ultimo_bloom_texel_width = 0U;
+uint32_t g_ultimo_bloom_texel_height = 0U;
+
 bool BuildProgramsAndUniforms(const RenderAddresses &addresses,
                               const RenderGeometry &geometry,
                               const v3dcrt::shaders::ShaderPackage &package,
                               const RenderLayout &layout,
                               uint8_t *control) {
+
+
+
+
+
+
+  const bool bloom_texel_uscita =
+      &package == &v3dcrt::shaders::generated::kV3dCrtOutputBloomPi4Package;
+  const uint32_t texel_width =
+      bloom_texel_uscita ? geometry.target_width : geometry.source_width;
+  const uint32_t texel_height =
+      bloom_texel_uscita ? geometry.target_height : geometry.source_height;
+  if (bloom_texel_uscita) {
+    g_ultimo_bloom_texel_width = texel_width;
+    g_ultimo_bloom_texel_height = texel_height;
+  }
   const V3d42ShaderBindings bindings = {
-    geometry.source_width,
-    geometry.source_height,
+    texel_width,
+    texel_height,
     geometry.target_width,
     geometry.target_height,
     geometry.scanline_weight,
@@ -1217,6 +1237,16 @@ bool PrepareFullscreenRenderPassJob(const RenderAddresses &addresses,
   job->control_hash = ImmutableControlHash(*job, control);
   job->state = kRenderJobPrepared;
   return true;
+}
+
+
+void RenderUltimoBloomTexel(uint32_t *width, uint32_t *height) {
+  if (width != NULL) {
+    *width = g_ultimo_bloom_texel_width;
+  }
+  if (height != NULL) {
+    *height = g_ultimo_bloom_texel_height;
+  }
 }
 
 RenderGeometryParams ResolveRenderGeometryParams(

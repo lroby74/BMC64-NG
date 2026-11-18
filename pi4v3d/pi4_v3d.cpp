@@ -2679,6 +2679,22 @@ bool ApplyFrameParams(const FrameParams &params) {
          package,
          package,
          linear_filter ? "linear" : "nearest");
+
+
+  if (bloom.enabled) {
+    uint32_t bloom_texel_width = 0U;
+    uint32_t bloom_texel_height = 0U;
+    RenderUltimoBloomTexel(&bloom_texel_width, &bloom_texel_height);
+    printf("boot: bmc64 v3d bloom texel=%ux%u uscita=%ux%u sorgente=%ux%u "
+           "output_multipass=%u\r\n",
+           static_cast<unsigned>(bloom_texel_width),
+           static_cast<unsigned>(bloom_texel_height),
+           static_cast<unsigned>(g_frame_target_width),
+           static_cast<unsigned>(g_frame_target_height),
+           static_cast<unsigned>(g_frame_width),
+           static_cast<unsigned>(g_frame_height),
+           g_frame_output_pass_active ? 1U : 0U);
+  }
   return true;
 }
 

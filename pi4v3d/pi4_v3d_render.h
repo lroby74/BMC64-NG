@@ -450,6 +450,11 @@ bool ResolveRenderSourceLinearFilter(bool interpolation_enabled);
 
 RenderBloomParams ResolveRenderBloomParams(bool enabled, float factor);
 
+
+
+
+void RenderUltimoBloomTexel(uint32_t *width, uint32_t *height);
+
 RenderHorizontalJitterParams ResolveRenderHorizontalJitterParams(
     bool enabled, float strength, float frequency, float speed);
 

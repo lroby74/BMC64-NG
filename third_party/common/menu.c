@@ -153,7 +153,7 @@ void menu_modo_sicuro(void) {
 
 
 
-#define VERSIONE_BMC64_NG "1.5"
+#define VERSIONE_BMC64_NG "1.5.1"
 
 #ifdef RASPI_LITE
 #define VARIANT_STRING "-Lite"
