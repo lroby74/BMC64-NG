@@ -67,7 +67,7 @@ BMC64-NG shares with BMC64 the menu, the `machines.txt` file format, the REU ima
 **Disks, tapes, files**
 
 - **Real Commodore drive**: a 1541, 1571 or 1581 on an XUM1541 or ZoomFloppy adapter (ALT + 7). BMC64 does not have it.
-- **XUM1541 built on an Arduino Pro Micro**: it may not be compatible with BMC64-NG: the real Commodore drive works only after the first power-on from cold, and after a machine change or a restart of the Raspberry it stops answering. BMC64-NG is tested with a ZoomFloppy.
+- **XUM1541 built on an Arduino Pro Micro**: it works with BMC64-NG: a user runs it with a real 1541, through machine changes and restarts of the Raspberry. BMC64-NG is tested with a ZoomFloppy.
 - **Directory of Drive on XUM1541** (Drives): the directory of the real drive read from the disk sectors, with every entry, also the ones the BASIC LOAD"$" does not show. BMC64 does not have it.
 - **Drives that talk to each other**: with two or more drives on, before touching the serial cable a drive brings the others up to its time, and two drives can talk without going through the computer. BMC64 does not have it.
 - **USB floppy drives from a PC** read as FLP1 and FLP2. BMC64 does not have them.

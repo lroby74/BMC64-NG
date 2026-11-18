@@ -51,7 +51,7 @@ Anche su un Pi 4 a frequenza di serie regge senza problemi.
 **Commodore 1541 fisico, un 1571 o un 1581 (anche piú di uno in cascata se impostati su diversi canali)** e leggere i tuoi dischetti originali.
 E' anche possibile usare un PI1541 che emula alla perfezione un 1541 e un 1581
 
-**Nota:** una XUM1541 fatta con un Arduino Pro Micro potrebbe non essere compatibile: con quella il drive Commodore vero funziona solo alla prima accensione a freddo, e dopo un cambio di macchina o un riavvio del Raspberry smette di rispondere. BMC64-NG è provato con una ZoomFloppy.
+**Nota:** anche una XUM1541 fatta con un Arduino Pro Micro funziona: un utente la usa con un 1541 vero, anche dopo i cambi di macchina e i riavvii del Raspberry. BMC64-NG è provato con una ZoomFloppy.
 
 ---
 
@@ -106,7 +106,7 @@ Serve una microSD e una tastiera USB (solo per il 4 e il 5). Il resto è opziona
 - **I drive che parlano fra loro**: con due o più drive accesi, i programmi che fanno parlare due drive sul cavo seriale senza passare dal computer ora funzionano: prima di toccare il cavo un drive porta gli altri alla sua ora, come fa il computer coi drive. Con un drive solo non cambia niente; con due o più drive accesi il Raspberry fa un po' più di calcolo.
 - **Drive fisico** via adattatore XUM1541: colleghi un 1541 vero o altro drive Commodore e leggi i
   tuoi dischetti.
-- **La XUM1541 fatta con un Arduino Pro Micro** potrebbe non essere compatibile: con quella il drive Commodore vero funziona solo alla prima accensione a freddo, e dopo un cambio di macchina o un riavvio del Raspberry smette di rispondere. BMC64-NG è provato con una ZoomFloppy.
+- **La XUM1541 fatta con un Arduino Pro Micro** funziona anche lei: un utente la usa con un 1541 vero, anche dopo i cambi di macchina e i riavvii del Raspberry. BMC64-NG è provato con una ZoomFloppy.
 - **Il drive vero si sceglie anche senza le ROM dei drive**: nel menu **Drives**, **Change Model...** di un'unità ha la voce **Real drive** (grigia se l'adattatore XUM1541 non c'è), come **ALT + 7**. I modelli emulati (1541, 1571, 1581...) si possono scegliere solo se nella cartella `DRIVES` della scheda ci sono le loro ROM. Fino al 6 novembre 2026, senza nessuna ROM dei drive, la voce **Real drive** mancava.
 - **I programmi col loro caricatore veloce, sul drive fisico**: molti giochi e i copiatori portano nel drive un caricatore loro, che parla col computer su fili che l'adattatore XUM1541 non porta: via adattatore non possono funzionare, ed è lo stesso col VICE sul PC. La macchina però non si ferma: il drive finisce il file da solo (sulla barra di stato **FAST STOP**), il programma resta ad aspettare e il Reset rimette tutto a posto, col dischetto del Pi1541 ancora montato. Quello che si carica dal BASIC senza un caricatore suo va, col caricatore veloce di BMC64-NG.
 - **Drive on XUM1541: Pi1541 o drive Commodore**: nel menu **Drives** scegli cosa c'è sull'adattatore XUM1541. Con **Commodore**, per un 1541 vero o un altro drive Commodore, il drive riceve il reset della linea come su un Commodore vero: a ogni accensione e cambio di macchina e a ogni reset. Così un drive rimasto bloccato dalla macchina di prima riparte da solo, senza spegnerlo. Con **Pi1541 + Commodore** tieni sullo stesso cavo un drive Commodore e un Pi1541, per esempio il 1541 sull'unità 8 e il Pi1541 sulla 9 (ognuno col suo numero, e tutte e due le unità su drive fisico): i reset fanno come col Pi1541, e all'accensione la linea si tira solo se un drive è rimasto bloccato. Con **Pi1541**, la scelta di fabbrica, i reset non toccano la linea, perché il Pi1541 smonterebbe il .D64. Un Pi1541 che al reset riparte come il drive vero, senza smontare il .D64, va con **Commodore**, anche insieme a un drive Commodore. La scelta è una sola per tutte le macchine e resta da sola, senza **Save settings**.
@@ -424,7 +424,7 @@ Se l'adattatore XUM1541 non c'è, **ALT + 7** lo dice sullo schermo (NO XUM FOUN
 
 **La XUM che arriva tardi**: con il drive vero salvato, all'accensione e dopo un cambio di macchina la XUM1541 si aspetta fino a 12 secondi, poi l'unità torna al drive emulato e compare NO XUM FOUND. Serve alla XUM fatta con un Pro Micro, che ha il programma di avvio di Arduino: dopo ogni riavvio del Raspberry ci mette circa 10 secondi a presentarsi (la ZoomFloppy è pronta in 3). Fino al 6 novembre 2026 si aspettavano 3 secondi.
 
-**La XUM su un Pro Micro dopo un riavvio**: l'attesa non sempre basta. Con una XUM1541 fatta con un Arduino Pro Micro il drive Commodore vero può funzionare solo alla prima accensione a freddo e smettere di rispondere dopo un cambio di macchina o un riavvio del Raspberry: quell'adattatore potrebbe non essere compatibile.
+**La XUM su un Pro Micro dopo un riavvio**: con questa attesa una XUM1541 fatta con un Arduino Pro Micro tiene il drive Commodore vero dopo un cambio di macchina o un riavvio del Raspberry (provato da un utente con un 1541 vero).
 
 **La ROM del drive** scelta dal menu (**Drives**, **Change ROM...**) arriva subito al drive acceso di quel modello, che riparte con quella nuova; prima serviva un riavvio. Se il file non va bene, resta quella di prima.
 

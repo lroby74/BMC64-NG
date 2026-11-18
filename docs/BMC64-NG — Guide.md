@@ -51,7 +51,7 @@ Even on a Pi 4 at stock frequency it keeps up without any problem.
 **physical Commodore 1541, a 1571 or a 1581 (even more than one daisy-chained, if set to different device numbers)** and read your original floppy disks.
 It is also possible to use a PI1541, which perfectly emulates a 1541 and a 1581
 
-**Note:** an XUM1541 built on an Arduino Pro Micro may not be compatible: with it the real Commodore drive works only after the first power-on from cold, and after a machine change or a restart of the Raspberry it stops answering. BMC64-NG is tested with a ZoomFloppy.
+**Note:** an XUM1541 built on an Arduino Pro Micro works too: a user runs it with a real 1541, through machine changes and restarts of the Raspberry. BMC64-NG is tested with a ZoomFloppy.
 
 ---
 
@@ -106,7 +106,7 @@ You need a microSD card and a USB keyboard (only for the 4 and the 5). Everythin
 - **Drives that talk to each other**: with two or more drives on, programs that make two drives talk on the serial cable without going through the computer now work: before touching the cable a drive brings the others up to its time, as the computer does with the drives. With one drive nothing changes; with two or more drives on, the Raspberry does a little more computing.
 - **Physical drive** via an XUM1541 adapter: connect a real 1541 or another Commodore drive and read
   your floppy disks.
-- **The XUM1541 built on an Arduino Pro Micro** may not be compatible: with it the real Commodore drive works only after the first power-on from cold, and after a machine change or a restart of the Raspberry it stops answering. BMC64-NG is tested with a ZoomFloppy.
+- **The XUM1541 built on an Arduino Pro Micro** works too: a user runs it with a real 1541, through machine changes and restarts of the Raspberry. BMC64-NG is tested with a ZoomFloppy.
 - **The real drive can be chosen even without the drive ROMs**: in the **Drives** menu, a unit's **Change Model...** has the **Real drive** entry (grey if the XUM1541 adapter is not there), like **ALT + 7**. The emulated models (1541, 1571, 1581...) can be chosen only if their ROMs are in the card's `DRIVES` folder. Until 6 November 2026, without any drive ROM, the **Real drive** entry was missing.
 - **Programs with their own fast loader, on the physical drive**: many games and copiers put a loader of their own into the drive, which talks to the computer on wires the XUM1541 adapter does not carry: through the adapter they cannot work, and it is the same with VICE on a PC. The machine does not stop, though: the drive finishes the file by itself (**FAST STOP** on the status bar), the program keeps waiting, and Reset puts everything back, with the Pi1541 disk still attached. What loads from BASIC without a loader of its own works, with the BMC64-NG fast loader.
 - **Drive on XUM1541: Pi1541 or Commodore drive**: in the **Drives** menu choose what is on the XUM1541 adapter. With **Commodore**, for a real 1541 or another Commodore drive, the drive gets the line reset as on a real Commodore: at every power-on and machine switch and at every reset. So a drive left stuck by the previous machine starts again by itself, without switching it off. With **Pi1541 + Commodore** you keep a Commodore drive and a Pi1541 on the same cable, for example the 1541 on unit 8 and the Pi1541 on unit 9 (each with its own number, and both units set to physical drive): resets work as with the Pi1541, and at power-on the line is pulled only if a drive was left stuck. With **Pi1541**, the default, resets do not touch the line, because the Pi1541 would unmount the .D64. A Pi1541 that restarts like the real drive on reset, without unmounting the .D64, goes with **Commodore**, also together with a Commodore drive. The choice is one for all machines and is kept by itself, without **Save settings**.
@@ -424,7 +424,7 @@ If the XUM1541 adapter is not there, **ALT + 7** says so on the screen (NO XUM F
 
 **The XUM that arrives late**: with the real drive saved, at power-on and after a machine change the XUM1541 is waited for up to 12 seconds, then the unit goes back to the emulated drive and NO XUM FOUND appears. This is for the XUM built on a Pro Micro, which has the Arduino boot program: after every restart of the Raspberry it takes about 10 seconds to show up (the ZoomFloppy is ready in 3). Until 6 November 2026 the wait was 3 seconds.
 
-**The XUM on a Pro Micro after a restart**: the wait is not always enough. With an XUM1541 built on an Arduino Pro Micro the real Commodore drive may work only after the first power-on from cold, and stop answering after a machine change or a restart of the Raspberry: that adapter may not be compatible.
+**The XUM on a Pro Micro after a restart**: with this wait, an XUM1541 built on an Arduino Pro Micro keeps the real Commodore drive after a machine change or a restart of the Raspberry (checked by a user with a real 1541).
 
 **The drive ROM** chosen from the menu (**Drives**, **Change ROM...**) reaches the running drive of that model at once, which restarts with the new one; before, a restart was needed. If the file is not good, the previous one stays.
 
