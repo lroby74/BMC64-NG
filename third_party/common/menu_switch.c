@@ -3252,7 +3252,21 @@ int switch_apply_files(struct machine_entry* head) {
 
 
 
-  if (vidtrial_enabled && vidtrial_timer_on()) {
+
+
+
+
+
+
+
+
+
+  const int e_lettore_sid = head->class == BMC64_MACHINE_CLASS_C64 &&
+                            head->variante == 2;
+
+
+
+  if (vidtrial_enabled && vidtrial_timer_on() && !e_lettore_sid) {
     vidtrial_arm();
   }
 

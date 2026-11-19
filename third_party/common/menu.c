@@ -11952,6 +11952,17 @@ void menu_vidtrial_start(void) {
   if (vidtrial_armed || !vidtrial_pending()) {
     return;
   }
+
+
+
+
+
+
+  if (sid_macchina) {
+    vidtrial_accept();
+    passo_nota("prova del modo video: nel lettore di SID non c'e', segno tolto");
+    return;
+  }
   vidtrial_armed = 1;
   vidtrial_deadline = circle_get_ticks() + VIDTRIAL_SECONDS * 1000000UL;
   overlay_statusbar_enable();

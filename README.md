@@ -63,7 +63,7 @@ There's no Linux underneath: the Pi boots straight into the Commodore.
 4. Copy the Commodore ROMs into the machine folders of the card: see [ROM files](#rom-files) below.
 5. Put the card in the Pi and switch it on. It starts as a PAL Commodore 64 (cycle exact) on HDMI, 1080p at 50 Hz; Machine > Switch changes machine and video mode.
 
-**The safety timer.** After you change machine or resolution (Machine > Switch), press a key within 15 seconds to keep the new setting. If you don't, BMC64-NG goes back to the previous one by itself. Leave *Safety timer (15s)* on until your screen and resolution setup is stable.
+**The safety timer.** After you change machine or resolution (Machine > Switch), press a key within 15 seconds to keep the new setting. If you don't, BMC64-NG goes back to the previous one by itself (switching to the SID Player has no timer). Leave *Safety timer (15s)* on until your screen and resolution setup is stable.
 
 ## ROM files
 
@@ -308,7 +308,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 
 ### Safety and diagnostics
 
-- **15-second safety timer.** After you change machine, resolution or refresh rate in the Switch menu, press any key within 15 seconds to keep it, or the previous one comes back by itself. Safety timer (15s), at the bottom of the Switch menu, turns this off after a confirmation, but then a mode your monitor can't show leaves the screen black until you fix `config.txt` on a PC.
+- **15-second safety timer.** After you change machine, resolution or refresh rate in the Switch menu, press any key within 15 seconds to keep it, or the previous one comes back by itself (switching to the SID Player has no timer). Safety timer (15s), at the bottom of the Switch menu, turns this off after a confirmation, but then a mode your monitor can't show leaves the screen black until you fix `config.txt` on a PC.
 - **HDMI fallback at power-on.** If the port chosen in Video > Main HDMI Output has no monitor or doesn't respond at power-on, the picture goes to the other port.
 - **NOT SAVED warning.** If the .REU file can't be written, for example because it's read-only, the Pi stays on at power-off and shows NOT SAVED; asking again powers it off anyway.
 - **NO XUM FOUND warning.** Without the XUM1541 adapter, ALT + 7 shows NO XUM FOUND and the drive stays as it was.
