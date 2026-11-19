@@ -69,6 +69,18 @@ const uint32_t kHvsMitchellKernelUnique[6] = {
   HvsPpfFilterWord(227, 227, 0)
 };
 
+
+
+
+const uint32_t kHvsLowKernelUnique[6] = {
+  HvsPpfFilterWord(0, 0, 0),
+  HvsPpfFilterWord(0, 0, 0),
+  HvsPpfFilterWord(0, 0, 1),
+  HvsPpfFilterWord(1, 32, 96),
+  HvsPpfFilterWord(160, 224, 255),
+  HvsPpfFilterWord(255, 255, 0)
+};
+
 uint32_t Fnv1a32(const uint32_t *words, uint32_t count) {
   uint32_t hash = 2166136261U;
   for (uint32_t i = 0U; i < count; ++i) {
@@ -191,7 +203,8 @@ bool AppendPlane(const Hvs5Plane &plane, uint32_t plane_index,
       (plane.format != kHvs5PixelFormatRgb565 &&
        plane.format != kHvs5PixelFormatArgb8888) ||
       (plane.filter != kHvs5ScaleFilterNearest &&
-       plane.filter != kHvs5ScaleFilterMitchell)) {
+       plane.filter != kHvs5ScaleFilterMitchell &&
+       plane.filter != kHvs5ScaleFilterLow)) {
     return false;
   }
 
@@ -202,6 +215,7 @@ bool AppendPlane(const Hvs5Plane &plane, uint32_t plane_index,
   const bool unity = horizontal == kHvsScalingNone &&
                      vertical == kHvsScalingNone;
   const bool nearest = plane.filter == kHvs5ScaleFilterNearest;
+  const bool low = plane.filter == kHvs5ScaleFilterLow;
   const uint32_t start = *count;
   if (!AppendWord(0U, words, capacity, count) ||
       !AppendWord((plane.destination_y << 16U) | plane.destination_x,
@@ -262,7 +276,8 @@ bool AppendPlane(const Hvs5Plane &plane, uint32_t plane_index,
   }
   if (horizontal == kHvsScalingPpf || vertical == kHvsScalingPpf) {
     const uint32_t kernel_slot = nearest ? kHvs5NearestKernelSlot
-                                         : kHvs5MitchellKernelSlot;
+                                         : low ? kHvs5LowKernelSlot
+                                               : kHvs5MitchellKernelSlot;
     for (uint32_t i = 0U; i < 4U; ++i) {
       if (!AppendWord(kernel_slot, words, capacity, count)) {
         return false;
@@ -270,6 +285,8 @@ bool AppendPlane(const Hvs5Plane &plane, uint32_t plane_index,
     }
     if (nearest) {
       required_kernels->nearest = true;
+    } else if (low) {
+      required_kernels->low = true;
     } else {
       required_kernels->mitchell = true;
     }
@@ -427,6 +444,16 @@ void BuildHvs5MitchellKernel(uint32_t words[kHvs5FilterKernelWords]) {
   for (uint32_t i = 0U; i < kHvs5FilterKernelWords; ++i) {
     const uint32_t source = i < 6U ? i : kHvs5FilterKernelWords - i - 1U;
     words[i] = kHvsMitchellKernelUnique[source];
+  }
+}
+
+void BuildHvs5LowKernel(uint32_t words[kHvs5FilterKernelWords]) {
+  if (words == nullptr) {
+    return;
+  }
+  for (uint32_t i = 0U; i < kHvs5FilterKernelWords; ++i) {
+    const uint32_t source = i < 6U ? i : kHvs5FilterKernelWords - i - 1U;
+    words[i] = kHvsLowKernelUnique[source];
   }
 }
 

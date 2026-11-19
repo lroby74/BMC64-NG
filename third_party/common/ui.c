@@ -4545,6 +4545,10 @@ static const char *testo_della_voce(struct menu_item *node,
 
 
 
+
+
+
+
 int ui_get_menu_mouse_enabled(void) {
   return ui_mouse_acceso;
 }

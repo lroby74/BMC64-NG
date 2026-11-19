@@ -59,7 +59,7 @@ There's no Linux underneath: the Pi boots straight into the Commodore.
 2. Format it as **FAT32** with a normal cluster (allocation unit) size: **32 KB**, as the SD Association's SD Card Formatter does, or the Windows default.
    - **Do not use 512-byte clusters.** The Raspberry Pi then reads its own start-up files and the kernel in tiny pieces: a Pi 4 or 400 waits 9-10 seconds before BMC64-NG even begins, and with a 32 GB card it took 45 seconds. With normal clusters, power-on to the BASIC prompt takes about 11 seconds. Changing machine restarts the Pi, so it gets the same benefit.
    - For cards bigger than 32 GB use a tool such as FAT32Format.
-3. Download the full archive of the latest release, such as `BMC64-NG V1.5.1.7z`, from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
+3. Download the full archive of the latest release, such as `BMC64-NG V1.5.2.7z`, from the [Releases](https://github.com/lroby74/BMC64-NG/releases) page and copy its **whole content** onto the card.
 4. Copy the Commodore ROMs into the machine folders of the card: see [ROM files](#rom-files) below.
 5. Put the card in the Pi and switch it on. It starts as a PAL Commodore 64 (cycle exact) on HDMI, 1080p at 50 Hz; Machine > Switch changes machine and video mode.
 
@@ -109,6 +109,8 @@ DRIVES/
     dos1571-310654-05.bin          1571
     dos1581-318045-02.bin          1581
     dos1551-318008-01.bin          1551 (Plus/4)
+    dos2000-cs-33cc6f.bin          CMD FD-2000 (not in the VICE folder)
+    dos4000-fd-350022.bin          CMD FD-4000 (not in the VICE folder)
     (the PET drives and the others: the rest of the VICE folder)
 PLUS4EMU/                          (from the roms folder of Plus4Emu)
     p4kernal.rom                   KERNAL, PAL
@@ -125,8 +127,8 @@ In any file list, type the first letters of a name: the list narrows as you type
 ## Updating
 
 Every release has two archives:
-- the full one, such as `BMC64-NG V1.5.1.7z`, for a new card;
-- the update, such as `BMC64-NG Update V1.5.1.7z`, with only the files that changed since the previous release. Copy its whole content onto your card and replace the files that are already there. If you skipped a release, apply its update first, or start again from the full archive.
+- the full one, such as `BMC64-NG V1.5.2.7z`, for a new card;
+- the update, such as `BMC64-NG Update V1.5.2.7z`, with only the files that changed since the previous release. Copy its whole content onto your card and replace the files that are already there. If you skipped a release, apply its update first, or start again from the full archive.
 
 The update never contains `config.txt`, `cmdline.txt`, `machines.txt`, `wpa_supplicant.conf` or the `settings*.txt` files: they hold your own settings. Replace one of them only when the release notes say so. Neither archive contains ROMs, and the ones already on your card stay where they are.
 
@@ -164,9 +166,9 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 - **Adjustable scanlines.** Set them from 0 to 100 for the look of a tube monitor; ALT + SHIFT + "+" and ALT + SHIFT + "−" change them on the fly.
 - **Aspect ratio on custom modes.** On the 768x545 and 768x525 modes, which run at the machine's exact frequency, BMC64-NG reads the TV's real shape at power-on and assumes 16:9 if the TV doesn't say. 16:9 then fills the screen and 4:3 comes out really 4:3, as at 720p.
 - **Picture adjustments.** Set brightness, contrast, colour and gamma, and the geometry: width, height and centring.
-- **Picture scaling on the Pi 4 and Pi 5.** Video > Scaling Interpolation chooses how the picture is enlarged: On (the default) softens it with a filter, Off keeps it sharp. The `scaling_kernel` option of `config.txt` is a firmware setting for the older Raspberry Pi models and is not used on the Pi 4 and Pi 5, where BMC64-NG draws the picture itself. Save settings keeps the choice.
+- **Picture scaling on the Pi 4 and Pi 5.** Video > Scaling Interpolation chooses how the picture is enlarged: On (the default) softens it with a filter, Off keeps it sharp, and Low is in between: it blends the step from one pixel to the next over about half a pixel, so text and diagonals stay sharp and show fewer steps. **To use Low, turn the CRT shader off** (CRT Shader > Enable CRT Shader? = No): with the shader on, the shader draws the picture and Low works like On. The `scaling_kernel` option of `config.txt` is a firmware setting for the older Raspberry Pi models and is not used on the Pi 4 and Pi 5, where BMC64-NG draws the picture itself. Save settings keeps the choice.
 - **720p or 1080p.** Video > HDMI Resolution chooses between the two for the running machine, PAL or NTSC as it is now, and the menu asks to restart. In the Switch menu every machine has both entries next to each other. A new card made with the full archive starts at 1080p.
-- **CRT shader presets.** The CRT Shader menu adjusts the shader, and Save as preset... keeps the adjustments in a `.crt` file of the `/crt` folder, with the name you type. If you choose another preset with changes not saved, the menu asks what to do with them. Save settings remembers the preset, or the adjustments changed by hand.
+- **CRT shader presets.** The CRT Shader menu adjusts the shader, and Save as preset... keeps the adjustments in a `.crt` file of the `/crt` folder, with the name you type. If you choose another preset with changes not saved, the menu asks what to do with them. Save settings remembers the preset, or the adjustments changed by hand. The full archive comes with four presets: Default, All on, Faint scanlines (the scanlines almost invisible and the horizontal filter off) and No scanlines (no scanlines, no horizontal filter and no Bloom).
 - **No slowdown past the edges.** When H Center, V Center or a wider picture push the image a little past the screen edges, the part outside is simply cut and the emulation doesn't slow down.
 - **The CRT shader at full speed.** On the Pi 4 and 400 at 1080p the GPU draws a 720p frame and the scaler brings it to 1080p with a soft filter, so the shader effects no longer halve the speed. From the Pi 4 on, if the GPU cannot draw a frame in time (many effects on together), it draws a smaller one, just small enough to fit, and the machine stays at 100% with a slightly softer picture; on the Pi 5 and 500 that frame is only narrower.
 - **The CRT shader with the picture moved.** If H Center or V Center take part of the picture off the screen (on the VIC-20, to hide a border), the shader stays on and works on the part you see.
@@ -257,7 +259,7 @@ BMC64-NG runs the whole of VICE 3.10, not a simplified rewrite, and it puts fide
 ### Keyboard and controls
 
 - **Keyboard maps.** There are positional and symbolic keyboard maps, and US, IT, UK and DE layouts.
-- **Keyrah V3.** In Keyboard, Mapping has a Keyrah V3 choice (after Custom) on the C64, the normal C64 and the SuperCPU: the map made for the Keyrah V3, which sends Page Down, End and Backslash for the C64 keys =, £ and up arrow. Save settings keeps it. It needs a Keyrah V3 with firmware 260918 or later: with older firmware (up to 241121-1) no program based on Circle, this one included, sees any key. The firmware is free on the Individual Computers wiki (https://wiki.icomp.de/wiki/Keyrah_V3).
+- **Keyrah V3.** In Keyboard, Mapping has a Keyrah V3 choice (after Custom) on the C64, the normal C64 and the SuperCPU: the map made for the Keyrah V3, which sends Page Down, End and Backslash for the C64 keys =, £ and up arrow. Save settings keeps it. It needs a Keyrah V3 with firmware 260918 or later: with older firmware (up to 241121-1) no program based on Circle, this one included, sees any key. The firmware is free on the Individual Computers wiki (https://wiki.icomp.de/wiki/Keyrah_V3). In USB-LOG.TXT the old firmware shows the Keyrah V3 with six int3-0-0 interfaces and no keyboard, and the new one shows two int3-1-1 and the keyboards ukbd1 and ukbd2. With the firmware updated as the wiki says, the Keyrah V3 works perfectly on a Raspberry Pi 5: thanks to Dario for the test.
 - **Your own keyboard map.** In Keyboard, set Mapping to Custom and open Mapping Editor...: one row for every key of the machine (C64, C128, VIC-20, SuperCPU, PET and Plus/4 with VICE), and ENTER and then the PC key to give it. Save & Apply saves it and uses it at once, and Restore Defaults... goes back to the Positional one.
 - **Caps Lock.** The Caps Lock of a USB keyboard is SHIFT LOCK on every machine and with every mapping, as in VICE, also together with a real C64 keyboard on a Keyrah. On the C128 the CAPS LOCK key stays on ALT + F4.
 - **The C128's extra keys.** ESC, TAB, ALT, CAPS LOCK, HELP, LINE FEED, 40/80 DISPLAY and NO SCROLL are on ALT + F1 to ALT + F8, in the order of the real machine. Seven also have a key of their own: F9 ESC, F10 TAB, F11 40/80 DISPLAY, End HELP, Page Down LINE FEED, Scroll Lock NO SCROLL, Pause CAPS LOCK.
@@ -331,6 +333,11 @@ BMC64-NG builds on the work of:
 - Plus4Emu by Istvan Varga;
 - reSID by Dag Lem, and reSIDfp by Antti S. Lankila and Leandro Nini;
 - **[Claude Code](https://claude.com/claude-code) (Max plan), used inside VS Code**, which wrote the code of BMC64-NG.
+
+Thanks also to the people who report bugs and test on real hardware, which we cannot always do ourselves:
+- retro8bits, for the reports on the picture scaling and the CRT shader presets, the EasyFlash saving and the SID Player menu;
+- Dario, for testing the Keyrah V3 on a Raspberry Pi 5;
+- Andrea, for the tests with a real 1541 and an XUM1541 on an Arduino Pro Micro.
 
 ### On the use of AI
 

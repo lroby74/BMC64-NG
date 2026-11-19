@@ -67,7 +67,9 @@ bool TranslatePlane(const Plane &source, pi4kms::Plane *target) {
     source.format == kPixelFormatArgb8888
         ? pi4kms::kPlaneFormatArgb8888
         : pi4kms::kPlaneFormatRgb565,
-    source.filter == kScaleFilterMitchell
+    source.filter == kScaleFilterLow
+        ? pi4kms::kScaleFilterLow
+        : source.filter == kScaleFilterMitchell
         ? pi4kms::kScaleFilterMitchell
         : pi4kms::kScaleFilterNearest,
     static_cast<u32>(source.destination.x),

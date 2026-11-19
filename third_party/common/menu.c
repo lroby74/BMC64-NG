@@ -153,7 +153,7 @@ void menu_modo_sicuro(void) {
 
 
 
-#define VERSIONE_BMC64_NG "1.5.1"
+#define VERSIONE_BMC64_NG "1.5.2"
 
 #ifdef RASPI_LITE
 #define VARIANT_STRING "-Lite"
@@ -1372,6 +1372,11 @@ struct menu_item *c40_80_column_item;
 struct menu_item *dir_convention_item;
 
 struct menu_item *scaling_interp_item;
+
+
+static int scaling_interp_mode(void) {
+  return scaling_interp_item->choice_ints[scaling_interp_item->value];
+}
 
 
 
@@ -4117,7 +4122,7 @@ static int save_settings() {
   if (drive_flush_item != NULL) {
     fprintf(fp, "drive_flush=%d\n", drive_flush_item->value);
   }
-  fprintf(fp, "scaling_interp=%d\n", scaling_interp_item->value);
+  fprintf(fp, "scaling_interp=%d\n", scaling_interp_mode());
   fprintf(fp, "gpio_config=%d\n", gpio_config_item->choice_ints[gpio_config_item->value]);
   if (network_device_item != NULL) {
     fprintf(fp, "network_device=%d\n", network_device_item->value);
@@ -4745,7 +4750,12 @@ static int load_settings() {
         drive_flush_item->value = value;
       }
     } else if (strcmp(name, "scaling_interp") == 0) {
-      scaling_interp_item->value = value;
+
+      for (int k = 0; k < scaling_interp_item->num_choices; k++) {
+        if (scaling_interp_item->choice_ints[k] == value) {
+          scaling_interp_item->value = k;
+        }
+      }
     } else if (strcmp(name, "gpio_config") == 0) {
       // We save/restore the choice int and map back to
       // the value as index into the choices for this
@@ -7327,7 +7337,7 @@ static void handle_shader_param_change() {
       (float)s_response_saturation_item->value / 100.0f;
   params.black_level = (float)s_black_level_item->value / 100.0f;
   params.white_clip = (float)s_white_clip_item->value / 100.0f;
-  params.bilinear_interpolation = scaling_interp_item->value;
+  params.bilinear_interpolation = scaling_interp_mode() != 0;
 
   circle_set_shader_params(&params);
 
@@ -11252,7 +11262,7 @@ static void menu_value_changed(struct menu_item *item) {
     break;
   case MENU_SCALING_INTERPOLATION:
     reveal_crt_shader_preview();
-    circle_set_interpolation(item->value); // dispmanx interpolation
+    circle_set_interpolation(item->choice_ints[item->value]);
     if (s_enable_shader_item->value) {
        sanity_check_shader_params();
        handle_shader_param_change();
@@ -13284,6 +13294,18 @@ void menu_banco_player2(int porta) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 void menu_banco_aspetto(int largo) {
   metti_aspetto(VIC_INDEX, largo);
 }
@@ -14362,9 +14384,16 @@ void build_menu(struct menu_item *root) {
 
   video_parent = parent = ui_menu_add_folder(root, "Video");
 
-  scaling_interp_item = ui_menu_add_toggle_labels(
-     MENU_SCALING_INTERPOLATION, parent,
-        "Scaling Interpolation", 1, "Off", "On");
+  scaling_interp_item = ui_menu_add_multiple_choice(
+     MENU_SCALING_INTERPOLATION, parent, "Scaling Interpolation");
+  scaling_interp_item->num_choices = 3;
+  strcpy(scaling_interp_item->choices[0], "Off");
+  strcpy(scaling_interp_item->choices[1], "Low");
+  strcpy(scaling_interp_item->choices[2], "On");
+  scaling_interp_item->choice_ints[0] = 0;
+  scaling_interp_item->choice_ints[1] = 2;
+  scaling_interp_item->choice_ints[2] = 1;
+  scaling_interp_item->value = 2;
 
   if (emux_machine_class == BMC64_MACHINE_CLASS_C128) {
      // For C128, we split video options under video into VICII
@@ -15330,7 +15359,7 @@ void build_menu(struct menu_item *root) {
   ui_set_joy_items();
 
   do_video_settings(FB_LAYER_VIC);
-  circle_set_interpolation(scaling_interp_item->value);
+  circle_set_interpolation(scaling_interp_mode());
 
   // If we were saved with the 80 column key down, let's make the
   // active display the VDC.  If this is not wanted, we'll need

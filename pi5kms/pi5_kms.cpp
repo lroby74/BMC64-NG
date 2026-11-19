@@ -88,6 +88,7 @@ constexpr u32 kHvs6dDisp0Run = 0x120;
 constexpr u32 kHvsDlistStart = 0x4000;
 constexpr u32 kHvsFilterMitchellSlot = 16;
 constexpr u32 kHvsFilterNearestSlot = 32;
+constexpr u32 kHvsFilterLowSlot = 48;
 constexpr u32 kHvsDlistSlot0 = 64;
 constexpr u32 kHvsDlistSlot1 = 224;
 constexpr u32 kHvsStatusModeShift = 13;
@@ -183,6 +184,16 @@ constexpr u32 kHvsNearestKernel[6] = {
   HvsPpfFilterWord(1, 1, 1),
   HvsPpfFilterWord(1, 255, 255),
   HvsPpfFilterWord(255, 255, 255),
+  HvsPpfFilterWord(255, 255, 0),
+};
+
+
+constexpr u32 kHvsLowKernel[6] = {
+  HvsPpfFilterWord(0, 0, 0),
+  HvsPpfFilterWord(0, 0, 0),
+  HvsPpfFilterWord(0, 0, 1),
+  HvsPpfFilterWord(1, 32, 96),
+  HvsPpfFilterWord(160, 224, 255),
   HvsPpfFilterWord(255, 255, 0),
 };
 
@@ -987,6 +998,7 @@ void EnsureHvsFilterKernelsUploaded() {
 
   UploadHvsFilterKernel(kHvsFilterMitchellSlot, kHvsMitchellKernel);
   UploadHvsFilterKernel(kHvsFilterNearestSlot, kHvsNearestKernel);
+  UploadHvsFilterKernel(kHvsFilterLowSlot, kHvsLowKernel);
   g_hvs_filter_kernels_uploaded = true;
 }
 
@@ -1037,6 +1049,7 @@ bool AppendPlaneDlist(const Plane &plane,
       GetHvsScaling(plane.source.height, plane.destination.height);
   const u32 scl_field = unity ? 0 : MakeHvsSclField(x_scaling, y_scaling);
   const bool nearest = plane.filter == kScaleFilterNearest;
+  const bool low = plane.filter == kScaleFilterLow;
 
   const u32 bytes_per_pixel = plane.depth / 8;
   const u32 source_offset =
@@ -1109,7 +1122,8 @@ bool AppendPlaneDlist(const Plane &plane,
 
     if (x_scaling == kHvsScalingPpf || y_scaling == kHvsScalingPpf) {
       const u32 kernel_slot = nearest ? kHvsFilterNearestSlot
-                                      : kHvsFilterMitchellSlot;
+                                      : low ? kHvsFilterLowSlot
+                                            : kHvsFilterMitchellSlot;
       dlist[(*count)++] = kernel_slot;
       dlist[(*count)++] = kernel_slot;
       dlist[(*count)++] = kernel_slot;
@@ -1154,7 +1168,8 @@ bool ValidatePlane(const Plane &plane, u32 display_width,
     return false;
   }
   if (plane.filter != kScaleFilterNearest &&
-      plane.filter != kScaleFilterMitchell) {
+      plane.filter != kScaleFilterMitchell &&
+      plane.filter != kScaleFilterLow) {
     printf("boot: pi5kms unsupported scale filter %u\r\n",
            (unsigned)plane.filter);
     return false;

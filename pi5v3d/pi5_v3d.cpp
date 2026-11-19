@@ -2053,7 +2053,8 @@ void LogRuntimeQpuGeometryUnsupportedIfNeeded(QpuFrameProgram program,
 }
 
 const char *HvsScaleFilterName(pi5kms::ScaleFilter filter) {
-  return filter == pi5kms::kScaleFilterMitchell ? "mitchell" : "nearest";
+  return filter == pi5kms::kScaleFilterMitchell ? "mitchell"
+         : filter == pi5kms::kScaleFilterLow ? "low" : "nearest";
 }
 
 Buffer &CurrentQpuTargetBuffer() {

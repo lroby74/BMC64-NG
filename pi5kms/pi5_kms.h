@@ -20,6 +20,7 @@ constexpr PixelFormat kPixelFormatRgb565 = bmxkms::kPixelFormatRgb565;
 constexpr PixelFormat kPixelFormatArgb8888 = bmxkms::kPixelFormatArgb8888;
 constexpr ScaleFilter kScaleFilterNearest = bmxkms::kScaleFilterNearest;
 constexpr ScaleFilter kScaleFilterMitchell = bmxkms::kScaleFilterMitchell;
+constexpr ScaleFilter kScaleFilterLow = bmxkms::kScaleFilterLow;
 
 bool ResolveBmcMode(unsigned hdmi_group, unsigned hdmi_mode,
                     const char *hdmi_timings, const char *named_mode,

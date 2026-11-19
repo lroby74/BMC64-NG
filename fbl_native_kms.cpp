@@ -73,6 +73,8 @@ int g_effective_width = 0;
 int g_effective_height = 0;
 bool g_kms_active = false;
 bool g_interpolation_enabled = false;
+
+bool g_interpolation_low = false;
 bool g_v3d_crt_enabled = true;
 bool g_v3d_crt_enabled_initialized = false;
 bool g_v3d_scanline_weight_override_enabled = false;
@@ -2614,8 +2616,10 @@ bool FrameBufferLayer::BuildKmsLayerPlane(FrameBufferLayer *layer,
     fb.height,
     fb.depth,
     format,
-    g_interpolation_enabled ? pi5kms::kScaleFilterMitchell
-                            : pi5kms::kScaleFilterNearest,
+    g_interpolation_enabled
+        ? (g_interpolation_low ? pi5kms::kScaleFilterLow
+                               : pi5kms::kScaleFilterMitchell)
+        : pi5kms::kScaleFilterNearest,
     {0, 0, (u32)r.src_w, (u32)r.src_h},
     {r.dst_x, r.dst_y, (u32)r.dst_w, (u32)r.dst_h}
   };
@@ -3136,7 +3140,9 @@ bool bmc_v3d_esegui(BmcV3dLavoro &j) {
                j.dst_x, j.dst_y, j.dst_w, j.dst_h,
                screen_w, screen_h,
                v3d_plane.filter == pi5kms::kScaleFilterMitchell
-                   ? "mitchell" : "nearest");
+                   ? "mitchell"
+                   : v3d_plane.filter == pi5kms::kScaleFilterLow
+                   ? "low" : "nearest");
       }
       g_kms_front_buffer_index = buffer_index;
       g_capture_v3d_layer = layer;
@@ -4123,6 +4129,7 @@ void FrameBufferLayer::Shutdown() {
   g_kms_active = false;
   g_kms_front_buffer_index = 0;
   g_interpolation_enabled = false;
+  g_interpolation_low = false;
   g_v3d_crt_enabled = true;
   g_v3d_crt_enabled_initialized = false;
   g_v3d_scanline_weight_override_enabled = false;
@@ -5183,12 +5190,15 @@ void FrameBufferLayer::GetDimensions(int *display_w, int *display_h,
 }
 
 void FrameBufferLayer::SetInterpolation(int enable) {
+
   bool new_value = enable != 0;
-  if (g_interpolation_enabled == new_value) {
+  const bool new_low = enable == 2;
+  if (g_interpolation_enabled == new_value && g_interpolation_low == new_low) {
     return;
   }
 
   g_interpolation_enabled = new_value;
+  g_interpolation_low = new_low;
   if (initialized_) {
     PresentLayerList(false, nullptr, 0);
   }

@@ -44,6 +44,8 @@ enum PixelFormat {
 enum ScaleFilter {
   kScaleFilterNearest = 0,
   kScaleFilterMitchell = 1,
+
+  kScaleFilterLow = 2,
 };
 
 struct Plane {

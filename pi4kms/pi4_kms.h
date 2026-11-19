@@ -14,7 +14,8 @@ enum PlaneFormat {
 
 enum ScaleFilter {
   kScaleFilterNearest = 0,
-  kScaleFilterMitchell
+  kScaleFilterMitchell,
+  kScaleFilterLow
 };
 
 struct Plane {

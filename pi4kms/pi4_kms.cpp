@@ -2139,10 +2139,13 @@ bool PresentPlanes(const Plane *planes, uint32_t plane_count,
       hvs_planes[i].format = planes[i].format == kPlaneFormatArgb8888
           ? kHvs5PixelFormatArgb8888 : kHvs5PixelFormatRgb565;
       if (planes[i].filter != kScaleFilterNearest &&
-          planes[i].filter != kScaleFilterMitchell) {
+          planes[i].filter != kScaleFilterMitchell &&
+          planes[i].filter != kScaleFilterLow) {
         return false;
       }
-      hvs_planes[i].filter = planes[i].filter == kScaleFilterMitchell
+      hvs_planes[i].filter = planes[i].filter == kScaleFilterLow
+          ? kHvs5ScaleFilterLow
+          : planes[i].filter == kScaleFilterMitchell
           ? kHvs5ScaleFilterMitchell : kHvs5ScaleFilterNearest;
       hvs_planes[i].destination_x = planes[i].destination_x;
       hvs_planes[i].destination_y = planes[i].destination_y;
@@ -2219,6 +2222,12 @@ bool PresentPlanes(const Plane *planes, uint32_t plane_count,
   if (required_kernels.nearest &&
       !UploadHvs5FilterKernel(kHvs5NearestKernelSlot, "nearest",
                               BuildHvs5NearestKernel)) {
+    g_takeover_failed = true;
+    return false;
+  }
+  if (required_kernels.low &&
+      !UploadHvs5FilterKernel(kHvs5LowKernelSlot, "low",
+                              BuildHvs5LowKernel)) {
     g_takeover_failed = true;
     return false;
   }

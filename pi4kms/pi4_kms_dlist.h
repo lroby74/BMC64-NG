@@ -12,6 +12,9 @@ static const uint32_t kHvs5MaximumPlanes = 4U;
 static const uint32_t kHvs5MaximumArmDlistWords = 64U;
 static const uint32_t kHvs5MitchellKernelSlot = 3024U;
 static const uint32_t kHvs5NearestKernelSlot = 3040U;
+
+
+static const uint32_t kHvs5LowKernelSlot = 3056U;
 static const uint32_t kHvs5FilterKernelWords = 11U;
 
 enum Hvs5PixelFormat {
@@ -21,7 +24,8 @@ enum Hvs5PixelFormat {
 
 enum Hvs5ScaleFilter {
   kHvs5ScaleFilterNearest = 0,
-  kHvs5ScaleFilterMitchell
+  kHvs5ScaleFilterMitchell,
+  kHvs5ScaleFilterLow
 };
 
 struct Hvs5Plane {
@@ -41,6 +45,7 @@ struct Hvs5Plane {
 struct Hvs5FilterKernelUsage {
   bool nearest;
   bool mitchell;
+  bool low;
 };
 
 struct Hvs5DlistInfo {
@@ -86,6 +91,7 @@ bool BuildHvs5Dlist(const Hvs5Plane *planes, uint32_t plane_count,
 // kernel representations.
 void BuildHvs5NearestKernel(uint32_t words[kHvs5FilterKernelWords]);
 void BuildHvs5MitchellKernel(uint32_t words[kHvs5FilterKernelWords]);
+void BuildHvs5LowKernel(uint32_t words[kHvs5FilterKernelWords]);
 
 }  // namespace pi4kms
 
