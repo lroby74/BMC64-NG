@@ -46,6 +46,10 @@ do
     mkdir -p "$OUT/$dst"
     cp -a "$SRC_DIR/sdcard/$src/." "$OUT/$dst/"
 done
+# The SuperCPU kernel reads its keyboard maps from SCPU64/: they are the C64 ones.
+# Without SCPU64/bootstat.txt it uses its built-in boot list (bootstat_scpu64.h).
+mkdir -p "$OUT/SCPU64"
+cp "$SRC_DIR"/sdcard/c64/*.vkm "$OUT/SCPU64/"
 
 for machine in c64 c128 vic20 plus4 plus4emu pet
 do
@@ -74,6 +78,7 @@ for machine_dir in C64 C128 VIC20 PLUS4
 do
     mkdir -p "$OUT/carts/$machine_dir"
 done
+mkdir -p "$OUT/disks/SCPU"
 mkdir -p "$OUT/DRIVES" "$OUT/prg" "$OUT/tmp"
 
 echo "== kernels"
@@ -81,8 +86,10 @@ echo "== kernels"
 
 
 
-cp "$SRC_DIR/kernel8-rpi4.img.c64" "$OUT/kernel8.img"
-for machine in c128 vic20 plus4 plus4emu pet
+# Names as in BUILDING.md: the cycle exact C64 is the default kernel.
+cp "$SRC_DIR/kernel8-rpi4.img.c64sc" "$OUT/kernel8.img"
+cp "$SRC_DIR/kernel8-rpi4.img.c64" "$OUT/kernel8.img.c64-normale"
+for machine in scpu64 c128 vic20 plus4 plus4emu pet
 do
     cp "$SRC_DIR/kernel8-rpi4.img.$machine" "$OUT/kernel8.img.$machine"
 done
@@ -90,6 +97,7 @@ done
 missing=0
 for f in start4.elf fixup4.dat armstub8-rpi4.bin kernel8.img kernel8.img.vic20 \
          kernel8.img.c128 kernel8.img.plus4 kernel8.img.plus4emu kernel8.img.pet \
+         kernel8.img.c64-normale kernel8.img.scpu64 SCPU64/rpi_pos.vkm \
          cmdline.txt machines.txt C64/PUT_ROMS_HERE
 do
     if [ ! -f "$OUT/$f" ]

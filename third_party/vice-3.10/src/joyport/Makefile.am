@@ -45,6 +45,8 @@ libjoyport_a_SOURCES = \
 	lightpen.h \
 	mouse.c \
 	mouse.h \
+	mouse_digital.c \
+	mouse_digital.h \
 	mouse_1351.c \
 	mouse_1351.h \
 	mouse_neos.c \

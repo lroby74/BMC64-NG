@@ -3333,6 +3333,10 @@ if test x"$enable_raspiui" = "xyes"; then
   dnl src/arch/shared, e per bare metal compila gia'. Serve solo a dire
   dnl ai due file del tempo di usare l'orologio di Circle.
   AC_DEFINE(RASPI_COMPILE,,[Are we compiling for bare metal raspberry pi?])
+  dnl BMC64-NG: the WiC64 of the kernels (wic64/ in the repository root) and reSIDfp
+  dnl (src/lib/libresidfp and src/sid/residfp.cc, built by the kernel Makefile).
+  AC_DEFINE(HAVE_BMX_WIC64, 1, [BMC64-NG: the WiC64 of the kernels, outside VICE.])
+  AC_DEFINE(HAVE_RESIDFP,,[BMC64-NG: reSIDfp, built by the kernel Makefile.])
   SOUND_DRIVERS="$SOUND_DRIVERS soundraspi.o"
   AC_DEFINE(HAVE_RS232BMC,,[Enable the BMC64 Circle-backed RS232 modem.])
   AC_DEFINE(HAVE_MOUSE,,[Enable 1351 mouse support])

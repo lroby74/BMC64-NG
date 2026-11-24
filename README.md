@@ -138,6 +138,10 @@ The first line of About tells which version is on the card.
 
 The PDF guides in [docs/](docs/) describe every menu and every shortcut, in English and Italian. Reading them is highly recommended. The shortcuts alone are also in [Shortcut Keys](docs/Shortcut-Keys.md) and [Tasti rapidi](docs/Tasti-rapidi.md).
 
+## Building from source
+
+The kernels can be built on Linux (Debian, Ubuntu, or Ubuntu under WSL) for the Pi 4 and 400 and for the Pi 5 and 500: see [BUILDING.md](BUILDING.md).
+
 ## Community
 
 BMC64-NG has its own section on the BMC64 Discord server, for discussion and help: [join it here](https://discord.gg/hKvxqMj9J6).
